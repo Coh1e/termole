@@ -114,8 +114,11 @@ void apply_window_options(AppState& state, HWND window, uint16_t columns, uint16
         }
     }
 
-    int x = CW_USEDEFAULT;
-    int y = CW_USEDEFAULT;
+    RECT current{};
+    ::GetWindowRect(window, &current);
+    const bool reposition = state.cli.window_x || state.cli.window_y || state.cli.center;
+    int x = current.left;
+    int y = current.top;
     if (state.cli.window_x) x = *state.cli.window_x;
     if (state.cli.window_y) y = *state.cli.window_y;
     if (state.cli.center) {
@@ -125,8 +128,9 @@ void apply_window_options(AppState& state, HWND window, uint16_t columns, uint16
         x = monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - width) / 2;
         y = monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - height) / 2;
     }
-    ::SetWindowPos(window, state.cli.floating ? HWND_TOPMOST : HWND_TOP, x, y, width, height,
-                   SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    UINT flags = SWP_FRAMECHANGED | SWP_SHOWWINDOW;
+    if (!reposition) flags |= SWP_NOMOVE;
+    ::SetWindowPos(window, state.cli.floating ? HWND_TOPMOST : HWND_TOP, x, y, width, height, flags);
 }
 
 std::wstring picker_executable_path()

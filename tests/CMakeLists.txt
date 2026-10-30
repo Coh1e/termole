@@ -174,6 +174,12 @@ add_test(NAME t17_cmd_target COMMAND termole_cmd_test)
 set_tests_properties(t17_cmd_target PROPERTIES TIMEOUT 30
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
+add_executable(termole_app_window_test app_window_test.cpp)
+target_link_libraries(termole_app_window_test PRIVATE termole_build_options)
+add_test(NAME t01_app_window COMMAND termole_app_window_test "$<TARGET_FILE:termole_app>")
+set_tests_properties(t01_app_window PROPERTIES TIMEOUT 30
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
 add_executable(termole_soak_test soak_test.cpp)
 target_link_libraries(termole_soak_test PRIVATE termole termole_build_options psapi)
 add_dependencies(termole_soak_test termole_cli_report_helper)
