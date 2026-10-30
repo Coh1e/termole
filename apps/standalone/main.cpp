@@ -28,6 +28,10 @@ struct AppState {
     bool closing = false;
     bool reported_error = false;
     bool session_finished = false;
+    bool picker_mode = false;
+    std::wstring picker_candidate_path;
+    std::wstring picker_result_path;
+    std::wstring picker_error_path;
     int exit_code = 0;
 };
 
@@ -125,6 +129,140 @@ void apply_window_options(AppState& state, HWND window, uint16_t columns, uint16
                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 }
 
+std::wstring picker_executable_path()
+{
+    std::array<wchar_t, 32768> module{};
+    const DWORD length = ::GetModuleFileNameW(nullptr, module.data(),
+                                              static_cast<DWORD>(module.size()));
+    if (length == 0 || length >= module.size()) return {};
+    std::wstring path(module.data(), length);
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) return L"termole-picker.exe";
+    path.resize(slash + 1);
+    path += L"termole-picker.exe";
+    return path;
+}
+
+std::wstring make_temp_path(const wchar_t* prefix)
+{
+    std::array<wchar_t, MAX_PATH> directory{};
+    const DWORD length = ::GetTempPathW(static_cast<DWORD>(directory.size()), directory.data());
+    if (length == 0) return {};
+    std::array<wchar_t, MAX_PATH> name{};
+    if (::GetTempFileNameW(directory.data(), prefix, 0, name.data()) == 0) return {};
+    return name.data();
+}
+
+bool copy_stdin_to_file(const std::wstring& path, AppState& state)
+{
+    const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    if (!input || input == INVALID_HANDLE_VALUE ||
+        ::GetConsoleMode(input, &mode)) {
+        report_error(state, L"--picker requires candidate input on stdin");
+        return false;
+    }
+    const HANDLE file = ::CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                      FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        report_error(state, L"could not create the picker candidate file");
+        return false;
+    }
+    std::array<char, 65536> buffer{};
+    bool ok = true;
+    for (;;) {
+        DWORD read = 0;
+        if (!::ReadFile(input, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr)) {
+            if (::GetLastError() == ERROR_BROKEN_PIPE) break;
+            ok = false;
+            break;
+        }
+        if (read == 0) break;
+        DWORD written = 0;
+        if (!::WriteFile(file, buffer.data(), read, &written, nullptr) || written != read) {
+            ok = false;
+            break;
+        }
+    }
+    ::CloseHandle(file);
+    if (!ok) report_error(state, L"could not read picker candidates");
+    return ok;
+}
+
+bool prepare_picker(AppState& state)
+{
+    const std::wstring picker = picker_executable_path();
+    if (picker.empty() ||
+        ::GetFileAttributesW(picker.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        report_error(state, L"termole-picker.exe was not found next to termole.exe");
+        return false;
+    }
+    state.picker_mode = true;
+    state.picker_candidate_path = make_temp_path(L"trm");
+    state.picker_result_path = make_temp_path(L"trm");
+    state.picker_error_path = make_temp_path(L"trm");
+    if (state.picker_candidate_path.empty() || state.picker_result_path.empty() ||
+        state.picker_error_path.empty()) {
+        report_error(state, L"could not create picker temporary files");
+        return false;
+    }
+    ::DeleteFileW(state.picker_result_path.c_str());
+    ::DeleteFileW(state.picker_error_path.c_str());
+    if (!copy_stdin_to_file(state.picker_candidate_path, state)) {
+        ::DeleteFileW(state.picker_candidate_path.c_str());
+        return false;
+    }
+    state.cli.program = picker;
+    state.cli.arguments = { L"--embedded", state.picker_candidate_path, state.picker_result_path,
+                            L"--diag", state.picker_error_path };
+    state.cli.arguments.insert(state.cli.arguments.end(), state.cli.picker_arguments.begin(),
+                               state.cli.picker_arguments.end());
+    if (state.cli.columns == 0) state.cli.columns = 80;
+    if (state.cli.rows == 0) state.cli.rows = 24;
+    return true;
+}
+
+void cleanup_picker(AppState& state)
+{
+    if (!state.picker_candidate_path.empty())
+        ::DeleteFileW(state.picker_candidate_path.c_str());
+    if (!state.picker_result_path.empty())
+        ::DeleteFileW(state.picker_result_path.c_str());
+    if (!state.picker_error_path.empty())
+        ::DeleteFileW(state.picker_error_path.c_str());
+    state.picker_candidate_path.clear();
+    state.picker_result_path.clear();
+    state.picker_error_path.clear();
+}
+
+void finish_picker(AppState& state, HWND window)
+{
+    state.session_finished = true;
+    const auto copy_file = [](const std::wstring& path, HANDLE output) {
+        const HANDLE file = ::CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return;
+        std::array<char, 65536> buffer{};
+        for (;;) {
+            DWORD read = 0;
+            if (!::ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) ||
+                read == 0)
+                break;
+            DWORD written = 0;
+            if (!::WriteFile(output, buffer.data(), read, &written, nullptr)) break;
+        }
+        ::CloseHandle(file);
+    };
+    copy_file(state.picker_error_path, ::GetStdHandle(STD_ERROR_HANDLE));
+    copy_file(state.picker_result_path, ::GetStdHandle(STD_OUTPUT_HANDLE));
+    const auto code = state.session ? state.session->exit_code() : std::unexpected(
+        termole::Error{ TERMOLE_STATUS_INVALID_STATE, "picker session is null" });
+    state.exit_code = code ? *code : 125;
+    cleanup_picker(state);
+    ::PostMessageW(window, WM_CLOSE, 0, 0);
+}
+
+
 void layout_view(AppState& state, HWND window)
 {
     if (!state.view) return;
@@ -204,6 +342,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 
     case WM_TIMER:
         if (state && wparam == kTimerId && state->session) {
+            if (state->picker_mode && !state->session->running() && !state->session_finished) {
+                finish_picker(*state, window);
+                return 0;
+            }
             const auto smoke = state->smoke.poll(*state->session);
             if (smoke == termole::app::SmokeState::Passed) {
                 ::DestroyWindow(window);
@@ -239,6 +381,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 (void)state->session->terminate();
                 state->session.reset();
             }
+            if (state->picker_mode) cleanup_picker(*state);
         }
         ::DestroyWindow(window);
         return 0;
@@ -319,6 +462,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command)
     }
 
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    if (state.cli.picker && !prepare_picker(state)) return 1;
 
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
@@ -334,11 +478,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command)
         return 1;
     }
 
-    const HWND window = ::CreateWindowExW(0, kWindowClassName, L"Termole", WS_OVERLAPPEDWINDOW,
-                                          CW_USEDEFAULT, CW_USEDEFAULT, 1000, 640, nullptr, nullptr,
-                                          instance, &state);
+    const HWND window = ::CreateWindowExW(0, kWindowClassName,
+                                          state.cli.picker ? L"Termole picker" : L"Termole",
+                                          WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1000,
+                                          640, nullptr, nullptr, instance, &state);
     if (!window) {
         if (!state.reported_error) report_error(state, L"could not create the terminal window");
+        cleanup_picker(state);
         return 1;
     }
 

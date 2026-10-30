@@ -88,6 +88,15 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 result.options.no_config = true;
                 continue;
             }
+            if (token == L"--picker" && !result.options.program) {
+                result.options.picker = true;
+                continue;
+            }
+            if (token == L"--picker-arg") {
+                if (index + 1 >= argc) return error(L"--picker-arg requires a value");
+                result.options.picker_arguments.emplace_back(argv[++index]);
+                continue;
+            }
             if (token == L"--config" || starts_with(token, L"--config=")) {
                 std::wstring value;
                 if (!take_value(L"--config", value)) return error(L"--config requires a path");
@@ -253,6 +262,8 @@ std::wstring help_text()
            L"  --config <PATH>      Use a specific TOML configuration file\n"
            L"  --profile <NAME>     Apply a [profiles.NAME] group\n"
            L"  --no-config          Ignore the user configuration file\n"
+           L"  --picker             Read candidates from stdin and show fzf in a Termole window\n"
+           L"  --picker-arg <ARG>   Pass one argument to picker fzf (repeatable)\n"
            L"  --keep-window        Keep the window open when the child exits\n"
            L"  --close-on-exit      Close the window even when the child fails\n"
            L"  --help, -h           Show this help\n"

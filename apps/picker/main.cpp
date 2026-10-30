@@ -12,6 +12,10 @@
 
 namespace {
 
+HANDLE g_diagnostic_file = INVALID_HANDLE_VALUE;
+
+void diagnostic(std::wstring_view message);
+
 std::wstring quote_cmd(const std::wstring& argument)
 {
     std::wstring result = L"\"";
@@ -30,6 +34,67 @@ std::wstring find_fzf()
                                        static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
     if (length > 0 && length < buffer.size()) return std::wstring(buffer.data(), length);
     return {};
+}
+
+std::wstring quote_argv(const std::wstring& argument)
+{
+    std::wstring result = L"\"";
+    size_t backslashes = 0;
+    for (const wchar_t character : argument) {
+        if (character == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        result.append(backslashes * (character == L'"' ? 2 : 1), L'\\');
+        backslashes = 0;
+        if (character == L'"') result += L'\\';
+        result += character;
+    }
+    result.append(backslashes * 2, L'\\');
+    return result + L'"';
+}
+
+int run_embedded(const std::wstring& candidate_path, const std::wstring& result_path,
+                 const std::wstring& fzf, const std::vector<std::wstring>& arguments)
+{
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    HANDLE input = ::CreateFileW(candidate_path.c_str(), GENERIC_READ, FILE_SHARE_READ, &security,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (input == INVALID_HANDLE_VALUE) {
+        diagnostic(L"could not open picker candidates");
+        return 125;
+    }
+    HANDLE output = ::CreateFileW(result_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security,
+                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (output == INVALID_HANDLE_VALUE) {
+        ::CloseHandle(input);
+        diagnostic(L"could not create the picker result file");
+        return 125;
+    }
+
+    STARTUPINFOW startup{ sizeof(startup) };
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = input;
+    startup.hStdOutput = output;
+    startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
+    std::wstring command = quote_argv(fzf);
+    for (const auto& argument : arguments) command += L" " + quote_argv(argument);
+    PROCESS_INFORMATION process{};
+    const BOOL started = ::CreateProcessW(fzf.c_str(), command.data(), nullptr, nullptr, TRUE, 0,
+                                          nullptr, nullptr, &startup, &process);
+    ::CloseHandle(input);
+    ::CloseHandle(output);
+    if (!started) {
+        const DWORD error = ::GetLastError();
+        diagnostic(L"could not start embedded fzf (" + std::to_wstring(error) + L")");
+        return 125;
+    }
+    ::CloseHandle(process.hThread);
+    ::WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exit_code = 1;
+    ::GetExitCodeProcess(process.hProcess, &exit_code);
+    ::CloseHandle(process.hProcess);
+    return static_cast<int>(exit_code);
 }
 
 bool read_all(HANDLE handle, std::string& data)
@@ -71,13 +136,53 @@ void diagnostic(std::wstring_view message)
     std::string bytes(static_cast<size_t>(length), '\0');
     ::WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), bytes.data(),
                           length, nullptr, nullptr);
-    (void)write_all(::GetStdHandle(STD_ERROR_HANDLE), bytes);
+    if (g_diagnostic_file != INVALID_HANDLE_VALUE) {
+        (void)write_all(g_diagnostic_file, bytes);
+    } else {
+        (void)write_all(::GetStdHandle(STD_ERROR_HANDLE), bytes);
+    }
 }
 
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
 {
+    if (argc >= 4 && std::wstring_view(argv[1]) == L"--embedded") {
+        std::wstring fzf = find_fzf();
+        std::vector<std::wstring> arguments;
+        std::wstring diagnostic_path;
+        for (int index = 4; index < argc; ++index) {
+            if (std::wstring_view(argv[index]) == L"--fzf") {
+                if (index + 1 >= argc) {
+                    diagnostic(L"--fzf requires a path");
+                    return 2;
+                }
+                fzf = argv[++index];
+            } else if (std::wstring_view(argv[index]) == L"--diag") {
+                if (index + 1 >= argc) {
+                    diagnostic(L"--diag requires a path");
+                    return 2;
+                }
+                diagnostic_path = argv[++index];
+            } else {
+                arguments.emplace_back(argv[index]);
+            }
+        }
+        if (!diagnostic_path.empty()) {
+            g_diagnostic_file = ::CreateFileW(diagnostic_path.c_str(), GENERIC_WRITE,
+                                              FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+                                              FILE_ATTRIBUTE_NORMAL, nullptr);
+        }
+        if (fzf.empty()) {
+            diagnostic(L"fzf.exe was not found on PATH");
+            if (g_diagnostic_file != INVALID_HANDLE_VALUE) ::CloseHandle(g_diagnostic_file);
+            return 127;
+        }
+        const int code = run_embedded(argv[2], argv[3], fzf, arguments);
+        if (g_diagnostic_file != INVALID_HANDLE_VALUE) ::CloseHandle(g_diagnostic_file);
+        return code;
+    }
+
     std::wstring fzf = find_fzf();
     std::vector<std::wstring> arguments;
     for (int index = 1; index < argc; ++index) {

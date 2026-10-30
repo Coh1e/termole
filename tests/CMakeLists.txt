@@ -113,6 +113,15 @@ if(TERMOLE_FZF)
     TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
+
+  add_executable(termole_embedded_picker_test embedded_picker_test.cpp)
+  add_dependencies(termole_embedded_picker_test termole_app termole_picker)
+  add_test(NAME t15_embedded_picker COMMAND termole_embedded_picker_test
+    "$<TARGET_FILE:termole_app>")
+  set_tests_properties(t15_embedded_picker PROPERTIES
+    TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
 endif()
 
 add_test(NAME t02_cli_args

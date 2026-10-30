@@ -34,6 +34,8 @@ struct CliOptions {
     std::optional<std::wstring> config_path;
     std::optional<std::wstring> profile;
     bool no_config = false;
+    bool picker = false;
+    std::vector<std::wstring> picker_arguments;
     ExitPolicy exit_policy = ExitPolicy::Auto;
 };
 

@@ -17,7 +17,7 @@
 3. `columns =` 的坏配置输出 `bad.toml:1: missing value`，仍运行 CLI 指定的目标并成功退出。
 4. `--no-config` 不报告坏配置。
 
-`t14_cli_config` 通过；完整套件 19/19。
+`t14_cli_config` 通过；完整套件 20/20。
 
 ## 已知限制
 
