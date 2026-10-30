@@ -1,10 +1,12 @@
 #include <windows.h>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -59,6 +61,63 @@ Run run(const std::filesystem::path& app, const std::vector<std::wstring>& argum
         std::ifstream file(output, std::ios::binary);
         result.output.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
     }
+    std::filesystem::remove_all(root, error);
+    return result;
+}
+
+Run run_slow_reader(const std::filesystem::path& app, const std::string& candidates)
+{
+    const auto root = std::filesystem::temp_directory_path() /
+        ("termole-embedded-picker-slow-" + std::to_string(::GetCurrentProcessId()));
+    std::error_code error;
+    std::filesystem::create_directories(root, error);
+    const auto input = root / "in.bin";
+    {
+        std::ofstream file(input, std::ios::binary);
+        file.write(candidates.data(), static_cast<std::streamsize>(candidates.size()));
+    }
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    HANDLE input_handle = ::CreateFileW(input.c_str(), GENERIC_READ, FILE_SHARE_READ, &security,
+                                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE read_handle = INVALID_HANDLE_VALUE;
+    HANDLE write_handle = INVALID_HANDLE_VALUE;
+    ::CreatePipe(&read_handle, &write_handle, &security, 0);
+    STARTUPINFOW startup{ sizeof(startup) };
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = input_handle;
+    startup.hStdOutput = write_handle;
+    startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
+    std::wstring command = L"\"" + app.wstring() + L"\" --picker --picker-arg --filter --picker-arg item-";
+    PROCESS_INFORMATION process{};
+    const bool started = ::CreateProcessW(app.c_str(), command.data(), nullptr, nullptr, TRUE, 0,
+                                          nullptr, nullptr, &startup, &process) != FALSE;
+    ::CloseHandle(input_handle);
+    ::CloseHandle(write_handle);
+    Run result;
+    if (!started) {
+        ::CloseHandle(read_handle);
+        return result;
+    }
+    std::string output;
+    std::thread reader([&] {
+        std::array<char, 512> buffer{};
+        for (;;) {
+            DWORD read = 0;
+            if (!::ReadFile(read_handle, buffer.data(), static_cast<DWORD>(buffer.size()), &read,
+                            nullptr) ||
+                read == 0)
+                break;
+            output.append(buffer.data(), read);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    });
+    ::WaitForSingleObject(process.hProcess, 30000);
+    ::GetExitCodeProcess(process.hProcess, &result.exit_code);
+    ::CloseHandle(process.hThread);
+    ::CloseHandle(process.hProcess);
+    reader.join();
+    ::CloseHandle(read_handle);
+    result.output = std::move(output);
     std::filesystem::remove_all(root, error);
     return result;
 }
@@ -127,6 +186,14 @@ int wmain(int argc, wchar_t** argv)
     const auto closed = run(app, { L"--filter", L"banana" }, "apple\r\nbanana\r\n", true);
     if (closed.exit_code != 0) {
         std::cerr << "closed stdout did not complete cleanly: exit=" << closed.exit_code << '\n';
+        ++failures;
+    }
+
+    const auto slow = run_slow_reader(app, large);
+    if (slow.exit_code != 0 || slow.output.find("item-0\n") == std::string::npos ||
+        slow.output.find("item-11999\n") == std::string::npos) {
+        std::cerr << "slow-reader backpressure failed: exit=" << slow.exit_code
+                  << " bytes=" << slow.output.size() << '\n';
         ++failures;
     }
 

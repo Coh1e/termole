@@ -45,11 +45,11 @@ Get-Content names.txt | .\termole.exe --picker --picker-arg --filter --picker-ar
 ## 验证
 
 `t15_picker`：独立入口的 ASCII 单选、NUL/Unicode、缺失 fzf 127。
-`t15_embedded_picker`：Termole 窗口内的 ASCII 单选、NUL/Unicode、`--multi` 参数传递、12k 行输入、stdout 提前关闭。完整套件 26/26。
+`t15_embedded_picker`：Termole 窗口内的 ASCII 单选、NUL/Unicode、`--multi` 参数传递、12k 行输入、stdout 提前关闭、慢读背压（120 KB 结果分块读取）。完整套件 26/26。
 
 ## 限制
 
-- 多选/大结果背压、调用方提前关闭 stdout、候选输入提前结束尚未全部自动覆盖。
+- 多选/大结果背压已覆盖 12k 行输入与 120 KB 慢读；尚未测超大结果与所有取消路径。
 - 独立 `termole-picker.exe` 仍使用新控制台；主 `termole.exe --picker` 使用 Termole 窗口。
 - fzf 必须由用户安装；Termole 不捆绑 fzf/fd/WSL。
 - 运行包当前合并在开发 ZIP 中，T23 分离归档与 T24 无开发工具验收未完成。
