@@ -14,7 +14,7 @@
 
 ## 统一入口验收
 
-根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 26/26 通过（T01/T02 既有项、T03–T21 新增项、真实 fzf/picker、WSL、Neovim/Helix/lazygit、soak/idle-paint）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 28/28 通过（上述 26 项、picker 八场景、原生基础）。
+根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 28/28 通过（T01/T02 既有项、T03–T21 新增项、真实 fzf/picker、WSL、Neovim/Helix/lazygit、soak/idle-paint）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 30/30 通过（上述 28 项、picker 八场景、原生基础）。
 
 - [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。
 - [T14 配置](t14-validation.md)：TOML 根/Profile/CLI 优先级、错误文件与行号、默认配置回退。`t14_cli_config` 通过。

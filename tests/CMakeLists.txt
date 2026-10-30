@@ -105,11 +105,27 @@ if(TERMOLE_NVIM OR TERMOLE_HELIX)
     add_test(NAME t18_nvim COMMAND termole_editor_test "${TERMOLE_NVIM}" nvim)
     set_tests_properties(t18_nvim PROPERTIES TIMEOUT 60
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    add_executable(termole_editor_shell_test editor_shell_test.cpp)
+    target_link_libraries(termole_editor_shell_test PRIVATE termole termole_build_options)
+    add_test(NAME t18_nvim_shell COMMAND termole_editor_shell_test nvim nvim)
+    set_tests_properties(t18_nvim_shell PROPERTIES TIMEOUT 60
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
   endif()
   if(TERMOLE_HELIX)
     add_test(NAME t18_helix COMMAND termole_editor_test "${TERMOLE_HELIX}" helix)
     set_tests_properties(t18_helix PROPERTIES TIMEOUT 60
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    if(TARGET termole_editor_shell_test)
+      add_test(NAME t18_helix_shell COMMAND termole_editor_shell_test hx helix)
+      set_tests_properties(t18_helix_shell PROPERTIES TIMEOUT 60
+        WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    else()
+      add_executable(termole_editor_shell_test editor_shell_test.cpp)
+      target_link_libraries(termole_editor_shell_test PRIVATE termole termole_build_options)
+      add_test(NAME t18_helix_shell COMMAND termole_editor_shell_test hx helix)
+      set_tests_properties(t18_helix_shell PROPERTIES TIMEOUT 60
+        WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    endif()
   endif()
 endif()
 if(TERMOLE_WSL)
