@@ -28,6 +28,7 @@ int wmain(int argc, wchar_t** argv)
 {
     if (argc < 2) return 2;
     const std::filesystem::path lazygit = argv[1];
+    const bool shell = argc > 2 && std::wstring_view(argv[2]) == L"shell";
     const auto repo = std::filesystem::temp_directory_path() /
         ("termole-lazygit-" + std::to_string(::GetCurrentProcessId()));
     std::error_code error;
@@ -48,7 +49,8 @@ int wmain(int argc, wchar_t** argv)
     }
 
     termole::Session::Options options;
-    options.program = lazygit.wstring();
+    options.program = shell ? L"C:\\Windows\\System32\\cmd.exe" : lazygit.wstring();
+    if (shell) options.arguments = { L"/D", L"/Q" };
     options.working_directory = repo.wstring();
     options.columns = 120;
     options.rows = 35;
@@ -57,6 +59,11 @@ int wmain(int argc, wchar_t** argv)
     if (!session) {
         std::cerr << "could not start lazygit: " << session.error().message() << '\n';
         return 1;
+    }
+    if (shell) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        (void)session->write("lazygit");
+        (void)session->send_key(termole::Key::Enter);
     }
     const bool drew = wait_for_text(*session, "Files", 1000) ||
         wait_for_text(*session, "Branches", 1000) || wait_for_text(*session, "Status", 1000) ||
@@ -76,14 +83,26 @@ int wmain(int argc, wchar_t** argv)
     (void)session->resize(100, 30);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     (void)session->write("q");
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (session->running() && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    const bool exited = !session->running();
+    bool exited = false;
+    if (shell) {
+        if (wait_for_text(*session, ">", 5000)) {
+            (void)session->write("exit");
+            (void)session->send_key(termole::Key::Enter);
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (session->running() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            exited = !session->running();
+        }
+    } else {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (session->running() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        exited = !session->running();
+    }
     (void)session->terminate();
     std::filesystem::remove_all(repo, error);
     if (!exited) {
-        std::cerr << "lazygit did not exit\n";
+        std::cerr << "lazygit did not exit/restore the prompt\n";
         return 1;
     }
     std::cout << "PASS: lazygit panels and exit\n";

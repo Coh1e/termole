@@ -96,6 +96,9 @@ if(TERMOLE_LAZYGIT)
   add_test(NAME t19_lazygit COMMAND termole_lazygit_test "${TERMOLE_LAZYGIT}")
   set_tests_properties(t19_lazygit PROPERTIES TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+  add_test(NAME t19_lazygit_shell COMMAND termole_lazygit_test "${TERMOLE_LAZYGIT}" shell)
+  set_tests_properties(t19_lazygit_shell PROPERTIES TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 endif()
 
 if(TERMOLE_NVIM OR TERMOLE_HELIX)

@@ -14,9 +14,11 @@
 
 `t19_lazygit`：在独立临时 Git 仓库（`user.name/email` 仅该仓库）启动 lazygit 120×35，等待状态/文件/差异面板绘制，Esc 关闭欢迎弹窗，resize 后 `q` 退出；通过。测试不修改用户实际仓库。
 
+`t19_lazygit_shell`：在交互式 CMD 中启动 lazygit，退出后检查提示符恢复并 `exit`，验证主屏恢复。
+
 ## 仍未覆盖
 
-- Neovim/Helix 的 alternate screen 主屏恢复已由 CMD 内流程覆盖；lazygit 仍只测直接目标，未覆盖 CMD 内恢复。
+- Neovim/Helix/lazygit 的 alternate screen 主屏恢复已由 CMD 内流程覆盖。
 - 中文 IME、组合/Emoji、鼠标与 bracketed paste 的真实编辑器流程。
 - 独立窗口入口（`termole.exe`）与嵌入宿主的双入口对比；当前测试走公开 Session/ConPTY 嵌入路径。
 - 编辑器光标形状与选择/粘贴尚未自动断言。
