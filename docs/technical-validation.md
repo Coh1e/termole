@@ -14,7 +14,7 @@
 
 ## 统一入口验收
 
-根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 20/20 通过（T01/T02 既有项、T03–T15 新增项、真实 fzf/picker、WSL）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 22/22 通过（上述 20 项、picker 八场景、原生基础）。
+根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 24/24 通过（T01/T02 既有项、T03–T19 新增项、真实 fzf/picker、WSL、Neovim/Helix/lazygit）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 26/26 通过（上述 24 项、picker 八场景、原生基础）。
 
 - [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。
 - [T14 配置](t14-validation.md)：TOML 根/Profile/CLI 优先级、错误文件与行号、默认配置回退。`t14_cli_config` 通过。
@@ -23,7 +23,7 @@
 - [T17 CMD/WSL](t17-validation.md)：CMD 既有用例；`t17_wsl` 通过已安装 WSL 执行 `sh -c`。IME/粘贴/尺寸/失败诊断仍不完整。
 - [T20 资源](t20-resources.md)：1000 行历史、256 事件、5 并发 Session、View 重附加；soak/背压未完成。
 - [T21 性能](t21-performance.md)：启动约 1.0 s、空闲 CPU 0 ms/5 s、working set 51.6 MB、50k 行 2.0 s；帧延迟未测。
-- [T18/T19](t18-t19-validation.md)：未安装 Neovim/Helix/lazygit，未执行。
+- [T18/T19](t18-t19-validation.md)：Neovim 0.12.6、Helix 25.07.1、lazygit 0.66.2 的基础插入/保存/退出与 lazygit 面板绘制通过；IME/鼠标/resize/双入口/完整流程未执行。
 - [T24](t24-acceptance.md)：Windows 11 部分自动验收；Windows 10/IME/无开发工具/双系统未执行，状态未完成。
 
 T01 构建在全新的 `.local/build/windows` 目录完成，不依赖探针源码缓存或网络下载。这是本机现有编译工具链的验证，未模拟干净联网机器、旧版 Windows 或无开发工具的发布环境。

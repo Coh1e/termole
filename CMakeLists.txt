@@ -37,21 +37,26 @@ if(TERMOLE_BUILD_APP)
     add_subdirectory(tests)
   endif()
 
-  install(TARGETS termole termole_app termole_host termole_picker
+  install(TARGETS termole
     EXPORT termoleTargets
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION bin
-    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin COMPONENT Runtime
+    LIBRARY DESTINATION bin COMPONENT Runtime
+    ARCHIVE DESTINATION lib COMPONENT Development
   )
-  install(DIRECTORY include/termole DESTINATION include)
-  install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
+  install(TARGETS termole_app termole_host termole_picker
+    RUNTIME DESTINATION bin COMPONENT Runtime
+  )
+  install(DIRECTORY include/termole DESTINATION include COMPONENT Development)
+  install(FILES "$<TARGET_FILE:termole>" DESTINATION bin COMPONENT Development)
+  install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION . COMPONENT Runtime)
   install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md
     docs/t17-validation.md docs/t18-t19-validation.md docs/t20-resources.md
-    docs/t21-performance.md docs/t24-acceptance.md DESTINATION docs)
+    docs/t21-performance.md docs/t24-acceptance.md DESTINATION docs COMPONENT Runtime)
   install(EXPORT termoleTargets
     FILE termoleTargets.cmake
     NAMESPACE Termole::
     DESTINATION lib/cmake/termole
+    COMPONENT Development
   )
   include(CMakePackageConfigHelpers)
   configure_package_config_file(cmake/termoleConfig.cmake.in
@@ -67,8 +72,9 @@ if(TERMOLE_BUILD_APP)
     "${CMAKE_CURRENT_BINARY_DIR}/termoleConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/termoleConfigVersion.cmake"
     DESTINATION lib/cmake/termole
+    COMPONENT Development
   )
-  install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
+  install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples COMPONENT Development)
   set(CPACK_GENERATOR ZIP)
   set(CPACK_PACKAGE_NAME "Termole")
   set(CPACK_PACKAGE_VENDOR "Termole")
@@ -76,6 +82,12 @@ if(TERMOLE_BUILD_APP)
   set(CPACK_PACKAGE_FILE_NAME "Termole-${PROJECT_VERSION}-win64")
   set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+  set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+  set(CPACK_COMPONENTS_ALL Runtime Development)
+  set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Termole runtime")
+  set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "Termole development")
+  set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Termole executables, DLL, help and licence")
+  set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "Headers, import library, CMake package and SDK example")
   include(CPack)
 endif()
 

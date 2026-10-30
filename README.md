@@ -2,7 +2,7 @@
 
 Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
-首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T16 基础、T22/T23 的大部分切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、独立 fzf picker、SDK 安装与便携包，并通过真实 fzf。
+首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22/T23 的大部分切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、嵌入 Termole 窗口的 fzf picker、CMD/WSL/Neovim/Helix/lazygit 基础路径、SDK 安装与分离的 Runtime/Development 包。
 
 - [已确认设计决定](docs/design-decisions.md)
 - [首版实施规格 v0.2 · GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)
@@ -38,7 +38,7 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 .\build.cmd
 ```
 
-`build.cmd` 仅在子进程内载入 MSVC 环境；不同安装位置通过 `TERMOLE_VCVARS` 指定 `vcvars64.bat`。默认构建产品、测试和两个入口，并运行 CTest。`package.cmd` 额外安装开发包并生成 ZIP。
+`build.cmd` 仅在子进程内载入 MSVC 环境；不同安装位置通过 `TERMOLE_VCVARS` 指定 `vcvars64.bat`。默认构建产品、测试和两个入口，并运行 CTest。`package.cmd` 额外安装并生成 Runtime/Development 两个 ZIP。
 
 产物位于 `.local/build/windows/bin`：
 
@@ -63,10 +63,10 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T16 基础、T17 WSL 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、嵌入 Termole 窗口的 picker/多选完整验收（T15/T16）、Neovim/Helix/lazygit 流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、picker 提前关闭/完整背压（T15/T16）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 
-产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite；CLI 另用 Shell32 的 `CommandLineToArgvW`）和静态 CRT；`termole.dll`、`termole.exe`、`termole-host.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 325,632 B、`termole.exe` 326,656 B、宿主 123,392 B；依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md) 与 [T22/T23 报告](docs/t22-t23-validation.md)。
+产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite；CLI 另用 Shell32 的 `CommandLineToArgvW`）和静态 CRT；`termole.dll`、`termole.exe`、`termole-host.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 326,656 B、`termole.exe` 338,944 B、宿主 123,392 B；依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md) 与 [T22/T23 报告](docs/t22-t23-validation.md)。
 
 第三方代码来源、许可证与产品/探针边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

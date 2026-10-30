@@ -59,6 +59,9 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
 find_program(TERMOLE_POWERSHELL NAMES powershell.exe)
 find_program(TERMOLE_FZF NAMES fzf.exe)
 find_program(TERMOLE_WSL NAMES wsl.exe)
+find_program(TERMOLE_NVIM NAMES nvim.exe)
+find_program(TERMOLE_HELIX NAMES hx.exe helix.exe)
+find_program(TERMOLE_LAZYGIT NAMES lazygit.exe)
 if(NOT TERMOLE_POWERSHELL)
   message(STATUS "powershell.exe not found: PowerShell CLI launch test is omitted.")
 endif()
@@ -87,6 +90,28 @@ set_tests_properties(t08_unicode_internal PROPERTIES
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 
+if(TERMOLE_LAZYGIT)
+  add_executable(termole_lazygit_test lazygit_test.cpp)
+  target_link_libraries(termole_lazygit_test PRIVATE termole termole_build_options)
+  add_test(NAME t19_lazygit COMMAND termole_lazygit_test "${TERMOLE_LAZYGIT}")
+  set_tests_properties(t19_lazygit PROPERTIES TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+endif()
+
+if(TERMOLE_NVIM OR TERMOLE_HELIX)
+  add_executable(termole_editor_test editor_test.cpp)
+  target_link_libraries(termole_editor_test PRIVATE termole termole_build_options)
+  if(TERMOLE_NVIM)
+    add_test(NAME t18_nvim COMMAND termole_editor_test "${TERMOLE_NVIM}" nvim)
+    set_tests_properties(t18_nvim PROPERTIES TIMEOUT 60
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+  endif()
+  if(TERMOLE_HELIX)
+    add_test(NAME t18_helix COMMAND termole_editor_test "${TERMOLE_HELIX}" helix)
+    set_tests_properties(t18_helix PROPERTIES TIMEOUT 60
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+  endif()
+endif()
 if(TERMOLE_WSL)
   add_executable(termole_wsl_test wsl_test.cpp)
   target_link_libraries(termole_wsl_test PRIVATE termole termole_build_options)
@@ -123,6 +148,12 @@ if(TERMOLE_FZF)
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 endif()
+
+add_executable(termole_cmd_test cmd_test.cpp)
+target_link_libraries(termole_cmd_test PRIVATE termole termole_build_options)
+add_test(NAME t17_cmd_target COMMAND termole_cmd_test)
+set_tests_properties(t17_cmd_target PROPERTIES TIMEOUT 30
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 add_test(NAME t02_cli_args
   COMMAND "${CMAKE_COMMAND}"

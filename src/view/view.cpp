@@ -34,9 +34,9 @@ std::wstring wide_from_utf8(std::string_view text)
 bool write_clipboard(std::wstring_view text)
 {
     bool opened = false;
-    for (int attempt = 0; attempt < 10 && !opened; ++attempt) {
+    for (int attempt = 0; attempt < 100 && !opened; ++attempt) {
         opened = ::OpenClipboard(nullptr) != FALSE;
-        if (!opened) ::Sleep(1);
+        if (!opened) ::Sleep(2);
     }
     if (!opened) return false;
     ::EmptyClipboard();
@@ -67,9 +67,9 @@ bool write_clipboard(std::wstring_view text)
 std::wstring read_clipboard()
 {
     bool opened = false;
-    for (int attempt = 0; attempt < 10 && !opened; ++attempt) {
+    for (int attempt = 0; attempt < 100 && !opened; ++attempt) {
         opened = ::OpenClipboard(nullptr) != FALSE;
-        if (!opened) ::Sleep(1);
+        if (!opened) ::Sleep(2);
     }
     if (!opened) return {};
     std::wstring text;

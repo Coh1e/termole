@@ -327,7 +327,8 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         }
     }
 
-    std::wstring command_line = quote_argument(program);
+    std::wstring command_line =
+        program.find_first_of(L" \t\"") == std::wstring::npos ? program : quote_argument(program);
     for (const auto& argument : options.arguments) {
         command_line.push_back(L' ');
         command_line += quote_argument(argument);

@@ -23,14 +23,23 @@ ABI 2 作为 0.1 冻结候选：结构体 `size`/`abi_version` 检查、C 调用
 
 ## 便携包
 
-`package.cmd` 重新构建、运行 CTest、安装并调用 CPack。产物：`.local/build/windows/package/Termole-0.1.0-win64.zip`。
+`package.cmd` 重新构建、运行 CTest、安装并调用 CPack。产物：
 
-内容：`bin/`（DLL、独立入口、picker、宿主示例）、`lib/`（导入库/CMake 包）、`include/`、`docs/`、`share/termole/examples`、README/LICENSE/THIRD_PARTY_NOTICES。未包含探针源码、`.local` 缓存、测试证据或 smoke 产品变体。
+```text
+.local/build/windows/package/Termole-0.1.0-win64-Runtime.zip
+.local/build/windows/package/Termole-0.1.0-win64-Development.zip
+```
 
-体积（Release，静态 CRT）：`termole.dll` 325,632 B、`termole.exe` 326,656 B、`termole-host.exe` 123,392 B、`termole-picker.exe` 241,664 B；无 VC++ 运行库 DLL。
+Runtime：`bin/`（DLL、独立入口、picker、宿主示例）、docs、README/LICENSE/THIRD_PARTY_NOTICES。
+Development：`include/`、`lib/`（导入库/CMake 包）、`share/termole/examples/`，并带 `bin/termole.dll` 以便导入目标可直接使用。
+
+未包含探针源码、`.local` 缓存、测试证据或 smoke 产品变体。已把 Runtime 解压到项目 `.local` 并用 `powershell.exe -NoProfile -Command exit` 启动 `termole.exe --close-on-exit`，退出 0；Development 解压后外部示例重新配置/编译/链接通过。
+
+体积（Release，静态 CRT）：`termole.dll` 326,656 B、`termole.exe` 338,944 B、`termole-host.exe` 123,392 B、`termole-picker.exe` 247,296 B；无 VC++ 运行库 DLL。
 
 ## 限制
 
-- 未在干净无开发工具机器上运行包内 `termole.exe`；只验证了安装布局、外部示例编译和本机运行。
-- 运行包与开发包当前合并在一个 ZIP；任务要求可解释地提供两类内容，尚未拆分两个独立归档。
-- 未生成签名、安装器或自动更新；T24 的 Windows 10/11 发布验收仍未执行。
+- Runtime/Development 已拆分；但未在无 MSVC/SDK 的干净机器上运行，也未生成签名、安装器或自动更新。
+- Development 带 DLL 是导入目标自包含的需要；仍把 Runtime 视为运行入口。
+- 未生成符号服务器/调试符号；未做发布级许可审计。
+- T24 的 Windows 10/11 发布验收仍未执行。

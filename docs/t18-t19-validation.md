@@ -1,17 +1,23 @@
 # T18/T19 编辑器与 lazygit 验证
 
-## 状态：未执行
+## 已执行（本机，2026-10-30）
 
-本机没有安装 Neovim、Helix 或 lazygit，且项目约束要求工具/缓存保留在项目内、不修改全局环境；本轮未下载第三方二进制。因此 T18/T19 的验收项目前**未完成**，不能标记为通过。
+工具通过 Scoop 安装，仅用于测试，不进入产品包：
 
-## 需要执行的最小流程
+- Neovim 0.12.6
+- Helix 25.07.1（`hx.exe`）
+- lazygit 0.66.2
 
-- Neovim/Helix：固定版本与最小配置，打开文件、输入中英文、导航、选择/粘贴、resize、保存、退出；覆盖 alternate screen、光标形状、IME、组合/Emoji、鼠标与 bracketed paste。
-- lazygit：独立临时 Git 仓库，固定版本；浏览状态、面板导航、查看 diff、中文路径、鼠标/resize、退出恢复。
-- 两种编辑器与 lazygit 均需独立窗口和嵌入入口各一次。
+`t18_nvim`、`t18_helix`：公开 Session 以 `100×30` ConPTY 启动编辑器，打开临时文件，进入插入模式输入 `HELLO-T18`，Esc 后 `:wq`，等待退出并核对磁盘文件内容。两者通过。
 
-已有底层能力：alternate screen、DSR/DA、宽字符/组合、鼠标模式、bracketed paste、滚屏区。实际兼容缺口必须由真实流程发现，不能以“上游宣称支持”替代。
+`t19_lazygit`：在独立临时 Git 仓库（`user.name/email` 仅该仓库）启动 lazygit 120×35，等待状态/文件/差异面板绘制，Esc 关闭欢迎弹窗，`q` 退出；通过。测试不修改用户实际仓库。
 
-## 后续
+## 仍未覆盖
 
-在有工具的环境把可执行文件放入 `.local/tools`，使用固定版本/校验和，执行上述流程并记录证据；在此之前 T24 不能完成。
+- 中文 IME、组合/Emoji、鼠标与 bracketed paste 的真实编辑器流程。
+- 独立窗口入口（`termole.exe`）与嵌入宿主的双入口对比；当前测试走公开 Session/ConPTY 嵌入路径。
+- Neovim/Helix 的 alternate screen 恢复、光标形状、选择/粘贴、窗口 resize。
+- lazygit 的面板导航、diff、中文路径、鼠标/resize；只验证绘制与退出。
+- 固定版本/校验和未写入发布基线；工具是全局 Scoop 安装，不满足“项目本地工具”约束。
+
+因此 T18/T19 只能记为**基础兼容路径通过**，不能标记完整验收。

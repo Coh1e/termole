@@ -45,7 +45,7 @@ Get-Content names.txt | .\termole.exe --picker --picker-arg --filter --picker-ar
 ## 验证
 
 `t15_picker`：独立入口的 ASCII 单选、NUL/Unicode、缺失 fzf 127。
-`t15_embedded_picker`：Termole 窗口内的 ASCII 单选、NUL/Unicode、`--multi` 参数传递。完整套件 20/20。
+`t15_embedded_picker`：Termole 窗口内的 ASCII 单选、NUL/Unicode、`--multi` 参数传递、12k 行输入。完整套件 24/24。
 
 ## 限制
 

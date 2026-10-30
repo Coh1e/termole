@@ -11,6 +11,7 @@ if errorlevel 1 exit /b %errorlevel%
 ctest --preset windows
 if errorlevel 1 exit /b %errorlevel%
 if exist ".local\package" rmdir /s /q ".local\package"
+if exist ".local\build\windows\package" rmdir /s /q ".local\build\windows\package"
 cmake --install ".local\build\windows" --prefix ".local\package"
 if errorlevel 1 exit /b %errorlevel%
 cpack --config ".local\build\windows\CPackConfig.cmake"

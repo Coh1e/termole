@@ -6,7 +6,7 @@
 
 ## 已执行
 
-- Windows 11 x64：`build.cmd` CTest 20/20；`package.cmd` 构建、安装、CPack；外部 `find_package(Termole)` SDK 宿主编译链接。
+- Windows 11 x64：`build.cmd` CTest 24/24；`package.cmd` 构建、安装、CPack；外部 `find_package(Termole)` SDK 宿主编译链接。
 - 独立/嵌入入口、CMD、Windows PowerShell、WSL `sh`、真实 fzf、picker 字节通道、Applet 网格、选择/剪贴板、配置/Profile、无控制台启动。
 - Release 静态 CRT，无 VC++ 运行库 DLL；体积和空闲/启动/吞吐初步数据见 [T21](t21-performance.md)。
 
