@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows",
+      "displayName": "Windows x64 product",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/.local/build/windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
+      }
+    },
+    {
+      "name": "windows-spikes",
+      "displayName": "Windows x64 technical validation",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/.local/build/spikes",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "TERMOLE_BUILD_SPIKES": true
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows-spikes", "configurePreset": "windows-spikes" }
+  ],
+  "testPresets": [
+    { "name": "windows", "configurePreset": "windows", "output": { "outputOnFailure": true } },
+    { "name": "windows-spikes", "configurePreset": "windows-spikes", "output": { "outputOnFailure": true } }
+  ]
+}
