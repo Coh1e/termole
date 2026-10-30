@@ -33,7 +33,7 @@ ABI 2 作为 0.1 冻结候选：结构体 `size`/`abi_version` 检查、C 调用
 Runtime：`bin/`（DLL、独立入口、picker、宿主示例）、docs、README/LICENSE/THIRD_PARTY_NOTICES。
 Development：`include/`、`lib/`（导入库/CMake 包）、`share/termole/examples/`，并带 `bin/termole.dll` 以便导入目标可直接使用。
 
-未包含探针源码、`.local` 缓存、测试证据或 smoke 产品变体。已把 Runtime 解压到项目 `.local` 并用 `powershell.exe -NoProfile -Command exit` 启动 `termole.exe --close-on-exit`，退出 0；Development 解压后外部示例重新配置/编译/链接通过。
+未包含探针源码、`.local` 缓存、测试证据或 smoke 产品变体。已把 Runtime 解压到项目 `.local` 并用 `powershell.exe -NoProfile -Command exit` 启动 `termole.exe --close-on-exit`，退出 0；Development 解压后外部示例重新配置/编译/链接通过。另在 `.local/build/clean` 从空构建目录配置/编译/安装产品（`BUILD_TESTING=OFF`），并用安装后的 `termole.exe` 复跑基本启动。
 
 体积（Release，静态 CRT）：`termole.dll` 326,656 B、`termole.exe` 338,944 B、`termole-host.exe` 123,392 B、`termole-picker.exe` 247,296 B；无 VC++ 运行库 DLL。
 
