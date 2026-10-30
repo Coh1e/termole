@@ -55,6 +55,19 @@ enum class Key : int {
     CtrlD = TERMOLE_KEY_CTRL_D
 };
 
+enum class EventType {
+    TitleChanged = TERMOLE_EVENT_TITLE_CHANGED,
+    Bell = TERMOLE_EVENT_BELL,
+    Exited = TERMOLE_EVENT_EXITED,
+    Error = TERMOLE_EVENT_ERROR,
+};
+
+struct Event {
+    EventType type;
+    int32_t exit_code = 0;
+    std::string text;
+};
+
 namespace detail {
 
 inline Error take_error(termole_status status)
@@ -166,6 +179,38 @@ public:
         return termole_session_is_running(handle_, &running) == TERMOLE_STATUS_OK && running != 0;
     }
 
+    std::expected<int32_t, Error> exit_code() const
+    {
+        int32_t code = 0;
+        const termole_status status = termole_session_get_exit_code(handle_, &code);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        return code;
+    }
+
+    std::expected<std::optional<Event>, Error> poll_event() const
+    {
+        termole_event raw = TERMOLE_EVENT_INIT;
+        const termole_status status = termole_session_poll_event(handle_, &raw);
+        if (status == TERMOLE_STATUS_EMPTY) return std::optional<Event>{};
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        Event event{ static_cast<EventType>(raw.type), raw.exit_code };
+        if (raw.text) {
+            event.text.assign(raw.text, raw.text_size);
+            termole_free(raw.text);
+        }
+        return std::optional<Event>{ std::move(event) };
+    }
+
+    std::expected<std::string, Error> scrollback_text() const
+    {
+        char* text = nullptr;
+        size_t size = 0;
+        const termole_status status = termole_session_get_scrollback_text(handle_, &text, &size);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        detail::unique_string owned{ text };
+        return std::string{ owned.get(), size };
+    }
+
     std::expected<std::string, Error> screen_text() const
     {
         char* text = nullptr;
@@ -209,14 +254,18 @@ private:
 class View {
 public:
     struct Options {
+        std::wstring font_family;
         uint32_t font_size_dip = 0;
+        uint32_t theme = TERMOLE_THEME_SYSTEM;
     };
 
     static std::expected<View, Error> create(Session& session, HWND parent, const Options& options = {})
     {
         if (!parent) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_ARGUMENT, "parent HWND is null" });
         termole_view_options raw = TERMOLE_VIEW_OPTIONS_INIT;
+        raw.font_family = options.font_family.empty() ? nullptr : options.font_family.c_str();
         raw.font_size_dip = options.font_size_dip;
+        raw.theme = options.theme;
         termole_view* handle = nullptr;
         const termole_status status =
             termole_view_create(session.native_handle(), parent, &raw, &handle);
@@ -247,6 +296,77 @@ public:
     void focus() noexcept
     {
         if (handle_) termole_view_focus(handle_);
+    }
+
+    std::expected<void, Error> set_appearance(const Options& options)
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        termole_appearance appearance = TERMOLE_APPEARANCE_INIT;
+        appearance.font_family =
+            options.font_family.empty() ? nullptr : options.font_family.c_str();
+        appearance.font_size_dip = options.font_size_dip;
+        appearance.theme = options.theme;
+        const termole_status status = termole_view_set_appearance(handle_, &appearance);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        return {};
+    }
+
+    void scroll(int lines) noexcept
+    {
+        if (handle_) (void)termole_view_scroll(handle_, lines);
+    }
+
+    std::expected<void, Error> set_selection(int start_row, int start_column, int end_row,
+                                             int end_column)
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        const termole_status status = termole_view_set_selection(
+            handle_, start_row, start_column, end_row, end_column);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        return {};
+    }
+
+    void clear_selection() noexcept
+    {
+        if (handle_) (void)termole_view_clear_selection(handle_);
+    }
+
+    std::expected<std::string, Error> selection_text() const
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        char* text = nullptr;
+        size_t size = 0;
+        const termole_status status = termole_view_get_selection_text(handle_, &text, &size);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        detail::unique_string owned{ text };
+        return std::string{ owned.get(), size };
+    }
+
+    std::expected<std::string, Error> viewport_text() const
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        char* text = nullptr;
+        size_t size = 0;
+        const termole_status status = termole_view_get_text(handle_, &text, &size);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        detail::unique_string owned{ text };
+        return std::string{ owned.get(), size };
+    }
+
+    std::expected<void, Error> copy_selection()
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        const termole_status status = termole_view_copy_selection(handle_);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        return {};
+    }
+
+    std::expected<void, Error> paste()
+    {
+        if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
+        const termole_status status = termole_view_paste(handle_);
+        if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));
+        return {};
     }
 
     void reset() noexcept

@@ -16,14 +16,17 @@ namespace {
 
 constexpr wchar_t kWindowClassName[] = L"TermoleStandaloneWindow";
 constexpr UINT_PTR kTimerId = 1;
+constexpr int kStatusHeight = 26;
 
 struct AppState {
     termole::app::CliOptions cli;
     std::optional<termole::Session> session;
     std::optional<termole::View> view;
     termole::app::SmokeProbe smoke;
+    HWND status = nullptr;
     bool closing = false;
     bool reported_error = false;
+    bool session_finished = false;
     int exit_code = 0;
 };
 
@@ -62,7 +65,34 @@ void layout_view(AppState& state, HWND window)
     if (!state.view) return;
     RECT client{};
     if (!::GetClientRect(window, &client)) return;
-    ::MoveWindow(state.view->hwnd(), 0, 0, client.right - client.left, client.bottom - client.top, TRUE);
+    const int width = client.right - client.left;
+    const int height = client.bottom - client.top;
+    int view_height = height;
+    if (state.status && ::IsWindowVisible(state.status)) {
+        view_height -= kStatusHeight;
+        ::MoveWindow(state.status, 0, view_height, width, kStatusHeight, TRUE);
+    }
+    ::MoveWindow(state.view->hwnd(), 0, 0, width, view_height, TRUE);
+}
+
+void show_session_status(AppState& state, HWND window, int exit_code)
+{
+    state.exit_code = exit_code;
+    state.session_finished = true;
+    ::KillTimer(window, kTimerId);
+
+    if (state.status) {
+        wchar_t text[160]{};
+        _snwprintf_s(text, _TRUNCATE,
+                     L"Session exited with code %d. Close the window to exit.", exit_code);
+        ::SetWindowTextW(state.status, text);
+        ::ShowWindow(state.status, SW_SHOW);
+    }
+    wchar_t title[160]{};
+    _snwprintf_s(title, _TRUNCATE, L"Termole - exited with code %d", exit_code);
+    ::SetWindowTextW(window, title);
+    layout_view(state, window);
+    ::InvalidateRect(window, nullptr, TRUE);
 }
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
@@ -82,13 +112,19 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         state->session.emplace(std::move(*session));
 
-        auto view = termole::View::create(*state->session, window);
+        termole::View::Options view_options;
+        if (state->cli.font_family) view_options.font_family = *state->cli.font_family;
+        view_options.font_size_dip = state->cli.font_size_dip;
+        view_options.theme = state->cli.theme;
+        auto view = termole::View::create(*state->session, window, view_options);
         if (!view) {
             report_error(*state, termole::app::utf8_to_wide(view.error().message()));
             state->session.reset();
             return -1;
         }
         state->view.emplace(std::move(*view));
+        state->status = ::CreateWindowExW(0, L"STATIC", L"", WS_CHILD | SS_LEFT, 0, 0, 0, 0, window,
+                                          nullptr, ::GetModuleHandleW(nullptr), nullptr);
         layout_view(*state, window);
         state->view->focus();
         state->smoke.start(*state->session);
@@ -108,11 +144,25 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             } else if (smoke == termole::app::SmokeState::Failed) {
                 state->exit_code = 1;
                 ::DestroyWindow(window);
-            } else if (!state->smoke.enabled() && !state->session->running() && !state->closing) {
-                ::PostMessageW(window, WM_CLOSE, 0, 0);
+            } else if (!state->smoke.enabled() && !state->session->running() &&
+                       !state->closing && !state->session_finished) {
+                const auto code = state->session->exit_code();
+                const int exit_code = code ? *code : 1;
+                const bool keep = state->cli.exit_policy == termole::app::ExitPolicy::KeepWindow ||
+                    (state->cli.exit_policy == termole::app::ExitPolicy::Auto && exit_code != 0);
+                state->exit_code = exit_code;
+                if (keep) show_session_status(*state, window, exit_code);
+                else ::PostMessageW(window, WM_CLOSE, 0, 0);
             }
         }
         return 0;
+
+    case WM_CTLCOLORSTATIC: {
+        HDC device = reinterpret_cast<HDC>(wparam);
+        ::SetBkColor(device, RGB(12, 12, 12));
+        ::SetTextColor(device, RGB(230, 230, 230));
+        return reinterpret_cast<LRESULT>(::GetStockObject(BLACK_BRUSH));
+    }
 
     case WM_CLOSE:
         if (state && !state->closing) {

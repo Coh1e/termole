@@ -9,6 +9,7 @@
 #include <termole/termole.h>
 
 #include <atomic>
+#include <deque>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -46,12 +47,30 @@ public:
     Result<void> send_key(termole_key key);
     Result<void> terminate();
 
-    [[nodiscard]] Snapshot snapshot() const;
+    [[nodiscard]] Snapshot snapshot(int scroll_offset = 0) const;
     [[nodiscard]] std::pair<uint16_t, uint16_t> size() const;
     [[nodiscard]] std::string screen_text() const;
+    [[nodiscard]] std::string selection_text(int start_row, int start_column, int end_row,
+                                             int end_column) const;
+    [[nodiscard]] std::string scrollback_text() const;
+    [[nodiscard]] size_t scrollback_line_count() const;
     [[nodiscard]] std::wstring title() const;
+    [[nodiscard]] uint8_t mouse_mode() const;
+    [[nodiscard]] bool sgr_mouse() const;
+    [[nodiscard]] bool bracketed_paste() const;
+    [[nodiscard]] bool application_cursor() const;
     [[nodiscard]] bool running() const noexcept { return running_.load(std::memory_order_acquire); }
     [[nodiscard]] HANDLE data_event() const noexcept { return data_event_.get(); }
+    Result<int32_t> exit_code() const;
+
+    struct EventRecord {
+        termole_event_type type = TERMOLE_EVENT_NONE;
+        int32_t exit_code = 0;
+        std::string text;
+    };
+
+    // Pops one queued event. Returns false when the queue is empty.
+    bool poll_event(EventRecord& out);
 
     // The Session owns at most one View, as required by the accepted design.
     [[nodiscard]] bool attach_view() noexcept;
@@ -63,11 +82,13 @@ private:
     void read_loop();
     void exit_loop();
     Result<void> write_raw(std::string_view bytes);
+    void push_event(termole_event_type type, int32_t exit_code = 0, std::string text = {});
 
     mutable std::mutex mutex_;
     std::mutex input_mutex_;
     std::mutex terminate_mutex_;
     std::mutex pseudo_mutex_;
+    std::mutex event_mutex_;
     Terminal terminal_;
     Utf8Decoder decoder_;
 
@@ -83,6 +104,8 @@ private:
     std::atomic<bool> running_{ true };
     std::atomic<bool> stopping_{ false };
     std::atomic<bool> view_attached_{ false };
+    std::atomic<int32_t> exit_code_{ 0 };
+    std::deque<EventRecord> events_;
 };
 
 } // namespace termole

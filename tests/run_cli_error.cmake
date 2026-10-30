@@ -23,6 +23,17 @@ if(env_diagnostic EQUAL -1)
   message(FATAL_ERROR "malformed --env did not print a diagnostic. stderr:\n${env_error}")
 endif()
 
+execute_process(COMMAND "${APP}" --font-size 7 RESULT_VARIABLE font_result
+                OUTPUT_VARIABLE font_output ERROR_VARIABLE font_error TIMEOUT 10)
+if(NOT font_result EQUAL 2)
+  message(FATAL_ERROR "invalid --font-size exited with '${font_result}', expected 2. stderr:\n${font_error}")
+endif()
+execute_process(COMMAND "${APP}" --theme neon RESULT_VARIABLE theme_result
+                OUTPUT_VARIABLE theme_output ERROR_VARIABLE theme_error TIMEOUT 10)
+if(NOT theme_result EQUAL 2)
+  message(FATAL_ERROR "invalid --theme exited with '${theme_result}', expected 2. stderr:\n${theme_error}")
+endif()
+
 execute_process(COMMAND "${APP}" --cwd "${ROOT}/missing-cwd" -- "cmd.exe" /c exit
                 RESULT_VARIABLE cwd_result OUTPUT_VARIABLE cwd_output
                 ERROR_VARIABLE cwd_error TIMEOUT 20)

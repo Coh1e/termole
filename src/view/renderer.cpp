@@ -1,5 +1,7 @@
 #include "view/renderer.h"
 
+#include "common/limits.h"
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -48,10 +50,11 @@ struct ResolvedCell {
     uint16_t attributes;
 };
 
-ResolvedCell resolve(const Cell& cell, bool cursor)
+ResolvedCell resolve(const Cell& cell, bool cursor, uint32_t default_foreground,
+                     uint32_t default_background)
 {
-    uint32_t foreground = cell.foreground == kColorDefault ? kDefaultForeground : cell.foreground;
-    uint32_t background = cell.background == kColorDefault ? kDefaultBackground : cell.background;
+    uint32_t foreground = cell.foreground == kColorDefault ? default_foreground : cell.foreground;
+    uint32_t background = cell.background == kColorDefault ? default_background : cell.background;
     if ((cell.attributes & kAttrInverse) != 0) std::swap(foreground, background);
     if (cursor) std::swap(foreground, background);
     return { foreground, background, cell.attributes };
@@ -73,13 +76,33 @@ void append_character(std::wstring& output, char32_t character)
 
 } // namespace
 
-Result<std::unique_ptr<Renderer>> Renderer::create(HWND window, uint32_t font_size_dip)
+Result<std::unique_ptr<Renderer>> Renderer::create(HWND window, Appearance appearance)
 {
-    auto renderer =
-        std::unique_ptr<Renderer>(new Renderer(window, font_size_dip == 0 ? 16 : font_size_dip));
+    auto renderer = std::unique_ptr<Renderer>(new Renderer(window, std::move(appearance)));
     auto initialized = renderer->initialize();
     if (!initialized) return std::unexpected(initialized.error());
     return renderer;
+}
+
+void Renderer::resolve_theme_colors()
+{
+    bool light = false;
+    if (theme_ == Theme::Light) {
+        light = true;
+    } else if (theme_ == Theme::Dark) {
+        light = false;
+    } else {
+        DWORD value = 1;
+        DWORD size = sizeof(value);
+        if (::RegGetValueW(HKEY_CURRENT_USER,
+                           L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                           L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size) ==
+            ERROR_SUCCESS) {
+            light = value != 0;
+        }
+    }
+    default_foreground_ = light ? 0x001E1E1Eu : kDefaultForeground;
+    default_background_ = light ? 0x00FAFAFAu : kDefaultBackground;
 }
 
 Result<void> Renderer::initialize()
@@ -88,6 +111,7 @@ Result<void> Renderer::initialize()
     if (!ensure_graphics(error)) return std::unexpected(make_error(TERMOLE_STATUS_SYSTEM_ERROR, error));
     dpi_ = ::GetDpiForWindow(window_);
     if (dpi_ == 0) dpi_ = 96;
+    resolve_theme_colors();
     auto format = create_format();
     if (!format) return format;
     create_target();
@@ -101,8 +125,13 @@ Result<void> Renderer::create_format()
     win::com_ptr<IDWriteTextFormat> bold;
 
     HRESULT status = graphics_state().dwrite->CreateTextFormat(
-        L"Consolas", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        font_family_.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, font_pixels, L"en-us", format.put());
+    if (FAILED(status)) {
+        status = graphics_state().dwrite->CreateTextFormat(
+            L"Consolas", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, font_pixels, L"en-us", format.put());
+    }
     if (FAILED(status)) {
         status = graphics_state().dwrite->CreateTextFormat(
             L"Courier New", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -113,11 +142,11 @@ Result<void> Renderer::create_format()
     }
 
     status = graphics_state().dwrite->CreateTextFormat(
-        L"Consolas", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
+        font_family_.c_str(), nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, font_pixels, L"en-us", bold.put());
     if (FAILED(status)) {
         status = graphics_state().dwrite->CreateTextFormat(
-            L"Courier New", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
+            L"Consolas", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL, font_pixels, L"en-us", bold.put());
     }
     if (FAILED(status)) {
@@ -201,13 +230,65 @@ void Renderer::set_dpi(uint32_t dpi)
     brush_.reset();
 }
 
+Result<void> Renderer::set_appearance(const Appearance& appearance)
+{
+    Appearance next = appearance;
+    if (next.font_family.empty()) next.font_family = L"Consolas";
+    if (next.font_size_dip == 0) next.font_size_dip = 16;
+    if (next.font_size_dip < kMinFontSizeDip || next.font_size_dip > kMaxFontSizeDip) {
+        return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT,
+                                          "font size must be between 8 and 96 DIPs"));
+    }
+
+    const Appearance previous{ font_family_, font_size_dip_, theme_ };
+    font_family_ = std::move(next.font_family);
+    font_size_dip_ = next.font_size_dip;
+    theme_ = next.theme;
+    resolve_theme_colors();
+    auto format = create_format();
+    if (!format) {
+        font_family_ = previous.font_family;
+        font_size_dip_ = previous.font_size_dip;
+        theme_ = previous.theme;
+        resolve_theme_colors();
+        (void)create_format();
+        return format;
+    }
+    target_.reset();
+    brush_.reset();
+    return {};
+}
+
 bool Renderer::paint(const Snapshot& snapshot, bool focused)
 {
     if (!ensure_target()) return false;
 
     const bool cursor_visible = focused && snapshot.cursor_visible;
     target_->BeginDraw();
-    target_->Clear(D2D1::ColorF(kDefaultBackground));
+    target_->Clear(D2D1::ColorF(default_background_));
+
+    int selection_first_row = 0;
+    int selection_first_column = 0;
+    int selection_last_row = 0;
+    int selection_last_column = 0;
+    if (snapshot.has_selection) {
+        selection_first_row = std::min<int>(snapshot.selection_start_row, snapshot.selection_end_row);
+        selection_last_row = std::max<int>(snapshot.selection_start_row, snapshot.selection_end_row);
+        if (snapshot.selection_start_row <= snapshot.selection_end_row) {
+            selection_first_column = snapshot.selection_start_column;
+            selection_last_column = snapshot.selection_end_column;
+        } else {
+            selection_first_column = snapshot.selection_end_column;
+            selection_last_column = snapshot.selection_start_column;
+        }
+    }
+    const auto selected = [&](int row, int column) {
+        if (!snapshot.has_selection) return false;
+        if (row < selection_first_row || row > selection_last_row) return false;
+        if (row == selection_first_row && column < selection_first_column) return false;
+        if (row == selection_last_row && column > selection_last_column) return false;
+        return true;
+    };
 
     for (int row = 0; row < snapshot.rows; ++row) {
         const float top = static_cast<float>(row) * cell_height_;
@@ -226,20 +307,26 @@ bool Renderer::paint(const Snapshot& snapshot, bool focused)
         };
 
         for (int column = 0; column < snapshot.columns; ++column) {
-            const bool cursor = cursor_row && column == snapshot.cursor_column;
-            const ResolvedCell resolved = resolve(
-                snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column], cursor);
-            if (resolved.background == kDefaultBackground) {
+            const Cell& cell = snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column];
+            const bool cursor =
+                cursor_row && (column == snapshot.cursor_column ||
+                               (cell.continuation && column > 0 &&
+                                column - 1 == snapshot.cursor_column));
+            const ResolvedCell resolved =
+                resolve(cell, cursor, default_foreground_, default_background_);
+            const uint32_t background =
+                selected(row, column) ? 0x00264F78u : resolved.background;
+            if (background == default_background_) {
                 flush_background(column);
                 continue;
             }
             if (background_start < 0) {
                 background_start = column;
-                background_color = resolved.background;
-            } else if (resolved.background != background_color) {
+                background_color = background;
+            } else if (background != background_color) {
                 flush_background(column);
                 background_start = column;
-                background_color = resolved.background;
+                background_color = background;
             }
         }
         flush_background(snapshot.columns);
@@ -278,9 +365,11 @@ bool Renderer::paint(const Snapshot& snapshot, bool focused)
         };
 
         for (int column = 0; column < snapshot.columns; ++column) {
+            const Cell& cell = snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column];
+            if (cell.continuation) continue;
             const bool cursor = cursor_row && column == snapshot.cursor_column;
-            const ResolvedCell resolved = resolve(
-                snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column], cursor);
+            const ResolvedCell resolved =
+                resolve(cell, cursor, default_foreground_, default_background_);
             const uint16_t style = resolved.attributes &
                 static_cast<uint16_t>(kAttrBold | kAttrUnderline | kAttrDim | kAttrItalic);
             if (run_start >= 0 && (resolved.foreground != run_color || style != run_style)) {
@@ -292,10 +381,9 @@ bool Renderer::paint(const Snapshot& snapshot, bool focused)
                 run_style = style;
             }
             const char32_t character =
-                (resolved.attributes & kAttrHidden) != 0
-                ? U' '
-                : snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column].character;
+                (resolved.attributes & kAttrHidden) != 0 ? U' ' : cell.character;
             append_character(run, character);
+            for (const char32_t combining : cell.combining) append_character(run, combining);
         }
         flush_text(snapshot.columns);
     }

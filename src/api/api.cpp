@@ -219,6 +219,68 @@ termole_status TERMOLE_CALL termole_session_is_running(termole_session* session,
     });
 }
 
+termole_status TERMOLE_CALL termole_session_get_exit_code(termole_session* session,
+                                                          int32_t* out_exit_code)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_exit_code) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_exit_code is null");
+        const auto code = session->implementation->exit_code();
+        if (!code) return fail(code.error().status, code.error().message);
+        *out_exit_code = *code;
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_session_get_scrollback_text(termole_session* session,
+                                                                char** out_text, size_t* out_size)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_text) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_text is null");
+        *out_text = nullptr;
+        if (out_size) *out_size = 0;
+        return copy_string(session->implementation->scrollback_text(), out_text, out_size);
+    });
+}
+
+termole_status TERMOLE_CALL termole_session_poll_event(termole_session* session,
+                                                       termole_event* out_event)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_event) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_event is null");
+        if (out_event->size < sizeof(termole_event))
+            return fail(TERMOLE_STATUS_ABI_MISMATCH, "termole_event is too small");
+
+        termole::Session::EventRecord event;
+        if (!session->implementation->poll_event(event)) {
+            out_event->type = TERMOLE_EVENT_NONE;
+            out_event->exit_code = 0;
+            out_event->text = nullptr;
+            out_event->text_size = 0;
+            return TERMOLE_STATUS_EMPTY;
+        }
+
+        out_event->type = event.type;
+        out_event->exit_code = event.exit_code;
+        out_event->text = nullptr;
+        out_event->text_size = 0;
+        if (!event.text.empty()) {
+            char* buffer = static_cast<char*>(std::malloc(event.text.size() + 1));
+            if (!buffer) return fail(TERMOLE_STATUS_OUT_OF_MEMORY, "out of memory");
+            std::memcpy(buffer, event.text.data(), event.text.size());
+            buffer[event.text.size()] = '\0';
+            out_event->text = buffer;
+            out_event->text_size = event.text.size();
+        }
+        return TERMOLE_STATUS_OK;
+    });
+}
+
 termole_status TERMOLE_CALL termole_session_get_screen_text(termole_session* session, char** out_text,
                                                             size_t* out_size)
 {
@@ -263,7 +325,11 @@ termole_status TERMOLE_CALL termole_view_create(termole_session* session, HWND p
         if (options->abi_version != TERMOLE_ABI_VERSION)
             return fail(TERMOLE_STATUS_ABI_MISMATCH, "ABI version mismatch");
 
-        auto created = termole::View::create(session->implementation, parent, options->font_size_dip);
+        termole::View::Options view_options;
+        if (options->font_family) view_options.font_family = options->font_family;
+        view_options.font_size_dip = options->font_size_dip;
+        view_options.theme = options->theme;
+        auto created = termole::View::create(session->implementation, parent, view_options);
         if (!created) return fail(created.error().status, created.error().message);
 
         try {
@@ -296,6 +362,108 @@ termole_status TERMOLE_CALL termole_view_focus(termole_view* view)
         if (!view || !view->implementation)
             return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
         view->implementation->focus();
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_set_appearance(termole_view* view,
+                                                        const termole_appearance* appearance)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        if (!appearance) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "appearance is null");
+        if (appearance->size < sizeof(termole_appearance))
+            return fail(TERMOLE_STATUS_ABI_MISMATCH, "termole_appearance is too small");
+        if (appearance->abi_version != TERMOLE_ABI_VERSION)
+            return fail(TERMOLE_STATUS_ABI_MISMATCH, "ABI version mismatch");
+
+        termole::View::Options options;
+        if (appearance->font_family) options.font_family = appearance->font_family;
+        options.font_size_dip = appearance->font_size_dip;
+        options.theme = appearance->theme;
+        auto applied = view->implementation->set_appearance(options);
+        if (!applied) return fail(applied.error().status, applied.error().message);
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_scroll(termole_view* view, int32_t lines)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        view->implementation->scroll(lines);
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_set_selection(termole_view* view, int32_t start_row,
+                                                       int32_t start_column, int32_t end_row,
+                                                       int32_t end_column)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        view->implementation->set_selection(start_row, start_column, end_row, end_column);
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_clear_selection(termole_view* view)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        view->implementation->clear_selection();
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_get_selection_text(termole_view* view, char** out_text,
+                                                            size_t* out_size)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        if (!out_text) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_text is null");
+        *out_text = nullptr;
+        if (out_size) *out_size = 0;
+        return copy_string(view->implementation->selection_text(), out_text, out_size);
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_get_text(termole_view* view, char** out_text,
+                                                  size_t* out_size)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        if (!out_text) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_text is null");
+        *out_text = nullptr;
+        if (out_size) *out_size = 0;
+        return copy_string(view->implementation->viewport_text(), out_text, out_size);
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        auto copied = view->implementation->copy_selection();
+        if (!copied) return fail(copied.error().status, copied.error().message);
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_view_paste(termole_view* view)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        auto pasted = view->implementation->paste();
+        if (!pasted) return fail(pasted.error().status, pasted.error().message);
         return TERMOLE_STATUS_OK;
     });
 }

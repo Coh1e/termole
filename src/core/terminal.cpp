@@ -1,5 +1,6 @@
 #include "core/terminal.h"
 
+#include "common/limits.h"
 #include "core/utf8.h"
 
 #include <algorithm>
@@ -42,11 +43,59 @@ uint32_t rgb_color(int red, int green, int blue)
         static_cast<uint32_t>(std::clamp(blue, 0, 255));
 }
 
+std::string line_text(const Cell* cells, size_t count)
+{
+    std::string line;
+    line.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const Cell& cell = cells[index];
+        if (cell.continuation) continue;
+        append_utf8(line, cell.character == 0 ? U' ' : cell.character);
+        for (const char32_t combining : cell.combining) append_utf8(line, combining);
+    }
+    while (!line.empty() && line.back() == ' ') line.pop_back();
+    return line;
+}
+
+bool in_range(char32_t codepoint, char32_t low, char32_t high)
+{
+    return codepoint >= low && codepoint <= high;
+}
+
+int codepoint_width(char32_t codepoint)
+{
+    if (codepoint == 0) return 0;
+    if (codepoint < 0x20 || (codepoint >= 0x7F && codepoint < 0xA0)) return 0;
+    if (codepoint == 0x200B || codepoint == 0x200C || codepoint == 0x200D ||
+        in_range(codepoint, 0x200E, 0x200F) || in_range(codepoint, 0x202A, 0x202E) ||
+        in_range(codepoint, 0x2060, 0x2064) || in_range(codepoint, 0x2066, 0x206F) ||
+        codepoint == 0xFEFF || in_range(codepoint, 0xFE00, 0xFE0F) ||
+        in_range(codepoint, 0xE0100, 0xE01EF) || in_range(codepoint, 0x1F3FB, 0x1F3FF)) {
+        return 0;
+    }
+    if (in_range(codepoint, 0x0300, 0x036F) || in_range(codepoint, 0x1AB0, 0x1AFF) ||
+        in_range(codepoint, 0x1DC0, 0x1DFF) || in_range(codepoint, 0x20D0, 0x20FF) ||
+        in_range(codepoint, 0xFE20, 0xFE2F)) {
+        return 0;
+    }
+    if (in_range(codepoint, 0x1100, 0x115F) || in_range(codepoint, 0x2329, 0x232A) ||
+        in_range(codepoint, 0x2E80, 0x303E) || in_range(codepoint, 0x3041, 0x33FF) ||
+        in_range(codepoint, 0x3400, 0x4DBF) || in_range(codepoint, 0x4E00, 0x9FFF) ||
+        in_range(codepoint, 0xA000, 0xA4CF) || in_range(codepoint, 0xA960, 0xA97F) ||
+        in_range(codepoint, 0xAC00, 0xD7A3) || in_range(codepoint, 0xF900, 0xFAFF) ||
+        in_range(codepoint, 0xFE10, 0xFE19) || in_range(codepoint, 0xFE30, 0xFE6F) ||
+        in_range(codepoint, 0xFF00, 0xFF60) || in_range(codepoint, 0xFFE0, 0xFFE6) ||
+        in_range(codepoint, 0x1F000, 0x1FAFF) || in_range(codepoint, 0x20000, 0x3FFFD)) {
+        return 2;
+    }
+    return 1;
+}
+
 } // namespace
 
 Terminal::Terminal(uint16_t columns, uint16_t rows)
     : columns_(columns == 0 ? 80 : columns), rows_(rows == 0 ? 24 : rows),
-      cells_(static_cast<size_t>(columns_) * rows_, Cell{})
+      cells_(static_cast<size_t>(columns_) * rows_, Cell{}), scroll_bottom_(rows_ - 1)
 {
 }
 
@@ -70,6 +119,16 @@ const Cell& Terminal::at(uint16_t column, uint16_t row) const
 void Terminal::reset()
 {
     cells_.assign(static_cast<size_t>(columns_) * rows_, Cell{});
+    scrollback_.clear();
+    primary_cells_.clear();
+    alternate_ = false;
+    scroll_top_ = 0;
+    scroll_bottom_ = static_cast<uint16_t>(rows_ - 1);
+    origin_mode_ = false;
+    mouse_mode_ = 0;
+    sgr_mouse_ = false;
+    bracketed_paste_ = false;
+    application_cursor_ = false;
     cursor_column_ = 0;
     cursor_row_ = 0;
     cursor_visible_ = true;
@@ -107,10 +166,24 @@ void Terminal::resize(uint16_t columns, uint16_t rows)
     }
 
     cells_ = std::move(replacement);
+    if (alternate_ && !primary_cells_.empty()) {
+        std::vector<Cell> primary(static_cast<size_t>(columns) * rows, Cell{});
+        const uint16_t primary_columns = std::min(columns, columns_);
+        const uint16_t primary_rows = std::min(rows, rows_);
+        for (uint16_t row = 0; row < primary_rows; ++row) {
+            for (uint16_t column = 0; column < primary_columns; ++column) {
+                primary[static_cast<size_t>(row) * columns + column] =
+                    primary_cells_[static_cast<size_t>(row) * columns_ + column];
+            }
+        }
+        primary_cells_ = std::move(primary);
+    }
     columns_ = columns;
     rows_ = rows;
     cursor_column_ = std::min(cursor_column_, static_cast<uint16_t>(columns_ - 1));
     cursor_row_ = std::min(cursor_row_, static_cast<uint16_t>(rows_ - 1));
+    scroll_top_ = 0;
+    scroll_bottom_ = static_cast<uint16_t>(rows_ - 1);
     wrap_pending_ = false;
 }
 
@@ -314,22 +387,77 @@ int Terminal::param(size_t index, int fallback) const
     return value < 0 ? fallback : value;
 }
 
+void Terminal::enter_alternate_screen()
+{
+    if (alternate_) return;
+    primary_cells_ = cells_;
+    primary_cursor_column_ = cursor_column_;
+    primary_cursor_row_ = cursor_row_;
+    primary_cursor_visible_ = cursor_visible_;
+    primary_foreground_ = foreground_;
+    primary_background_ = background_;
+    primary_attributes_ = attributes_;
+    alternate_ = true;
+    cells_.assign(static_cast<size_t>(columns_) * rows_, Cell{});
+    cursor_column_ = 0;
+    cursor_row_ = 0;
+    wrap_pending_ = false;
+    scroll_top_ = 0;
+    scroll_bottom_ = static_cast<uint16_t>(rows_ - 1);
+}
+
+void Terminal::leave_alternate_screen()
+{
+    if (!alternate_) return;
+    cells_ = std::move(primary_cells_);
+    primary_cells_.clear();
+    alternate_ = false;
+    cursor_column_ = std::min(primary_cursor_column_, static_cast<uint16_t>(columns_ - 1));
+    cursor_row_ = std::min(primary_cursor_row_, static_cast<uint16_t>(rows_ - 1));
+    cursor_visible_ = primary_cursor_visible_;
+    foreground_ = primary_foreground_;
+    background_ = primary_background_;
+    attributes_ = primary_attributes_;
+    wrap_pending_ = false;
+    scroll_top_ = 0;
+    scroll_bottom_ = static_cast<uint16_t>(rows_ - 1);
+}
+
+void Terminal::set_scroll_region(int top, int bottom)
+{
+    top = std::clamp(top, 0, static_cast<int>(rows_) - 1);
+    bottom = std::clamp(bottom, 0, static_cast<int>(rows_) - 1);
+    if (top >= bottom) {
+        top = 0;
+        bottom = static_cast<int>(rows_) - 1;
+    }
+    scroll_top_ = static_cast<uint16_t>(top);
+    scroll_bottom_ = static_cast<uint16_t>(bottom);
+    cursor_column_ = 0;
+    cursor_row_ = origin_mode_ ? scroll_top_ : 0;
+    wrap_pending_ = false;
+}
+
 void Terminal::dispatch_csi(char32_t final)
 {
     switch (final) {
     case U'@':
         insert_chars(std::max(1, param(0, 1)));
         break;
-    case U'A':
-        cursor_row_ = static_cast<uint16_t>(
-            std::clamp(static_cast<int>(cursor_row_) - std::max(1, param(0, 1)), 0, rows_ - 1));
+    case U'A': {
+        const int low = origin_mode_ ? static_cast<int>(scroll_top_) : 0;
+        cursor_row_ = static_cast<uint16_t>(std::clamp(
+            static_cast<int>(cursor_row_) - std::max(1, param(0, 1)), low, rows_ - 1));
         wrap_pending_ = false;
         break;
-    case U'B':
-        cursor_row_ = static_cast<uint16_t>(
-            std::clamp(static_cast<int>(cursor_row_) + std::max(1, param(0, 1)), 0, rows_ - 1));
+    }
+    case U'B': {
+        const int high = origin_mode_ ? static_cast<int>(scroll_bottom_) : static_cast<int>(rows_) - 1;
+        cursor_row_ = static_cast<uint16_t>(std::clamp(
+            static_cast<int>(cursor_row_) + std::max(1, param(0, 1)), 0, high));
         wrap_pending_ = false;
         break;
+    }
     case U'C':
         cursor_column_ = static_cast<uint16_t>(
             std::clamp(static_cast<int>(cursor_column_) + std::max(1, param(0, 1)), 0, columns_ - 1));
@@ -357,11 +485,16 @@ void Terminal::dispatch_csi(char32_t final)
         wrap_pending_ = false;
         break;
     case U'H':
-    case U'f':
-        cursor_row_ = static_cast<uint16_t>(std::clamp(param(0, 1) - 1, 0, rows_ - 1));
+    case U'f': {
+        int row = param(0, 1) - 1;
+        if (origin_mode_) row = std::clamp(row + scroll_top_, static_cast<int>(scroll_top_),
+                                           static_cast<int>(scroll_bottom_));
+        else row = std::clamp(row, 0, static_cast<int>(rows_) - 1);
+        cursor_row_ = static_cast<uint16_t>(row);
         cursor_column_ = static_cast<uint16_t>(std::clamp(param(1, 1) - 1, 0, columns_ - 1));
         wrap_pending_ = false;
         break;
+    }
     case U'J':
         erase_in_display(param(0, 0));
         break;
@@ -398,7 +531,8 @@ void Terminal::dispatch_csi(char32_t final)
         if (private_marker_ == 0) respond("\x1b[?1;2c");
         break;
     case U'd':
-        cursor_row_ = static_cast<uint16_t>(std::clamp(param(0, 1) - 1, 0, rows_ - 1));
+        cursor_row_ = static_cast<uint16_t>(std::clamp(
+            origin_mode_ ? param(0, 1) - 1 + scroll_top_ : param(0, 1) - 1, 0, rows_ - 1));
         wrap_pending_ = false;
         break;
     case U'e':
@@ -442,6 +576,9 @@ void Terminal::dispatch_csi(char32_t final)
         }
         wrap_pending_ = false;
         break;
+    case U'r':
+        set_scroll_region(param(0, 1) - 1, param(1, rows_) - 1);
+        break;
     default:
         break;
     }
@@ -472,6 +609,7 @@ void Terminal::dispatch_osc()
                 }
                 if (title_ != title) {
                     title_ = std::move(title);
+                    if (on_title_) on_title_(title_);
                 }
             }
         }
@@ -482,6 +620,9 @@ void Terminal::dispatch_osc()
 void Terminal::execute_control(char32_t codepoint)
 {
     switch (codepoint) {
+    case 0x07: // BEL
+        if (on_bell_) on_bell_();
+        break;
     case 0x08: // BS
         wrap_pending_ = false;
         if (cursor_column_ > 0) --cursor_column_;
@@ -516,9 +657,55 @@ void Terminal::execute_control(char32_t codepoint)
     }
 }
 
+void Terminal::clear_cell(uint16_t column, uint16_t row)
+{
+    Cell& cell = at(column, row);
+    if (cell.continuation && column > 0) at(static_cast<uint16_t>(column - 1), row) = blank();
+    if (cell.width == 2 && column + 1 < columns_) at(static_cast<uint16_t>(column + 1), row) = blank();
+    cell = blank();
+}
+
+void Terminal::append_combining(char32_t codepoint)
+{
+    int column = static_cast<int>(cursor_column_);
+    int row = static_cast<int>(cursor_row_);
+    if (column > 0) {
+        --column;
+    } else if (row > 0) {
+        --row;
+        column = static_cast<int>(columns_) - 1;
+    } else {
+        return;
+    }
+    Cell& cell = at(static_cast<uint16_t>(column), static_cast<uint16_t>(row));
+    if (cell.continuation && column > 0) {
+        Cell& base = at(static_cast<uint16_t>(column - 1), static_cast<uint16_t>(row));
+        if (base.combining.size() < 16) base.combining.push_back(codepoint);
+        return;
+    }
+    if (cell.combining.size() < 16) cell.combining.push_back(codepoint);
+}
+
 void Terminal::print(char32_t codepoint)
 {
     if (codepoint == 0) return;
+
+    if (codepoint == 0x200D) {
+        append_combining(codepoint);
+        join_next_ = true;
+        return;
+    }
+    if (join_next_) {
+        append_combining(codepoint);
+        join_next_ = false;
+        return;
+    }
+
+    int width = codepoint_width(codepoint);
+    if (width == 0) {
+        append_combining(codepoint);
+        return;
+    }
 
     if (wrap_pending_) {
         if (auto_wrap_) {
@@ -529,50 +716,88 @@ void Terminal::print(char32_t codepoint)
     }
 
     if (cursor_column_ >= columns_) cursor_column_ = static_cast<uint16_t>(columns_ - 1);
+    if (width == 2 && cursor_column_ + 1 >= columns_) {
+        if (auto_wrap_) {
+            cursor_column_ = 0;
+            linefeed();
+        } else {
+            width = 1;
+        }
+    }
+
+    clear_cell(cursor_column_, cursor_row_);
     Cell& cell = at(cursor_column_, cursor_row_);
     cell = Cell{ codepoint, foreground_, background_, attributes_ };
+    cell.width = static_cast<uint8_t>(width);
+    if (width == 2 && cursor_column_ + 1 < columns_) {
+        Cell& continuation = at(static_cast<uint16_t>(cursor_column_ + 1), cursor_row_);
+        continuation = Cell{};
+        continuation.continuation = true;
+        continuation.background = background_;
+        continuation.foreground = foreground_;
+        continuation.attributes = attributes_;
+    }
     last_printed_ = codepoint;
 
-    if (cursor_column_ + 1 >= columns_) {
+    const int next = static_cast<int>(cursor_column_) + width;
+    if (next >= columns_) {
         if (auto_wrap_) {
             wrap_pending_ = true;
             cursor_column_ = static_cast<uint16_t>(columns_ - 1);
+        } else {
+            cursor_column_ = static_cast<uint16_t>(columns_ - 1);
         }
     } else {
-        ++cursor_column_;
+        cursor_column_ = static_cast<uint16_t>(next);
     }
 }
 
 void Terminal::linefeed()
 {
     wrap_pending_ = false;
-    if (cursor_row_ + 1 < rows_) {
-        ++cursor_row_;
-    } else {
+    if (cursor_row_ == scroll_bottom_) {
         scroll_up(1);
+    } else if (cursor_row_ + 1 < rows_) {
+        ++cursor_row_;
     }
 }
 
 void Terminal::reverse_index()
 {
     wrap_pending_ = false;
-    if (cursor_row_ > 0) {
-        --cursor_row_;
-    } else {
+    if (cursor_row_ == scroll_top_) {
         scroll_down(1);
+    } else if (cursor_row_ > 0) {
+        --cursor_row_;
     }
 }
 
 void Terminal::scroll_up(int lines)
 {
     if (lines <= 0) return;
-    if (lines >= rows_) {
-        for (auto& cell : cells_) cell = Cell{};
+    const int region_rows = static_cast<int>(scroll_bottom_) - static_cast<int>(scroll_top_) + 1;
+    lines = std::min(lines, region_rows);
+    const size_t stride = columns_;
+    const size_t region_begin = static_cast<size_t>(scroll_top_) * stride;
+    const size_t region_end = (static_cast<size_t>(scroll_bottom_) + 1) * stride;
+    const bool full_region = scroll_top_ == 0 && scroll_bottom_ == rows_ - 1;
+
+    if (full_region && !alternate_) {
+        for (int row = 0; row < lines; ++row) {
+            const auto first =
+                cells_.begin() + static_cast<std::ptrdiff_t>(region_begin + row * stride);
+            scrollback_.emplace_back(first, first + static_cast<std::ptrdiff_t>(stride));
+        }
+        while (scrollback_.size() > kScrollbackLines) scrollback_.pop_front();
+    }
+
+    if (lines >= region_rows) {
+        for (size_t index = region_begin; index < region_end; ++index) cells_[index] = blank();
     } else {
-        const size_t stride = columns_;
-        std::move(cells_.begin() + static_cast<std::ptrdiff_t>(lines * stride), cells_.end(),
-                  cells_.begin());
-        for (size_t index = cells_.size() - static_cast<size_t>(lines) * stride; index < cells_.size();
+        std::move(cells_.begin() + static_cast<std::ptrdiff_t>(region_begin + lines * stride),
+                  cells_.begin() + static_cast<std::ptrdiff_t>(region_end),
+                  cells_.begin() + static_cast<std::ptrdiff_t>(region_begin));
+        for (size_t index = region_end - static_cast<size_t>(lines) * stride; index < region_end;
              ++index)
             cells_[index] = blank();
     }
@@ -581,13 +806,21 @@ void Terminal::scroll_up(int lines)
 void Terminal::scroll_down(int lines)
 {
     if (lines <= 0) return;
-    if (lines >= rows_) {
-        for (auto& cell : cells_) cell = Cell{};
+    const int region_rows = static_cast<int>(scroll_bottom_) - static_cast<int>(scroll_top_) + 1;
+    lines = std::min(lines, region_rows);
+    const size_t stride = columns_;
+    const size_t region_begin = static_cast<size_t>(scroll_top_) * stride;
+    const size_t region_end = (static_cast<size_t>(scroll_bottom_) + 1) * stride;
+
+    if (lines >= region_rows) {
+        for (size_t index = region_begin; index < region_end; ++index) cells_[index] = blank();
     } else {
-        const size_t stride = columns_;
-        std::move_backward(cells_.begin(), cells_.end() - static_cast<std::ptrdiff_t>(lines * stride),
-                           cells_.end());
-        for (size_t index = 0; index < static_cast<size_t>(lines) * stride; ++index) cells_[index] = blank();
+        std::move_backward(cells_.begin() + static_cast<std::ptrdiff_t>(region_begin),
+                           cells_.begin() + static_cast<std::ptrdiff_t>(region_end - lines * stride),
+                           cells_.begin() + static_cast<std::ptrdiff_t>(region_end));
+        for (size_t index = region_begin; index < region_begin + static_cast<size_t>(lines) * stride;
+             ++index)
+            cells_[index] = blank();
     }
 }
 
@@ -604,6 +837,7 @@ void Terminal::erase_in_display(int mode)
             at(column, cursor_row_) = blank();
     } else {
         for (auto& cell : cells_) cell = blank();
+        if (mode == 3) scrollback_.clear();
     }
     wrap_pending_ = false;
 }
@@ -623,25 +857,29 @@ void Terminal::erase_in_line(int mode)
 
 void Terminal::insert_lines(int count)
 {
-    if (count <= 0 || cursor_row_ >= rows_) return;
-    count = std::min<int>(count, rows_ - cursor_row_);
+    if (count <= 0 || cursor_row_ > scroll_bottom_) return;
+    count = std::min<int>(count, static_cast<int>(scroll_bottom_) - cursor_row_ + 1);
     const size_t stride = columns_;
     const size_t first = static_cast<size_t>(cursor_row_) * stride;
+    const size_t region_end = (static_cast<size_t>(scroll_bottom_) + 1) * stride;
     std::move_backward(cells_.begin() + static_cast<std::ptrdiff_t>(first),
-                       cells_.end() - static_cast<std::ptrdiff_t>(count * stride), cells_.end());
+                       cells_.begin() + static_cast<std::ptrdiff_t>(region_end - count * stride),
+                       cells_.begin() + static_cast<std::ptrdiff_t>(region_end));
     for (size_t index = first; index < first + static_cast<size_t>(count) * stride; ++index)
         cells_[index] = blank();
 }
 
 void Terminal::delete_lines(int count)
 {
-    if (count <= 0 || cursor_row_ >= rows_) return;
-    count = std::min<int>(count, rows_ - cursor_row_);
+    if (count <= 0 || cursor_row_ > scroll_bottom_) return;
+    count = std::min<int>(count, static_cast<int>(scroll_bottom_) - cursor_row_ + 1);
     const size_t stride = columns_;
     const size_t first = static_cast<size_t>(cursor_row_) * stride;
-    std::move(cells_.begin() + static_cast<std::ptrdiff_t>(first + count * stride), cells_.end(),
+    const size_t region_end = (static_cast<size_t>(scroll_bottom_) + 1) * stride;
+    std::move(cells_.begin() + static_cast<std::ptrdiff_t>(first + count * stride),
+              cells_.begin() + static_cast<std::ptrdiff_t>(region_end),
               cells_.begin() + static_cast<std::ptrdiff_t>(first));
-    for (size_t index = cells_.size() - static_cast<size_t>(count) * stride; index < cells_.size();
+    for (size_t index = region_end - static_cast<size_t>(count) * stride; index < region_end;
          ++index)
         cells_[index] = blank();
 }
@@ -756,6 +994,26 @@ void Terminal::set_mode(bool enabled)
             } else if (mode == 7) {
                 auto_wrap_ = enabled;
                 if (!enabled) wrap_pending_ = false;
+            } else if (mode == 6) {
+                origin_mode_ = enabled;
+                cursor_column_ = 0;
+                cursor_row_ = origin_mode_ ? scroll_top_ : 0;
+                wrap_pending_ = false;
+            } else if (mode == 47 || mode == 1047 || mode == 1049) {
+                if (enabled) enter_alternate_screen();
+                else leave_alternate_screen();
+            } else if (mode == 1) {
+                application_cursor_ = enabled;
+            } else if (mode == 1000 || mode == 1002 || mode == 1003) {
+                if (enabled) {
+                    mouse_mode_ = static_cast<uint8_t>(mode == 1000 ? 1 : (mode == 1002 ? 2 : 3));
+                } else if (mouse_mode_ == (mode == 1000 ? 1 : (mode == 1002 ? 2 : 3))) {
+                    mouse_mode_ = 0;
+                }
+            } else if (mode == 1006) {
+                sgr_mouse_ = enabled;
+            } else if (mode == 2004) {
+                bracketed_paste_ = enabled;
             }
         }
     }
@@ -785,15 +1043,69 @@ void Terminal::respond(std::string_view text)
     if (respond_) respond_(text);
 }
 
-Snapshot Terminal::snapshot() const
+Snapshot Terminal::snapshot(int scroll_offset) const
 {
     Snapshot result;
     result.columns = columns_;
     result.rows = rows_;
-    result.cells = cells_;
+    result.cells.assign(static_cast<size_t>(columns_) * rows_, Cell{});
+    const int history = static_cast<int>(scrollback_.size());
+    const int offset = std::clamp(scroll_offset, 0, history);
+    const int first_row = history - offset;
+    for (int row = 0; row < rows_; ++row) {
+        const int absolute = first_row + row;
+        for (int column = 0; column < columns_; ++column) {
+            Cell cell;
+            if (absolute < history) {
+                cell = scrollback_[static_cast<size_t>(absolute)][static_cast<size_t>(column)];
+            } else {
+                const int screen_row = absolute - history;
+                if (screen_row >= 0 && screen_row < rows_) {
+                    cell = cells_[static_cast<size_t>(screen_row) * columns_ + column];
+                }
+            }
+            result.cells[static_cast<size_t>(row) * columns_ + column] = std::move(cell);
+        }
+    }
     result.cursor_column = cursor_column_;
     result.cursor_row = cursor_row_;
-    result.cursor_visible = cursor_visible_;
+    result.cursor_visible = offset == 0 ? cursor_visible_ : false;
+    return result;
+}
+
+std::string Terminal::selection_text(int start_row, int start_column, int end_row,
+                                     int end_column) const
+{
+    const int history = static_cast<int>(scrollback_.size());
+    const int total_rows = history + rows_;
+    int first_row = std::clamp(start_row, 0, total_rows - 1);
+    int first_column = std::clamp(start_column, 0, columns_ - 1);
+    int last_row = std::clamp(end_row, 0, total_rows - 1);
+    int last_column = std::clamp(end_column, 0, columns_ - 1);
+    if (first_row > last_row || (first_row == last_row && first_column > last_column)) {
+        std::swap(first_row, last_row);
+        std::swap(first_column, last_column);
+    }
+
+    const auto cell_at = [&](int row, int column) -> const Cell& {
+        if (row < history) {
+            return scrollback_[static_cast<size_t>(row)][static_cast<size_t>(column)];
+        }
+        return cells_[static_cast<size_t>(row - history) * columns_ + column];
+    };
+
+    std::string result;
+    for (int row = first_row; row <= last_row; ++row) {
+        const int begin = row == first_row ? first_column : 0;
+        const int end = row == last_row ? last_column : columns_ - 1;
+        for (int column = begin; column <= end; ++column) {
+            const Cell& cell = cell_at(row, column);
+            if (cell.continuation) continue;
+            append_utf8(result, cell.character == 0 ? U' ' : cell.character);
+            for (const char32_t combining : cell.combining) append_utf8(result, combining);
+        }
+        if (row != last_row) result.push_back('\n');
+    }
     return result;
 }
 
@@ -804,13 +1116,7 @@ std::string Terminal::text() const
     int last_content_row = -1;
 
     for (uint16_t row = 0; row < rows_; ++row) {
-        std::string line;
-        line.reserve(columns_);
-        for (uint16_t column = 0; column < columns_; ++column) {
-            const Cell& cell = at(column, row);
-            append_utf8(line, cell.character == 0 ? U' ' : cell.character);
-        }
-        while (!line.empty() && line.back() == ' ') line.pop_back();
+        std::string line = line_text(cells_.data() + static_cast<size_t>(row) * columns_, columns_);
         if (!line.empty()) last_content_row = static_cast<int>(row);
         rows.push_back(std::move(line));
     }
@@ -821,6 +1127,16 @@ std::string Terminal::text() const
     for (int row = 0; row <= last_content_row; ++row) {
         result += rows[static_cast<size_t>(row)];
         if (row != last_content_row) result.push_back('\n');
+    }
+    return result;
+}
+
+std::string Terminal::scrollback_text() const
+{
+    std::string result;
+    for (size_t index = 0; index < scrollback_.size(); ++index) {
+        if (index != 0) result.push_back('\n');
+        result += line_text(scrollback_[index].data(), scrollback_[index].size());
     }
     return result;
 }

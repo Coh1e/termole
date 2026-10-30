@@ -2,16 +2,103 @@
 
 #include "core/utf8.h"
 
+#include <windowsx.h>
+#include <imm.h>
+
 #include <algorithm>
+#include <cstring>
 #include <exception>
 #include <mutex>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace termole {
 namespace {
 
 constexpr wchar_t kViewClassName[] = L"TermoleViewWindow";
 constexpr UINT kRedrawMessage = WM_APP + 1;
+
+std::wstring wide_from_utf8(std::string_view text)
+{
+    if (text.empty()) return {};
+    const int length = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                                             static_cast<int>(text.size()), nullptr, 0);
+    if (length <= 0) return {};
+    std::wstring wide(static_cast<size_t>(length), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                          static_cast<int>(text.size()), wide.data(), length);
+    return wide;
+}
+
+bool write_clipboard(std::wstring_view text)
+{
+    if (!::OpenClipboard(nullptr)) return false;
+    ::EmptyClipboard();
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) {
+        ::CloseClipboard();
+        return false;
+    }
+    void* data = ::GlobalLock(memory);
+    if (!data) {
+        ::GlobalFree(memory);
+        ::CloseClipboard();
+        return false;
+    }
+    std::memcpy(data, text.data(), text.size() * sizeof(wchar_t));
+    static_cast<wchar_t*>(data)[text.size()] = L'\0';
+    ::GlobalUnlock(memory);
+    if (!::SetClipboardData(CF_UNICODETEXT, memory)) {
+        ::GlobalFree(memory);
+        ::CloseClipboard();
+        return false;
+    }
+    ::CloseClipboard();
+    return true;
+}
+
+std::wstring read_clipboard()
+{
+    if (!::OpenClipboard(nullptr)) return {};
+    std::wstring text;
+    HANDLE data = ::GetClipboardData(CF_UNICODETEXT);
+    if (data) {
+        const auto* characters = static_cast<const wchar_t*>(::GlobalLock(data));
+        if (characters) {
+            text.assign(characters);
+            ::GlobalUnlock(data);
+        }
+    }
+    ::CloseClipboard();
+    return text;
+}
+
+int mouse_modifiers()
+{
+    int modifiers = 0;
+    if ((::GetKeyState(VK_SHIFT) & 0x8000) != 0) modifiers |= 4;
+    if ((::GetKeyState(VK_MENU) & 0x8000) != 0) modifiers |= 8;
+    if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) modifiers |= 16;
+    return modifiers;
+}
+
+std::string mouse_sequence(int button, int column, int row, bool press, bool sgr)
+{
+    column = std::max(1, column);
+    row = std::max(1, row);
+    if (sgr) {
+        return "\x1b[<" + std::to_string(button) + ";" + std::to_string(column) + ";" +
+            std::to_string(row) + (press ? "M" : "m");
+    }
+    const int encoded_button = press ? button : 3;
+    std::string sequence = "\x1b[M";
+    sequence.push_back(static_cast<char>(32 + encoded_button));
+    sequence.push_back(static_cast<char>(32 + column));
+    sequence.push_back(static_cast<char>(32 + row));
+    return sequence;
+}
 
 HMODULE module_instance()
 {
@@ -59,13 +146,17 @@ View::~View()
 }
 
 Result<std::unique_ptr<View>> View::create(std::shared_ptr<Session> session, HWND parent,
-                                          uint32_t font_size_dip)
+                                          const Options& options)
 {
     if (!session) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null"));
     if (!parent) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "parent HWND is null"));
-    if (font_size_dip != 0 && (font_size_dip < kMinFontSizeDip || font_size_dip > kMaxFontSizeDip)) {
+    if (options.font_size_dip != 0 &&
+        (options.font_size_dip < kMinFontSizeDip || options.font_size_dip > kMaxFontSizeDip)) {
         return std::unexpected(
             make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "font size must be between 8 and 96 DIPs"));
+    }
+    if (options.theme > static_cast<uint32_t>(Theme::Light)) {
+        return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "unknown theme"));
     }
 
     auto view = std::unique_ptr<View>(new View(std::move(session), parent));
@@ -73,12 +164,39 @@ Result<std::unique_ptr<View>> View::create(std::shared_ptr<Session> session, HWN
         return std::unexpected(
             make_error(TERMOLE_STATUS_INVALID_STATE, "session already has an attached view"));
     }
-    auto initialized = view->initialize(font_size_dip);
+    auto initialized = view->initialize(options);
     if (!initialized) return std::unexpected(initialized.error());
     return view;
 }
 
-Result<void> View::initialize(uint32_t font_size_dip)
+Result<void> View::set_appearance(const Options& options)
+{
+    if (!renderer_) {
+        return std::unexpected(make_error(TERMOLE_STATUS_INVALID_STATE, "view is not initialized"));
+    }
+    if (options.font_size_dip != 0 &&
+        (options.font_size_dip < kMinFontSizeDip || options.font_size_dip > kMaxFontSizeDip)) {
+        return std::unexpected(
+            make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "font size must be between 8 and 96 DIPs"));
+    }
+    if (options.theme > static_cast<uint32_t>(Theme::Light)) {
+        return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "unknown theme"));
+    }
+    Appearance appearance{
+        options.font_family.empty() ? L"Consolas" : options.font_family,
+        options.font_size_dip == 0 ? 16u : options.font_size_dip,
+        static_cast<Theme>(options.theme),
+    };
+    auto applied = renderer_->set_appearance(appearance);
+    if (!applied) return applied;
+    appearance_ = std::move(appearance);
+    on_size();
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+    return {};
+}
+
+Result<void> View::initialize(const Options& options)
 {
     if (!register_view_class()) {
         return std::unexpected(win::system_error("RegisterClassExW", ::GetLastError()));
@@ -91,7 +209,12 @@ Result<void> View::initialize(uint32_t font_size_dip)
         return std::unexpected(win::system_error("CreateWindowExW", ::GetLastError()));
     }
 
-    auto renderer = Renderer::create(window, font_size_dip);
+    appearance_ = Appearance{
+        options.font_family.empty() ? L"Consolas" : options.font_family,
+        options.font_size_dip == 0 ? 16u : options.font_size_dip,
+        static_cast<Theme>(options.theme),
+    };
+    auto renderer = Renderer::create(window, appearance_);
     if (!renderer) {
         auto error = renderer.error();
         ::DestroyWindow(window);
@@ -159,6 +282,14 @@ LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lp
         return 0;
     case WM_LBUTTONDOWN:
         ::SetFocus(window);
+        on_left_button_down(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam),
+                            (wparam & MK_SHIFT) != 0);
+        return 0;
+    case WM_LBUTTONUP:
+        on_left_button_up();
+        return 0;
+    case WM_MOUSEMOVE:
+        on_mouse_move(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
         return 0;
     case WM_CHAR:
         on_character(static_cast<wchar_t>(wparam));
@@ -166,14 +297,27 @@ LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lp
     case WM_KEYDOWN:
         on_key_down(wparam);
         return 0;
+    case WM_IME_STARTCOMPOSITION:
+        position_ime();
+        return ::DefWindowProcW(window, message, wparam, lparam);
+    case WM_IME_COMPOSITION:
+        position_ime();
+        on_ime_composition(lparam);
+        return ::DefWindowProcW(window, message, wparam, lparam);
+    case WM_IME_ENDCOMPOSITION:
+        ::InvalidateRect(window, nullptr, FALSE);
+        return ::DefWindowProcW(window, message, wparam, lparam);
     case WM_GETDLGCODE:
         return DLGC_WANTARROWS | DLGC_WANTTAB | DLGC_WANTCHARS;
     case kRedrawMessage:
         ::InvalidateRect(window, nullptr, FALSE);
         return 0;
-    case WM_MOUSEWHEEL:
-        // Scrollback and mouse reporting belong to later slices.
+    case WM_MOUSEWHEEL: {
+        POINT point{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+        ::ScreenToClient(window, &point);
+        on_mouse_wheel(GET_WHEEL_DELTA_WPARAM(wparam), (wparam & MK_SHIFT) != 0);
         return 0;
+    }
     case WM_SETCURSOR:
         ::SetCursor(::LoadCursorW(nullptr, IDC_IBEAM));
         return TRUE;
@@ -207,6 +351,7 @@ void View::on_size()
         last_rows_ = static_cast<uint16_t>(rows);
         (void)session_->resize(last_columns_, last_rows_);
     }
+    scroll_offset_ = std::min(scroll_offset_, static_cast<int>(session_->scrollback_line_count()));
     ::InvalidateRect(window, nullptr, FALSE);
 }
 
@@ -219,7 +364,17 @@ void View::on_paint()
     HDC device = ::BeginPaint(window, &paint);
     bool painted = false;
     if (renderer_) {
-        painted = renderer_->paint(session_->snapshot(), focused_);
+        Snapshot snapshot = session_->snapshot(scroll_offset_);
+        if (has_selection_) {
+            const int history = static_cast<int>(session_->scrollback_line_count());
+            const int first = history - scroll_offset_;
+            snapshot.has_selection = true;
+            snapshot.selection_start_row = static_cast<int16_t>(selection_anchor_row_ - first);
+            snapshot.selection_start_column = static_cast<int16_t>(selection_anchor_column_);
+            snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
+            snapshot.selection_end_column = static_cast<int16_t>(selection_focus_column_);
+        }
+        painted = renderer_->paint(snapshot, focused_);
     }
     if (!painted) {
         RECT client{};
@@ -227,6 +382,259 @@ void View::on_paint()
         ::FillRect(device, &client, static_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH)));
     }
     ::EndPaint(window, &paint);
+}
+
+void View::scroll(int lines)
+{
+    if (!session_) return;
+    const int history = static_cast<int>(session_->scrollback_line_count());
+    const int next = std::clamp(scroll_offset_ + lines, 0, history);
+    if (next == scroll_offset_) return;
+    scroll_offset_ = next;
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+}
+
+void View::set_selection(int start_row, int start_column, int end_row, int end_column)
+{
+    if (!session_) return;
+    const int history = static_cast<int>(session_->scrollback_line_count());
+    const int last = history + static_cast<int>(session_->size().second) - 1;
+    selection_anchor_row_ = std::clamp(start_row, 0, last);
+    selection_focus_row_ = std::clamp(end_row, 0, last);
+    selection_anchor_column_ = std::clamp(start_column, 0, static_cast<int>(session_->size().first) - 1);
+    selection_focus_column_ = std::clamp(end_column, 0, static_cast<int>(session_->size().first) - 1);
+    has_selection_ = true;
+    selecting_ = false;
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+}
+
+void View::clear_selection()
+{
+    has_selection_ = false;
+    selecting_ = false;
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+}
+
+std::string View::selection_text() const
+{
+    if (!has_selection_ || !session_) return {};
+    return session_->selection_text(selection_anchor_row_, selection_anchor_column_,
+                                    selection_focus_row_, selection_focus_column_);
+}
+
+std::string View::viewport_text() const
+{
+    if (!session_) return {};
+    const Snapshot snapshot = session_->snapshot(scroll_offset_);
+    std::vector<std::string> lines;
+    int last = -1;
+    for (int row = 0; row < snapshot.rows; ++row) {
+        std::string line;
+        for (int column = 0; column < snapshot.columns; ++column) {
+            const Cell& cell = snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column];
+            if (cell.continuation) continue;
+            append_utf8(line, cell.character == 0 ? U' ' : cell.character);
+            for (const char32_t combining : cell.combining) append_utf8(line, combining);
+        }
+        while (!line.empty() && line.back() == ' ') line.pop_back();
+        if (!line.empty()) last = row;
+        lines.push_back(std::move(line));
+    }
+    std::string text;
+    for (int row = 0; row <= last; ++row) {
+        text += lines[static_cast<size_t>(row)];
+        if (row != last) text.push_back('\n');
+    }
+    return text;
+}
+
+Result<void> View::copy_selection()
+{
+    const std::string text = selection_text();
+    if (text.empty()) return {};
+    if (!write_clipboard(wide_from_utf8(text))) {
+        return std::unexpected(win::system_error("SetClipboardData", ::GetLastError()));
+    }
+    return {};
+}
+
+Result<void> View::paste()
+{
+    const std::wstring text = read_clipboard();
+    if (text.empty()) return {};
+    std::string bytes = win::wide_to_utf8(text);
+    if (session_->bracketed_paste()) {
+        std::string wrapped = "\x1b[200~";
+        wrapped += bytes;
+        wrapped += "\x1b[201~";
+        return send_text(wrapped);
+    }
+    return send_text(bytes);
+}
+
+bool View::selected_cell(int row, int column) const
+{
+    if (!has_selection_) return false;
+    int first_row = selection_anchor_row_;
+    int first_column = selection_anchor_column_;
+    int last_row = selection_focus_row_;
+    int last_column = selection_focus_column_;
+    if (first_row > last_row || (first_row == last_row && first_column > last_column)) {
+        std::swap(first_row, last_row);
+        std::swap(first_column, last_column);
+    }
+    if (row < first_row || row > last_row) return false;
+    if (row == first_row && column < first_column) return false;
+    if (row == last_row && column > last_column) return false;
+    return true;
+}
+
+bool View::mouse_coordinates(int x, int y, int& row, int& column) const
+{
+    if (!session_ || !renderer_ || renderer_->cell_width() <= 0.0f ||
+        renderer_->cell_height() <= 0.0f) {
+        return false;
+    }
+    const auto [columns, rows] = session_->size();
+    int screen_row = static_cast<int>(static_cast<float>(y) / renderer_->cell_height());
+    int screen_column = static_cast<int>(static_cast<float>(x) / renderer_->cell_width());
+    screen_row = std::clamp(screen_row, 0, static_cast<int>(rows) - 1);
+    screen_column = std::clamp(screen_column, 0, static_cast<int>(columns) - 1);
+    const int history = static_cast<int>(session_->scrollback_line_count());
+    row = std::clamp(history - scroll_offset_ + screen_row, 0, history + static_cast<int>(rows) - 1);
+    column = screen_column;
+    return true;
+}
+
+bool View::mouse_screen_coordinates(int x, int y, int& row, int& column) const
+{
+    if (!session_ || !renderer_ || renderer_->cell_width() <= 0.0f ||
+        renderer_->cell_height() <= 0.0f) {
+        return false;
+    }
+    const auto [columns, rows] = session_->size();
+    row = std::clamp(static_cast<int>(static_cast<float>(y) / renderer_->cell_height()), 0,
+                     static_cast<int>(rows) - 1);
+    column = std::clamp(static_cast<int>(static_cast<float>(x) / renderer_->cell_width()), 0,
+                        static_cast<int>(columns) - 1);
+    return true;
+}
+
+void View::report_mouse(int button, int x, int y, bool press)
+{
+    int row = 0;
+    int column = 0;
+    if (!mouse_screen_coordinates(x, y, row, column)) return;
+    const int encoded = button + mouse_modifiers();
+    (void)session_->write(mouse_sequence(encoded, column + 1, row + 1, press, session_->sgr_mouse()));
+}
+
+void View::on_left_button_down(int x, int y, bool shift)
+{
+    ::SetFocus(window_.load(std::memory_order_acquire));
+    if (session_->mouse_mode() != 0 && !shift) {
+        mouse_reporting_ = true;
+        mouse_button_ = 0;
+        report_mouse(0, x, y, true);
+        return;
+    }
+    int row = 0;
+    int column = 0;
+    if (!mouse_coordinates(x, y, row, column)) return;
+    selection_anchor_row_ = row;
+    selection_anchor_column_ = column;
+    selection_focus_row_ = row;
+    selection_focus_column_ = column;
+    has_selection_ = true;
+    selecting_ = true;
+    ::SetCapture(window_.load(std::memory_order_acquire));
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+}
+
+void View::on_left_button_up()
+{
+    if (mouse_reporting_) {
+        POINT point{};
+        ::GetCursorPos(&point);
+        ::ScreenToClient(window_.load(std::memory_order_acquire), &point);
+        report_mouse(mouse_button_, point.x, point.y, false);
+        mouse_reporting_ = false;
+        return;
+    }
+    if (!selecting_) return;
+    selecting_ = false;
+    ::ReleaseCapture();
+}
+
+void View::on_mouse_move(int x, int y)
+{
+    if (mouse_reporting_ && session_->mouse_mode() >= 2) {
+        report_mouse(mouse_button_ + 32, x, y, true);
+        return;
+    }
+    if (!selecting_) return;
+    int row = 0;
+    int column = 0;
+    if (!mouse_coordinates(x, y, row, column)) return;
+    selection_focus_row_ = row;
+    selection_focus_column_ = column;
+    if (const HWND window = window_.load(std::memory_order_acquire))
+        ::InvalidateRect(window, nullptr, FALSE);
+}
+
+void View::on_mouse_wheel(int delta, bool shift)
+{
+    if (session_->mouse_mode() != 0 && !shift) {
+        POINT point{};
+        ::GetCursorPos(&point);
+        ::ScreenToClient(window_.load(std::memory_order_acquire), &point);
+        report_mouse(delta > 0 ? 64 : 65, point.x, point.y, true);
+        return;
+    }
+    scroll(delta > 0 ? 3 : -3);
+}
+
+void View::position_ime()
+{
+    const HWND window = window_.load(std::memory_order_acquire);
+    if (!window || !session_ || !renderer_) return;
+    HIMC context = ::ImmGetContext(window);
+    if (!context) return;
+    const Snapshot snapshot = session_->snapshot(scroll_offset_);
+    POINT point{
+        static_cast<LONG>(snapshot.cursor_column * renderer_->cell_width()),
+        static_cast<LONG>(snapshot.cursor_row * renderer_->cell_height()),
+    };
+    COMPOSITIONFORM composition{};
+    composition.dwStyle = CFS_POINT;
+    composition.ptCurrentPos = point;
+    ::ImmSetCompositionWindow(context, &composition);
+    CANDIDATEFORM candidate{};
+    candidate.dwStyle = CFS_CANDIDATEPOS;
+    candidate.ptCurrentPos = point;
+    ::ImmSetCandidateWindow(context, &candidate);
+    ::ImmReleaseContext(window, context);
+}
+
+void View::on_ime_composition(LPARAM flags)
+{
+    if ((flags & GCS_RESULTSTR) == 0) return;
+    const HWND window = window_.load(std::memory_order_acquire);
+    if (!window) return;
+    HIMC context = ::ImmGetContext(window);
+    if (!context) return;
+    const LONG length = ::ImmGetCompositionStringW(context, GCS_RESULTSTR, nullptr, 0);
+    if (length > 0) {
+        std::wstring text(static_cast<size_t>(length) / sizeof(wchar_t), L'\0');
+        ::ImmGetCompositionStringW(context, GCS_RESULTSTR, text.data(), length);
+        (void)send_text(win::wide_to_utf8(text));
+    }
+    ::ImmReleaseContext(window, context);
+    ::InvalidateRect(window, nullptr, FALSE);
 }
 
 void View::on_character(wchar_t character)
@@ -262,7 +670,11 @@ void View::on_character(wchar_t character)
         (void)session_->send_key(TERMOLE_KEY_ESCAPE);
         break;
     case 0x03:
-        (void)session_->send_key(TERMOLE_KEY_CTRL_C);
+        if (has_selection_) (void)copy_selection();
+        else (void)session_->send_key(TERMOLE_KEY_CTRL_C);
+        break;
+    case 0x16:
+        (void)paste();
         break;
     default:
         if (codepoint < 0x20) {
@@ -277,6 +689,17 @@ void View::on_character(wchar_t character)
 
 void View::on_key_down(WPARAM key)
 {
+    if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+        if (key == 'C' && has_selection_) {
+            (void)copy_selection();
+            return;
+        }
+        if (key == 'V') {
+            (void)paste();
+            return;
+        }
+    }
+
     termole_key translated = TERMOLE_KEY_ENTER;
     switch (key) {
     case VK_UP:

@@ -20,8 +20,14 @@ namespace termole {
 // window, layout, visibility and focus. All methods are UI-thread only.
 class View {
 public:
+    struct Options {
+        std::wstring font_family;
+        uint32_t font_size_dip = 0;
+        uint32_t theme = 0;
+    };
+
     static Result<std::unique_ptr<View>> create(std::shared_ptr<Session> session, HWND parent,
-                                                uint32_t font_size_dip);
+                                                const Options& options = {});
 
     View(const View&) = delete;
     View& operator=(const View&) = delete;
@@ -29,6 +35,15 @@ public:
 
     [[nodiscard]] HWND hwnd() const noexcept { return window_.load(std::memory_order_acquire); }
     void focus();
+    Result<void> set_appearance(const Options& options);
+
+    void scroll(int lines);
+    void set_selection(int start_row, int start_column, int end_row, int end_column);
+    void clear_selection();
+    [[nodiscard]] std::string selection_text() const;
+    [[nodiscard]] std::string viewport_text() const;
+    Result<void> copy_selection();
+    Result<void> paste();
 
     // Used by the window-class registration; public so the static thunk can
     // be referenced without granting broader access.
@@ -37,12 +52,22 @@ public:
 private:
     View(std::shared_ptr<Session> session, HWND parent);
 
-    Result<void> initialize(uint32_t font_size_dip);
+    Result<void> initialize(const Options& options);
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     void on_size();
     void on_paint();
     void on_character(wchar_t character);
     void on_key_down(WPARAM key);
+    void position_ime();
+    void on_ime_composition(LPARAM flags);
+    void on_mouse_move(int x, int y);
+    void on_left_button_down(int x, int y, bool shift);
+    void on_left_button_up();
+    void on_mouse_wheel(int delta, bool shift);
+    [[nodiscard]] bool mouse_coordinates(int x, int y, int& row, int& column) const;
+    [[nodiscard]] bool mouse_screen_coordinates(int x, int y, int& row, int& column) const;
+    void report_mouse(int button, int x, int y, bool press);
+    [[nodiscard]] bool selected_cell(int row, int column) const;
     Result<void> send_text(std::string_view bytes);
     Result<void> start_watcher();
     void stop_watcher();
@@ -51,10 +76,20 @@ private:
     HWND parent_ = nullptr;
     std::atomic<HWND> window_{ nullptr };
     std::unique_ptr<Renderer> renderer_;
+    Appearance appearance_;
     std::thread watcher_;
     HANDLE stop_event_ = nullptr;
     bool focused_ = false;
     bool attached_ = false;
+    int scroll_offset_ = 0;
+    bool has_selection_ = false;
+    bool selecting_ = false;
+    bool mouse_reporting_ = false;
+    int mouse_button_ = 0;
+    int selection_anchor_row_ = 0;
+    int selection_anchor_column_ = 0;
+    int selection_focus_row_ = 0;
+    int selection_focus_column_ = 0;
     wchar_t high_surrogate_ = 0;
     uint16_t last_columns_ = 0;
     uint16_t last_rows_ = 0;

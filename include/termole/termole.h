@@ -60,7 +60,6 @@ extern "C" {
 #endif
 
 #define TERMOLE_ABI_VERSION 2u
-
 typedef struct termole_session termole_session;
 typedef struct termole_view termole_view;
 
@@ -77,8 +76,31 @@ typedef enum termole_status {
     /* The requested program or default shell could not be found. */
     TERMOLE_STATUS_NOT_FOUND = 5,
     TERMOLE_STATUS_OUT_OF_MEMORY = 6,
-    TERMOLE_STATUS_UNSUPPORTED = 7
+    TERMOLE_STATUS_UNSUPPORTED = 7,
+    /* No queued event is currently available. */
+    TERMOLE_STATUS_EMPTY = 8
 } termole_status;
+
+typedef enum termole_event_type {
+    TERMOLE_EVENT_NONE = 0,
+    TERMOLE_EVENT_TITLE_CHANGED = 1,
+    TERMOLE_EVENT_BELL = 2,
+    TERMOLE_EVENT_EXITED = 3,
+    TERMOLE_EVENT_ERROR = 4
+} termole_event_type;
+
+/* A host-schedulable event. text is library allocated (NULL when unused) and
+   must be released with termole_free(). */
+typedef struct termole_event {
+    uint32_t size;
+    termole_event_type type;
+    int32_t exit_code;
+    char* text;
+    size_t text_size;
+} termole_event;
+
+#define TERMOLE_EVENT_INIT \
+    { sizeof(termole_event), TERMOLE_EVENT_NONE, 0, NULL, 0 }
 
 typedef enum termole_key {
     TERMOLE_KEY_ENTER = 1,
@@ -125,16 +147,35 @@ typedef struct termole_session_options {
 #define TERMOLE_SESSION_OPTIONS_INIT \
     { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, 0, NULL, NULL, 0, 0, 0 }
 
+typedef enum termole_theme {
+    TERMOLE_THEME_SYSTEM = 0,
+    TERMOLE_THEME_DARK = 1,
+    TERMOLE_THEME_LIGHT = 2
+} termole_theme;
+
+typedef struct termole_appearance {
+    uint32_t size;
+    uint32_t abi_version;
+    const wchar_t* font_family;
+    uint32_t font_size_dip;
+    uint32_t theme;
+} termole_appearance;
+
+#define TERMOLE_APPEARANCE_INIT \
+    { sizeof(termole_appearance), TERMOLE_ABI_VERSION, NULL, 0, TERMOLE_THEME_SYSTEM }
+
 typedef struct termole_view_options {
     uint32_t size;
     uint32_t abi_version;
+    const wchar_t* font_family;
     /* Font size in DIPs. 0 selects 16. */
     uint32_t font_size_dip;
+    uint32_t theme;
     uint32_t reserved;
 } termole_view_options;
 
 #define TERMOLE_VIEW_OPTIONS_INIT \
-    { sizeof(termole_view_options), TERMOLE_ABI_VERSION, 0, 0 }
+    { sizeof(termole_view_options), TERMOLE_ABI_VERSION, NULL, 0, TERMOLE_THEME_SYSTEM, 0 }
 
 /* Returns TERMOLE_ABI_VERSION compiled into this DLL. */
 TERMOLE_API uint32_t TERMOLE_CALL termole_abi_version(void);
@@ -178,6 +219,22 @@ termole_session_get_size(termole_session* session, uint16_t* out_columns, uint16
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_is_running(termole_session* session, int* out_running);
 
+/* Valid only after the session has stopped. Returns INVALID_STATE while the
+   child is still running. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_exit_code(termole_session* session, int32_t* out_exit_code);
+
+/* Scrollback rows (oldest first) as UTF-8, one line per row. The retained
+   history is bounded; see TERMOLE_SCROLLBACK_LINES. Library allocated. */
+#define TERMOLE_SCROLLBACK_LINES 1000u
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_scrollback_text(termole_session* session, char** out_text, size_t* out_size);
+
+/* Pops the next queued event. Returns TERMOLE_STATUS_EMPTY when none is
+   pending. On success out->text must be released with termole_free(). */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_poll_event(termole_session* session, termole_event* out_event);
+
 /* Visible screen snapshot as UTF-8, one line per row, trailing spaces removed
    and trailing empty rows omitted. Library allocated; free with
    termole_free(). */
@@ -201,6 +258,26 @@ TERMOLE_API HWND TERMOLE_CALL termole_view_hwnd(termole_view* view);
 
 /* Sets keyboard focus to the child window. */
 TERMOLE_API termole_status TERMOLE_CALL termole_view_focus(termole_view* view);
+
+/* Recreates font resources and applies the theme without destroying the View. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_set_appearance(termole_view* view, const termole_appearance* appearance);
+
+/* Positive lines scroll towards older output; 0 returns to the live screen. */
+TERMOLE_API termole_status TERMOLE_CALL termole_view_scroll(termole_view* view, int32_t lines);
+
+/* Rows are absolute document rows (scrollback starts at 0). */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_set_selection(termole_view* view, int32_t start_row, int32_t start_column,
+                           int32_t end_row, int32_t end_column);
+TERMOLE_API termole_status TERMOLE_CALL termole_view_clear_selection(termole_view* view);
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_get_selection_text(termole_view* view, char** out_text, size_t* out_size);
+/* Visible viewport text at the current scroll offset. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_get_text(termole_view* view, char** out_text, size_t* out_size);
+TERMOLE_API termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view);
+TERMOLE_API termole_status TERMOLE_CALL termole_view_paste(termole_view* view);
 
 #ifdef __cplusplus
 } /* extern "C" */

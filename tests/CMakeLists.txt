@@ -26,6 +26,21 @@ set_target_properties(termole_t02_host_test PROPERTIES
   INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
 )
 
+add_executable(termole_t03_t05_test t03_t05_test.cpp)
+target_link_libraries(termole_t03_t05_test PRIVATE termole termole_build_options)
+add_dependencies(termole_t03_t05_test termole_cli_report_helper)
+set_target_properties(termole_t03_t05_test PROPERTIES
+  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+)
+
+add_executable(termole_terminal_unicode_test
+  terminal_unicode_test.cpp
+  "${PROJECT_SOURCE_DIR}/src/core/terminal.cpp"
+  "${PROJECT_SOURCE_DIR}/src/core/utf8.cpp"
+)
+target_include_directories(termole_terminal_unicode_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(termole_terminal_unicode_test PRIVATE termole_build_options)
+
 add_executable(termole_cli_no_console_test cli_no_console_test.cpp)
 target_link_libraries(termole_cli_no_console_test PRIVATE termole_build_options)
 add_dependencies(termole_cli_no_console_test termole_app termole_cli_report_helper)
@@ -34,6 +49,7 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
 )
 
 find_program(TERMOLE_POWERSHELL NAMES powershell.exe)
+find_program(TERMOLE_FZF NAMES fzf.exe)
 if(NOT TERMOLE_POWERSHELL)
   message(STATUS "powershell.exe not found: PowerShell CLI launch test is omitted.")
 endif()
@@ -49,6 +65,28 @@ set_tests_properties(t02_host_args PROPERTIES
   TIMEOUT 60
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
+
+add_test(NAME t03_t05_session COMMAND termole_t03_t05_test)
+set_tests_properties(t03_t05_session PROPERTIES
+  TIMEOUT 60
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+add_test(NAME t08_unicode_internal COMMAND termole_terminal_unicode_test)
+set_tests_properties(t08_unicode_internal PROPERTIES
+  TIMEOUT 30
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+if(TERMOLE_FZF)
+  add_executable(termole_fzf_test fzf_test.cpp)
+  target_link_libraries(termole_fzf_test PRIVATE termole termole_build_options)
+  add_test(NAME t06_fzf COMMAND termole_fzf_test "${TERMOLE_FZF}")
+  set_tests_properties(t06_fzf PROPERTIES
+    TIMEOUT 30
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+endif()
 
 add_test(NAME t02_cli_args
   COMMAND "${CMAKE_COMMAND}"
@@ -103,6 +141,16 @@ if(TERMOLE_POWERSHELL)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_parallel.cmake"
   )
   set_tests_properties(t02_cli_parallel PROPERTIES TIMEOUT 60)
+
+  add_test(NAME t03_cli_exit
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAPP=$<TARGET_FILE:termole_app>"
+      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-exit"
+      "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_exit.cmake"
+  )
+  set_tests_properties(t03_cli_exit PROPERTIES TIMEOUT 60)
 endif()
 
 add_test(NAME t02_cli_no_console

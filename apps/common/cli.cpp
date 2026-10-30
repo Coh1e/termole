@@ -1,5 +1,9 @@
 #include "common/cli.h"
 
+#include <termole/termole.h>
+
+#include <cstdlib>
+#include <cwchar>
 #include <string_view>
 
 namespace termole::app {
@@ -57,7 +61,14 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 result.action = CliAction::Version;
                 return result;
             }
-
+            if (token == L"--keep-window") {
+                result.options.exit_policy = ExitPolicy::KeepWindow;
+                continue;
+            }
+            if (token == L"--close-on-exit") {
+                result.options.exit_policy = ExitPolicy::CloseOnExit;
+                continue;
+            }
             const auto take_value = [&](std::wstring_view option, std::wstring& value) -> bool {
                 if (token == option) {
                     if (index + 1 >= argc) return false;
@@ -70,6 +81,34 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 }
                 return false;
             };
+
+            if (token == L"--font" || starts_with(token, L"--font=")) {
+                std::wstring value;
+                if (!take_value(L"--font", value)) return error(L"--font requires a family name");
+                if (value.empty()) return error(L"--font requires a non-empty family name");
+                result.options.font_family = std::move(value);
+                continue;
+            }
+            if (token == L"--font-size" || starts_with(token, L"--font-size=")) {
+                std::wstring value;
+                if (!take_value(L"--font-size", value)) return error(L"--font-size requires a number");
+                wchar_t* end = nullptr;
+                const unsigned long parsed = std::wcstoul(value.c_str(), &end, 10);
+                if (!end || *end != L'\0' || parsed < 8 || parsed > 96) {
+                    return error(L"--font-size must be an integer from 8 to 96");
+                }
+                result.options.font_size_dip = static_cast<uint32_t>(parsed);
+                continue;
+            }
+            if (token == L"--theme" || starts_with(token, L"--theme=")) {
+                std::wstring value;
+                if (!take_value(L"--theme", value)) return error(L"--theme requires a name");
+                if (value == L"system") result.options.theme = TERMOLE_THEME_SYSTEM;
+                else if (value == L"dark") result.options.theme = TERMOLE_THEME_DARK;
+                else if (value == L"light") result.options.theme = TERMOLE_THEME_LIGHT;
+                else return error(L"--theme must be system, dark or light");
+                continue;
+            }
 
             if (token == L"--cwd" || starts_with(token, L"--cwd=")) {
                 std::wstring value;
@@ -111,6 +150,11 @@ std::wstring help_text()
            L"Options:\n"
            L"  --cwd <directory>    Set the child working directory\n"
            L"  --env <KEY=VALUE>    Add or override a child environment variable (repeatable)\n"
+           L"  --font <FAMILY>      Font family (default follows the system)\n"
+           L"  --font-size <DIP>    Font size in DIPs, 8..96 (default 16)\n"
+           L"  --theme <NAME>       system, dark or light\n"
+           L"  --keep-window        Keep the window open when the child exits\n"
+           L"  --close-on-exit      Close the window even when the child fails\n"
            L"  --help, -h           Show this help\n"
            L"  --version            Show version\n"
            L"\n"

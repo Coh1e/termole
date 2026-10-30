@@ -1,5 +1,6 @@
 #include "session/session.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cwchar>
@@ -232,6 +233,10 @@ struct ProcThreadAttributeList {
 Session::Session(uint16_t columns, uint16_t rows) : terminal_(columns, rows)
 {
     terminal_.set_response_handler([this](std::string_view response) { (void)write_raw(response); });
+    terminal_.set_title_handler([this](std::wstring_view title) {
+        push_event(TERMOLE_EVENT_TITLE_CHANGED, 0, win::wide_to_utf8(title));
+    });
+    terminal_.set_bell_handler([this] { push_event(TERMOLE_EVENT_BELL); });
 }
 
 Session::~Session()
@@ -407,11 +412,20 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
 void Session::read_loop()
 {
     std::array<char, 8192> buffer{};
+    bool read_failed = false;
+    DWORD read_error = 0;
     for (;;) {
         DWORD read = 0;
         const BOOL ok = ::ReadFile(output_read_.get(), buffer.data(),
                                    static_cast<DWORD>(buffer.size()), &read, nullptr);
-        if (!ok || read == 0) break;
+        if (!ok) {
+            read_error = ::GetLastError();
+            if (read_error != ERROR_BROKEN_PIPE && read_error != ERROR_INVALID_HANDLE) {
+                read_failed = true;
+            }
+            break;
+        }
+        if (read == 0) break;
         {
             std::lock_guard lock(mutex_);
             decoder_.feed(buffer.data(), read,
@@ -421,7 +435,15 @@ void Session::read_loop()
     }
 
     if (process_) ::WaitForSingleObject(process_.get(), INFINITE);
+    DWORD process_exit_code = 0;
+    if (process_) ::GetExitCodeProcess(process_.get(), &process_exit_code);
+    exit_code_.store(static_cast<int32_t>(process_exit_code), std::memory_order_release);
     running_.store(false, std::memory_order_release);
+    if (read_failed) {
+        push_event(TERMOLE_EVENT_ERROR, 0,
+                   win::system_error("ReadFile", read_error).message);
+    }
+    push_event(TERMOLE_EVENT_EXITED, static_cast<int32_t>(process_exit_code));
     if (data_event_) ::SetEvent(data_event_.get());
 }
 
@@ -435,6 +457,58 @@ void Session::exit_loop()
     // reported after the output is drained.
     std::lock_guard lock(pseudo_mutex_);
     pseudo_console_.reset();
+}
+
+void Session::push_event(termole_event_type type, int32_t exit_code, std::string text)
+{
+    constexpr size_t kMaxEventQueue = 256;
+    std::lock_guard lock(event_mutex_);
+
+    if (type == TERMOLE_EVENT_TITLE_CHANGED && !events_.empty() &&
+        events_.back().type == TERMOLE_EVENT_TITLE_CHANGED) {
+        events_.back().text = std::move(text);
+    } else {
+        if (events_.size() >= kMaxEventQueue) {
+            const auto disposable = std::find_if(
+                events_.begin(), events_.end(), [](const EventRecord& event) {
+                    return event.type != TERMOLE_EVENT_EXITED && event.type != TERMOLE_EVENT_ERROR;
+                });
+            if (disposable != events_.end()) events_.erase(disposable);
+            else events_.pop_front();
+        }
+        events_.push_back(EventRecord{ type, exit_code, std::move(text) });
+    }
+    if (data_event_) ::SetEvent(data_event_.get());
+}
+
+bool Session::poll_event(EventRecord& out)
+{
+    std::lock_guard lock(event_mutex_);
+    if (events_.empty()) return false;
+    out = std::move(events_.front());
+    events_.pop_front();
+    return true;
+}
+
+Result<int32_t> Session::exit_code() const
+{
+    if (running()) {
+        return std::unexpected(
+            make_error(TERMOLE_STATUS_INVALID_STATE, "session is still running"));
+    }
+    return exit_code_.load(std::memory_order_acquire);
+}
+
+std::string Session::scrollback_text() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.scrollback_text();
+}
+
+size_t Session::scrollback_line_count() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.scrollback_line_count();
 }
 
 Result<void> Session::terminate()
@@ -520,6 +594,7 @@ Result<void> Session::write_raw(std::string_view bytes)
 
 Result<void> Session::send_key(termole_key key)
 {
+    const bool application = application_cursor();
     const char* bytes = nullptr;
     switch (key) {
     case TERMOLE_KEY_ENTER:
@@ -535,22 +610,22 @@ Result<void> Session::send_key(termole_key key)
         bytes = "\x1b";
         break;
     case TERMOLE_KEY_ARROW_UP:
-        bytes = "\x1b[A";
+        bytes = application ? "\x1bOA" : "\x1b[A";
         break;
     case TERMOLE_KEY_ARROW_DOWN:
-        bytes = "\x1b[B";
+        bytes = application ? "\x1bOB" : "\x1b[B";
         break;
     case TERMOLE_KEY_ARROW_RIGHT:
-        bytes = "\x1b[C";
+        bytes = application ? "\x1bOC" : "\x1b[C";
         break;
     case TERMOLE_KEY_ARROW_LEFT:
-        bytes = "\x1b[D";
+        bytes = application ? "\x1bOD" : "\x1b[D";
         break;
     case TERMOLE_KEY_HOME:
-        bytes = "\x1b[H";
+        bytes = application ? "\x1bOH" : "\x1b[H";
         break;
     case TERMOLE_KEY_END:
-        bytes = "\x1b[F";
+        bytes = application ? "\x1bOF" : "\x1b[F";
         break;
     case TERMOLE_KEY_DELETE:
         bytes = "\x1b[3~";
@@ -618,10 +693,17 @@ void Session::detach_view() noexcept
     view_attached_.store(false, std::memory_order_release);
 }
 
-Snapshot Session::snapshot() const
+Snapshot Session::snapshot(int scroll_offset) const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.snapshot();
+    return terminal_.snapshot(scroll_offset);
+}
+
+std::string Session::selection_text(int start_row, int start_column, int end_row,
+                                    int end_column) const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.selection_text(start_row, start_column, end_row, end_column);
 }
 
 std::pair<uint16_t, uint16_t> Session::size() const
@@ -640,6 +722,30 @@ std::wstring Session::title() const
 {
     std::lock_guard lock(mutex_);
     return terminal_.title();
+}
+
+uint8_t Session::mouse_mode() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.mouse_mode();
+}
+
+bool Session::sgr_mouse() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.sgr_mouse();
+}
+
+bool Session::bracketed_paste() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.bracketed_paste();
+}
+
+bool Session::application_cursor() const
+{
+    std::lock_guard lock(mutex_);
+    return terminal_.application_cursor();
 }
 
 } // namespace termole

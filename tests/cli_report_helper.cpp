@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <string>
 #include <string_view>
@@ -55,10 +57,77 @@ bool write_report(const std::wstring& path, const std::string& text)
     return true;
 }
 
+bool write_stdout(const std::string& text)
+{
+    const HANDLE output = ::GetStdHandle(STD_OUTPUT_HANDLE);
+    size_t offset = 0;
+    while (offset < text.size()) {
+        DWORD written = 0;
+        if (!::WriteFile(output, text.data() + offset, static_cast<DWORD>(text.size() - offset),
+                         &written, nullptr) ||
+            written == 0) {
+            return false;
+        }
+        offset += written;
+    }
+    return true;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
 {
+    ::SetConsoleOutputCP(CP_UTF8);
+    ::SetConsoleCP(CP_UTF8);
+    int forced_exit_code = 0;
+    if (argc >= 2) {
+        const std::wstring mode = argv[1];
+        if (mode == L"--lines" && argc >= 3) {
+            const int count = _wtoi(argv[2]);
+            for (int index = 0; index < count; ++index) {
+                char line[32]{};
+                std::snprintf(line, sizeof(line), "line-%04d\r\n", index);
+                if (!write_stdout(line)) return 3;
+            }
+            return 0;
+        }
+        if (mode == L"--delayed-lines") {
+            if (!write_stdout("before-detach\r\n")) return 3;
+            ::Sleep(400);
+            if (!write_stdout("after-detach\r\n")) return 3;
+            return 0;
+        }
+        if (mode == L"--altscreen") {
+            if (!write_stdout("MAIN-SCREEN\r\n")) return 3;
+            if (!write_stdout("\x1b[?1049h\x1b[2J\x1b[H" "ALT-SCREEN")) return 3;
+            ::Sleep(500);
+            if (!write_stdout("\x1b[?1049l" "RESTORED\r\n")) return 3;
+            return 0;
+        }
+        if (mode == L"--unicode") {
+            const std::string script =
+                "\xE4\xB8\xAD" "\x1b[1;3H" "A\r\n"
+                "e\xCC\x81" "X\r\n"
+                "\xF0\x9F\x90\xAD" "\x1b[3;3H" "B\r\n"
+                "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7"
+                "\xE2\x80\x8D\xF0\x9F\x91\xA6" "\r\n";
+            return write_stdout(script) ? 0 : 3;
+        }
+        if (mode == L"--events") {
+            const std::string script = "\x1b]0;Event Title\a\a" "event-tail\r\n";
+            return write_stdout(script) ? 7 : 3;
+        }
+        if (mode == L"--flood" && argc >= 3) {
+            const int count = _wtoi(argv[2]);
+            for (int index = 0; index < count; ++index) {
+                const std::string script = "\x1b]0;Flood " + std::to_string(index) + "\x07\x07";
+                if (!write_stdout(script)) return 3;
+            }
+            return 0;
+        }
+        if (mode == L"--exit-code" && argc >= 3) forced_exit_code = _wtoi(argv[2]);
+    }
+
     const std::wstring report_path = environment_value(L"TERMOLE_PROBE_REPORT");
     if (report_path.empty()) return 2;
 
@@ -99,5 +168,5 @@ int wmain(int argc, wchar_t** argv)
     DWORD marker_written = 0;
     ::WriteFile(::GetStdHandle(STD_OUTPUT_HANDLE), marker,
                 static_cast<DWORD>(sizeof(marker) - 1), &marker_written, nullptr);
-    return 0;
+    return forced_exit_code;
 }
