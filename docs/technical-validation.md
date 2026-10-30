@@ -14,9 +14,9 @@
 
 ## 统一入口验收
 
-根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 15/15 通过（T01/T02 既有项、T03–T12 新增项、真实 fzf）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 17/17 通过（上述 15 项、picker 八场景、原生基础）。
+根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 16/16 通过（T01/T02 既有项、T03–T13 新增项、真实 fzf）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 18/18 通过（上述 16 项、picker 八场景、原生基础）。
 
-- [T03–T12 中间切片](t03-t12-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste，并以真实 fzf 验证输入与退出。CTest 15/15 通过。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
+- [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
 
 T01 构建在全新的 `.local/build/windows` 目录完成，不依赖探针源码缓存或网络下载。这是本机现有编译工具链的验证，未模拟干净联网机器、旧版 Windows 或无开发工具的发布环境。
 

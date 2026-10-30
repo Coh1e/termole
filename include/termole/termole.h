@@ -276,6 +276,10 @@ termole_view_get_selection_text(termole_view* view, char** out_text, size_t* out
 /* Visible viewport text at the current scroll offset. */
 TERMOLE_API termole_status TERMOLE_CALL
 termole_view_get_text(termole_view* view, char** out_text, size_t* out_size);
+
+/* Rendered cell metrics in DIPs at the View's current DPI. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_get_cell_metrics(termole_view* view, float* out_width, float* out_height);
 TERMOLE_API termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view);
 TERMOLE_API termole_status TERMOLE_CALL termole_view_paste(termole_view* view);
 

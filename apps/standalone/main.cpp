@@ -57,7 +57,71 @@ termole::Session::Options session_options(const termole::app::CliOptions& cli)
     options.arguments = cli.arguments;
     if (cli.working_directory) options.working_directory = *cli.working_directory;
     options.environment = cli.environment;
+    options.columns = cli.columns;
+    options.rows = cli.rows;
     return options;
+}
+
+void apply_window_options(AppState& state, HWND window, uint16_t columns, uint16_t rows)
+{
+    LONG style = static_cast<LONG>(::GetWindowLongPtrW(window, GWL_STYLE));
+    LONG_PTR extended = ::GetWindowLongPtrW(window, GWL_EXSTYLE);
+    if (state.cli.borderless) {
+        style = static_cast<LONG>(WS_POPUP | WS_VISIBLE);
+        extended &= ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+    }
+    if (state.cli.floating) extended |= WS_EX_TOPMOST;
+    else extended &= ~WS_EX_TOPMOST;
+    if (state.cli.opacity_percent) extended |= WS_EX_LAYERED;
+
+    ::SetWindowLongPtrW(window, GWL_STYLE, style);
+    ::SetWindowLongPtrW(window, GWL_EXSTYLE, extended);
+    if (state.cli.opacity_percent) {
+        const BYTE alpha = static_cast<BYTE>(*state.cli.opacity_percent * 255 / 100);
+        ::SetLayeredWindowAttributes(window, 0, alpha, LWA_ALPHA);
+    }
+    if (state.cli.window_title) ::SetWindowTextW(window, state.cli.window_title->c_str());
+    if (state.cli.window_icon) {
+        HICON icon = static_cast<HICON>(
+            ::LoadImageW(nullptr, state.cli.window_icon->c_str(), IMAGE_ICON, 0, 0,
+                         LR_LOADFROMFILE | LR_DEFAULTSIZE));
+        if (icon) {
+            ::SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
+            ::SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
+        } else {
+            report_error(state, L"could not load the window icon");
+        }
+    }
+
+    int width = 1000;
+    int height = 640;
+    if (state.view && columns > 0 && rows > 0) {
+        RECT rectangle{ 0, 0, static_cast<LONG>(state.view->cell_width() * columns),
+                        static_cast<LONG>(state.view->cell_height() * rows) };
+        ::AdjustWindowRectEx(&rectangle, style, FALSE, static_cast<DWORD>(extended));
+        width = rectangle.right - rectangle.left;
+        height = rectangle.bottom - rectangle.top;
+    } else {
+        RECT current{};
+        if (::GetWindowRect(window, &current)) {
+            width = current.right - current.left;
+            height = current.bottom - current.top;
+        }
+    }
+
+    int x = CW_USEDEFAULT;
+    int y = CW_USEDEFAULT;
+    if (state.cli.window_x) x = *state.cli.window_x;
+    if (state.cli.window_y) y = *state.cli.window_y;
+    if (state.cli.center) {
+        MONITORINFO monitor{ sizeof(monitor) };
+        const HMONITOR handle = ::MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
+        ::GetMonitorInfoW(handle, &monitor);
+        x = monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - width) / 2;
+        y = monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - height) / 2;
+    }
+    ::SetWindowPos(window, state.cli.floating ? HWND_TOPMOST : HWND_TOP, x, y, width, height,
+                   SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 }
 
 void layout_view(AppState& state, HWND window)
@@ -126,6 +190,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         state->status = ::CreateWindowExW(0, L"STATIC", L"", WS_CHILD | SS_LEFT, 0, 0, 0, 0, window,
                                           nullptr, ::GetModuleHandleW(nullptr), nullptr);
         layout_view(*state, window);
+        apply_window_options(*state, window, state->cli.columns, state->cli.rows);
         state->view->focus();
         state->smoke.start(*state->session);
         ::SetTimer(window, kTimerId, 100, nullptr);

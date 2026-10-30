@@ -34,6 +34,8 @@ public:
     ~View();
 
     [[nodiscard]] HWND hwnd() const noexcept { return window_.load(std::memory_order_acquire); }
+    [[nodiscard]] float cell_width() const noexcept { return renderer_ ? renderer_->cell_width() : 0.0f; }
+    [[nodiscard]] float cell_height() const noexcept { return renderer_ ? renderer_->cell_height() : 0.0f; }
     void focus();
     Result<void> set_appearance(const Options& options);
 

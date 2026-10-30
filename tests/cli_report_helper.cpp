@@ -152,6 +152,14 @@ int wmain(int argc, wchar_t** argv)
                     wide_to_utf8(environment_value(L"TERMOLE_CALLER_SENTINEL")));
     append_line(report, "env.SystemRoot=" + wide_to_utf8(environment_value(L"SystemRoot")));
 
+    CONSOLE_SCREEN_BUFFER_INFO screen{};
+    if (::GetConsoleScreenBufferInfo(::GetStdHandle(STD_OUTPUT_HANDLE), &screen)) {
+        append_line(report, "console.cols=" +
+            std::to_string(screen.srWindow.Right - screen.srWindow.Left + 1));
+        append_line(report, "console.rows=" +
+            std::to_string(screen.srWindow.Bottom - screen.srWindow.Top + 1));
+    }
+
     DWORD mode = 0;
     const bool console = ::GetConsoleMode(::GetStdHandle(STD_OUTPUT_HANDLE), &mode) != FALSE;
     append_line(report, std::string("stdout.console=") + (console ? "1" : "0"));

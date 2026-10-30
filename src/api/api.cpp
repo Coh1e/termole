@@ -446,6 +446,20 @@ termole_status TERMOLE_CALL termole_view_get_text(termole_view* view, char** out
     });
 }
 
+termole_status TERMOLE_CALL termole_view_get_cell_metrics(termole_view* view, float* out_width,
+                                                          float* out_height)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        if (!out_width || !out_height)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "cell metrics output is null");
+        *out_width = view->implementation->cell_width();
+        *out_height = view->implementation->cell_height();
+        return TERMOLE_STATUS_OK;
+    });
+}
+
 termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view)
 {
     return guard([&]() -> termole_status {

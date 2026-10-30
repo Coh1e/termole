@@ -2,13 +2,13 @@
 
 Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
-首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T12 切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式与 bracketed paste，并通过真实 fzf。
+首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T13 切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口，并通过真实 fzf。
 
 - [已确认设计决定](docs/design-decisions.md)
 - [首版实施规格 v0.2 · GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)
 - [首版任务索引与阻塞关系](docs/issue-index.md)
 - [CLI 用法与退出码](docs/cli.md)
-- [T03–T12 中间切片验证](docs/t03-t12-validation.md)
+- [T03–T13 中间切片验证](docs/t03-t13-validation.md)
 - [T02 启动任意目标程序验证](docs/t02-validation.md)
 - [T01 双入口验证报告](docs/t01-validation.md)
 - [最小 VT 核心范围与来源](docs/vt-core.md)
@@ -52,7 +52,7 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T12 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、独立 Applet 窗口、TOML/Profile、fzf picker/多选、CMD/WSL/编辑器/Git TUI 的完整验收、资源/性能基线、SDK/便携包和 Windows 10 交付验收。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T13 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、TOML/Profile、fzf picker/多选、CMD/WSL/编辑器/Git TUI 的完整验收、资源/性能基线、SDK/便携包和 Windows 10 交付验收。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 

@@ -353,6 +353,22 @@ public:
         return std::string{ owned.get(), size };
     }
 
+    float cell_width() const noexcept
+    {
+        float width = 0.0f;
+        float height = 0.0f;
+        if (handle_) (void)termole_view_get_cell_metrics(handle_, &width, &height);
+        return width;
+    }
+
+    float cell_height() const noexcept
+    {
+        float width = 0.0f;
+        float height = 0.0f;
+        if (handle_) (void)termole_view_get_cell_metrics(handle_, &width, &height);
+        return height;
+    }
+
     std::expected<void, Error> copy_selection()
     {
         if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });

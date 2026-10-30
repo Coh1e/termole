@@ -1,6 +1,6 @@
-# T03–T12 中间切片验证（不含 T09）
+# T03–T13 中间切片验证（不含 T09 实机验收）
 
-本文件记录 T03、T04、T05、T06、T07、T08、T10、T11、T12 的实现与验证。T09（中文 IME）已接入组合窗口定位、候选位置和结果提交，但真实 IME 人工验收仍待完成；T13 以后的窗口/配置/picker 不在本切片内。
+本文件记录 T03、T04、T05、T06、T07、T08、T10、T11、T12、T13 的实现与验证。T09（中文 IME）已接入组合窗口定位、候选位置和结果提交，但真实 IME 人工验收仍待完成；T14 以后的配置/picker 不在本切片内。
 
 ## 已实现
 
@@ -12,16 +12,18 @@
 - **T10 外观**：`termole_appearance`/`termole_view_options` 支持字体族、字号、系统/深色/浅色主题；`termole_view_set_appearance` 不重建 View；DPI 变化重建格式并重排网格。
 - **T11 选择/剪贴板**：View 滚动、视口文本、绝对行选择、选区文本、复制到系统剪贴板、从剪贴板粘贴；Ctrl+C/Ctrl+V；宿主 C ABI 全覆盖。
 - **T12 鼠标/粘贴**：终端模式 `?1000/1002/1003/1006/2004/?1`；View 在鼠标报告模式下发送 SGR/X10 事件，Shift 保留本地选择；bracketed paste 边界；应用光标键编码。
+- **T13 Applet 窗口**：`--columns/--rows`、`--x/--y`、`--center`、`--floating`、`--borderless`、`--opacity`、`--title`、`--icon`；网格尺寸直接进入 Session 初始尺寸，窗口属性只由独立 Window 外壳应用。
 
 ## 测试
 
-`build.cmd`：CTest **15/15** 通过。新增/扩展：
+`build.cmd`：CTest **16/16** 通过。新增/扩展：
 
 | 测试 | 覆盖 |
 | --- | --- |
 | `t03_t05_session` | 退出码 7、尾部标记、标题/响铃/退出事件、事件洪泛上限、1000 行历史、View 重附加、备用屏幕、Unicode、外观切换、选区/剪贴板、真实 cmd 粘贴、DPI/字体资源 |
 | `t08_unicode_internal` | 直接 Terminal 单元：CJK/组合/Emoji/ZWJ、鼠标/粘贴/应用光标模式解析 |
 | `t06_fzf` | 真实 fzf 候选绘制、输入、退出 |
+| `t13_cli_applet` | 40×12 网格、居中/透明度/无边框/标题；非法网格/透明度/图标/位置冲突 |
 | `t03_cli_exit` | `--close-on-exit` 返回 7；默认失败保留窗口，关闭后返回 7 |
 | `t02_cli_*` | 既有 argv/cwd/env/CMD/PS/并行/无控制台回归 |
 
@@ -32,7 +34,7 @@
 - 主题/字号 18 DIP 的真实窗口：[t10-appearance.png](evidence/t10-appearance.png)
 - 独立入口默认窗口：[t02-standalone.png](evidence/t02-standalone.png)
 - fzf 测试使用真实 `fzf.exe`（0.74.5），不修改 fzf，不把 fzf 捆绑进产品。
-- 当前 Release 体积：`termole.dll` 322,560 B、`termole.exe` 192,512 B、`termole-host.exe` 123,392 B；仍为静态 CRT，无 VC++ 运行库 DLL，发布入口不含 smoke/`std::filesystem`。
+- 当前 Release 体积：`termole.dll` 325,632 B、`termole.exe` 198,656 B、`termole-host.exe` 123,392 B；仍为静态 CRT，无 VC++ 运行库 DLL，发布入口不含 smoke/`std::filesystem`。
 
 ## 已知限制
 

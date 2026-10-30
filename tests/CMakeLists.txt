@@ -151,6 +151,15 @@ if(TERMOLE_POWERSHELL)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_exit.cmake"
   )
   set_tests_properties(t03_cli_exit PROPERTIES TIMEOUT 60)
+
+  add_test(NAME t13_cli_applet
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAPP=$<TARGET_FILE:termole_app>"
+      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-applet"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_applet.cmake"
+  )
+  set_tests_properties(t13_cli_applet PROPERTIES TIMEOUT 60)
 endif()
 
 add_test(NAME t02_cli_no_console
