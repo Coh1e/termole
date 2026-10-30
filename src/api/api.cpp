@@ -107,6 +107,12 @@ termole_status TERMOLE_CALL termole_session_create(const termole_session_options
             }
         }
         if (options->working_directory) internal.working_directory = options->working_directory;
+        if (options->stdin_path) internal.stdin_path = options->stdin_path;
+        if (options->stdout_path) internal.stdout_path = options->stdout_path;
+        if (internal.stdin_path.empty() != internal.stdout_path.empty()) {
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT,
+                        "stdin_path and stdout_path must both be set or both be empty");
+        }
         if (options->environment_count != 0) {
             if (!options->environment) {
                 return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "environment array is null");

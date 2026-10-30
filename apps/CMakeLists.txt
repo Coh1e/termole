@@ -29,20 +29,12 @@ function(add_termole_window_app target output_name source smoke_enabled cli_enab
   endif()
 endfunction()
 
-# Shipped entry points: no test-only environment hook is compiled in.
+# Shipped entry point: one GUI executable and one DLL.
 add_termole_window_app(termole_app "termole" standalone/main.cpp OFF ON)
-add_termole_window_app(termole_host "termole-host" host/main.cpp OFF OFF)
 
-# Test-only copies exercise the real entry points with a smoke driver. They are
+# Test-only copies exercise the real entry point with a smoke driver. They are
 # not part of the product package.
 if(BUILD_TESTING)
   add_termole_window_app(termole_smoke_app "termole-smoke" standalone/main.cpp ON ON)
   add_termole_window_app(termole_smoke_host "termole-smoke-host" host/main.cpp ON OFF)
 endif()
-
-add_executable(termole_picker picker/main.cpp)
-set_target_properties(termole_picker PROPERTIES
-  OUTPUT_NAME "termole-picker"
-  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-)
-target_link_libraries(termole_picker PRIVATE termole_build_options)

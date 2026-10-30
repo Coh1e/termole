@@ -14,12 +14,12 @@
 
 ## 统一入口验收
 
-根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、两个入口和测试，CTest 30/30 通过（T01/T02 既有项、T03–T21 新增项、真实 fzf/picker、WSL、Neovim/Helix/lazygit、soak/idle-paint、默认窗口屏幕内回归）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 32/32 通过（上述 30 项、picker 八场景、原生基础）。
+根目录 CMakeLists.txt / CMakePresets.json / build.cmd 已实测。默认 `windows` preset 构建产品、测试和一个入口，CTest 30/30 通过（T01/T02 既有项、T03–T21 新增项、真实 fzf/picker、WSL、Neovim/Helix/lazygit、soak/idle-paint、默认窗口屏幕内回归）。`windows-spikes` preset 在保留探针入口的同时构建产品，CTest 32/32 通过（上述 30 项、picker 八场景、原生基础）。
 
 - [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。
 - [T14 配置](t14-validation.md)：TOML 根/Profile/CLI 优先级、错误文件与行号、默认配置回退。`t14_cli_config` 通过。
-- [Picker 基础](picker.md)：嵌入 Termole 窗口的 `--picker`、独立 `termole-picker.exe`；ASCII 单选、NUL/Unicode、`--multi` 参数、缺失工具 127；结果字节不被绘制或诊断污染。完整大结果背压仍未完成。
-- [T22/T23 SDK 与便携包](t22-t23-validation.md)：安装布局、外部 `find_package` 宿主编译、CPack ZIP、许可/文档/示例检查；未拆分运行包与开发包，未做无开发工具机器验收。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
+- [Picker](picker.md)：内嵌 `termole.exe --picker`，无独立 picker exe；ASCII 单选、NUL/Unicode、`--multi`、12k 行、提前关闭、慢读背压。
+- [T22/T23 SDK 与单包](t22-t23-validation.md)：单 ZIP、只有一个 DLL/EXE、外部 `find_package` 宿主编译、CPack 许可/文档/示例检查；未在无开发工具机器验收。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
 - [T17 CMD/WSL](t17-validation.md)：CMD 既有用例；`t17_wsl` 通过已安装 WSL 执行 `sh -c`。IME/粘贴/尺寸/失败诊断仍不完整。
 - [T20 资源](t20-resources.md)：1000 行历史、256 事件、5 并发 Session、View 重附加；soak/背压未完成。
 - [T21 性能](t21-performance.md)：启动约 1.0 s、空闲 CPU 0 ms/5 s、working set 51.6 MB、50k 行 2.0 s；帧延迟未测。

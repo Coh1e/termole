@@ -1,6 +1,6 @@
 # 性能基线（T21 初步）
 
-本文件记录本机可复现的测量，不是产品承诺。环境：Windows x64、Release、静态 CRT、`termole.exe` 326,656 B、`termole.dll` 325,632 B、`termole-host.exe` 123,392 B。使用真实 ConPTY 与受控子程序。
+本文件记录本机可复现的测量，不是产品承诺。环境：Windows x64、Release、静态 CRT、`termole.exe` 331,776 B、`termole.dll` 326,656 B。使用真实 ConPTY 与受控子程序。
 
 ## 命令
 

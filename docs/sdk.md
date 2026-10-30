@@ -7,7 +7,6 @@ Termole 以 `termole.dll` 提供 C ABI，并提供 C++23 头文件包装。宿�
 ```text
 bin/termole.dll
 bin/termole.exe
-bin/termole-host.exe
 lib/termole.lib
 include/termole/termole.h
 include/termole/termole.hpp
@@ -15,7 +14,7 @@ lib/cmake/termole/termoleConfig.cmake
 share/termole/examples/sdk-host/
 ```
 
-`termole-host.exe` 是最小宿主示例；`examples/sdk-host` 是可独立构建的消费示例。
+发布 ZIP 只有一个 DLL 和一个 EXE；`share/termole/examples/sdk-host` 是可独立构建的消费示例，不再附带额外宿主 EXE。
 
 ## 构建外部宿主
 

@@ -65,7 +65,7 @@ int wmain()
     }
     ::MoveWindow(view->hwnd(), 0, 0, 900, 600, TRUE);
     view->focus();
-    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     pump();
     const uint64_t idle_start = view->paint_count();
     std::this_thread::sleep_for(std::chrono::milliseconds(800));

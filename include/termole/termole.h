@@ -139,13 +139,18 @@ typedef struct termole_session_options {
        environment is never modified. NULL with count 0 inherits unchanged. */
     const wchar_t* const* environment;
     uint32_t environment_count;
+    /* Optional files for child stdin/stdout. Both must be set or both empty.
+       The child still gets the ConPTY console for stderr/UI. */
+    const wchar_t* stdin_path;
+    const wchar_t* stdout_path;
     /* 0 selects 80 x 24. */
     uint16_t columns;
     uint16_t rows;
 } termole_session_options;
 
 #define TERMOLE_SESSION_OPTIONS_INIT \
-    { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, 0, NULL, NULL, 0, 0, 0 }
+    { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, 0, NULL, NULL, 0, \
+      NULL, NULL, 0, 0 }
 
 typedef enum termole_theme {
     TERMOLE_THEME_SYSTEM = 0,

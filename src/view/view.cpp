@@ -700,17 +700,6 @@ void View::on_character(wchar_t character)
 
 void View::on_key_down(WPARAM key)
 {
-    if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
-        if (key == 'C' && has_selection_) {
-            (void)copy_selection();
-            return;
-        }
-        if (key == 'V') {
-            (void)paste();
-            return;
-        }
-    }
-
     termole_key translated = TERMOLE_KEY_ENTER;
     switch (key) {
     case VK_UP:

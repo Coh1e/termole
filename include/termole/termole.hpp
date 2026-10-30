@@ -97,6 +97,8 @@ public:
         std::vector<std::wstring> arguments;
         std::optional<std::wstring> working_directory;
         std::vector<std::wstring> environment;
+        std::wstring stdin_path;
+        std::wstring stdout_path;
         uint16_t columns = 0;
         uint16_t rows = 0;
     };
@@ -110,6 +112,8 @@ public:
             : nullptr;
         raw.columns = options.columns;
         raw.rows = options.rows;
+        raw.stdin_path = options.stdin_path.empty() ? nullptr : options.stdin_path.c_str();
+        raw.stdout_path = options.stdout_path.empty() ? nullptr : options.stdout_path.c_str();
 
         std::vector<const wchar_t*> argument_pointers;
         argument_pointers.reserve(options.arguments.size());

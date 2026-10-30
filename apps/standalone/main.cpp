@@ -31,7 +31,6 @@ struct AppState {
     bool picker_mode = false;
     std::wstring picker_candidate_path;
     std::wstring picker_result_path;
-    std::wstring picker_error_path;
     int exit_code = 0;
 };
 
@@ -62,6 +61,8 @@ termole::Session::Options session_options(const termole::app::CliOptions& cli)
     options.arguments = cli.arguments;
     if (cli.working_directory) options.working_directory = *cli.working_directory;
     options.environment = cli.environment;
+    options.stdin_path = cli.stdin_path;
+    options.stdout_path = cli.stdout_path;
     options.columns = cli.columns;
     options.rows = cli.rows;
     return options;
@@ -133,18 +134,13 @@ void apply_window_options(AppState& state, HWND window, uint16_t columns, uint16
     ::SetWindowPos(window, state.cli.floating ? HWND_TOPMOST : HWND_TOP, x, y, width, height, flags);
 }
 
-std::wstring picker_executable_path()
+std::wstring find_fzf()
 {
-    std::array<wchar_t, 32768> module{};
-    const DWORD length = ::GetModuleFileNameW(nullptr, module.data(),
-                                              static_cast<DWORD>(module.size()));
-    if (length == 0 || length >= module.size()) return {};
-    std::wstring path(module.data(), length);
-    const size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos) return L"termole-picker.exe";
-    path.resize(slash + 1);
-    path += L"termole-picker.exe";
-    return path;
+    std::array<wchar_t, 32768> buffer{};
+    const DWORD length = ::SearchPathW(nullptr, L"fzf.exe", nullptr,
+                                       static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
+    if (length > 0 && length < buffer.size()) return std::wstring(buffer.data(), length);
+    return {};
 }
 
 std::wstring make_temp_path(const wchar_t* prefix)
@@ -195,32 +191,28 @@ bool copy_stdin_to_file(const std::wstring& path, AppState& state)
 
 bool prepare_picker(AppState& state)
 {
-    const std::wstring picker = picker_executable_path();
-    if (picker.empty() ||
-        ::GetFileAttributesW(picker.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        report_error(state, L"termole-picker.exe was not found next to termole.exe");
+    const std::wstring fzf = find_fzf();
+    if (fzf.empty()) {
+        report_error(state, L"fzf.exe was not found on PATH");
+        state.exit_code = 127;
         return false;
     }
     state.picker_mode = true;
     state.picker_candidate_path = make_temp_path(L"trm");
     state.picker_result_path = make_temp_path(L"trm");
-    state.picker_error_path = make_temp_path(L"trm");
-    if (state.picker_candidate_path.empty() || state.picker_result_path.empty() ||
-        state.picker_error_path.empty()) {
+    if (state.picker_candidate_path.empty() || state.picker_result_path.empty()) {
         report_error(state, L"could not create picker temporary files");
         return false;
     }
     ::DeleteFileW(state.picker_result_path.c_str());
-    ::DeleteFileW(state.picker_error_path.c_str());
     if (!copy_stdin_to_file(state.picker_candidate_path, state)) {
         ::DeleteFileW(state.picker_candidate_path.c_str());
         return false;
     }
-    state.cli.program = picker;
-    state.cli.arguments = { L"--embedded", state.picker_candidate_path, state.picker_result_path,
-                            L"--diag", state.picker_error_path };
-    state.cli.arguments.insert(state.cli.arguments.end(), state.cli.picker_arguments.begin(),
-                               state.cli.picker_arguments.end());
+    state.cli.program = fzf;
+    state.cli.arguments = state.cli.picker_arguments;
+    state.cli.stdin_path = state.picker_candidate_path;
+    state.cli.stdout_path = state.picker_result_path;
     if (state.cli.columns == 0) state.cli.columns = 80;
     if (state.cli.rows == 0) state.cli.rows = 24;
     return true;
@@ -232,11 +224,8 @@ void cleanup_picker(AppState& state)
         ::DeleteFileW(state.picker_candidate_path.c_str());
     if (!state.picker_result_path.empty())
         ::DeleteFileW(state.picker_result_path.c_str());
-    if (!state.picker_error_path.empty())
-        ::DeleteFileW(state.picker_error_path.c_str());
     state.picker_candidate_path.clear();
     state.picker_result_path.clear();
-    state.picker_error_path.clear();
 }
 
 void finish_picker(AppState& state, HWND window)
@@ -257,7 +246,6 @@ void finish_picker(AppState& state, HWND window)
         }
         ::CloseHandle(file);
     };
-    copy_file(state.picker_error_path, ::GetStdHandle(STD_ERROR_HANDLE));
     copy_file(state.picker_result_path, ::GetStdHandle(STD_OUTPUT_HANDLE));
     const auto code = state.session ? state.session->exit_code() : std::unexpected(
         termole::Error{ TERMOLE_STATUS_INVALID_STATE, "picker session is null" });
@@ -466,7 +454,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command)
     }
 
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    if (state.cli.picker && !prepare_picker(state)) return 1;
+    if (state.cli.picker && !prepare_picker(state)) return state.exit_code != 0 ? state.exit_code : 1;
 
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);

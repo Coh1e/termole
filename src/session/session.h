@@ -26,6 +26,8 @@ struct SessionOptions {
     std::vector<std::wstring> arguments;
     std::wstring working_directory;
     std::vector<std::wstring> environment;
+    std::wstring stdin_path;
+    std::wstring stdout_path;
     uint16_t columns = 80;
     uint16_t rows = 24;
 };

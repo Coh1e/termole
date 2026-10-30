@@ -341,23 +341,47 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         environment_pointer = environment->data.data();
     }
 
+    const bool redirect = !options.stdin_path.empty() || !options.stdout_path.empty();
+    win::unique_handle redirected_input;
+    win::unique_handle redirected_output;
+    if (redirect) {
+        if (options.stdin_path.empty() || options.stdout_path.empty()) {
+            return std::unexpected(
+                make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "both stdin and stdout paths are required"));
+        }
+        SECURITY_ATTRIBUTES redirect_security{ sizeof(redirect_security), nullptr, TRUE };
+        redirected_input.reset(::CreateFileW(options.stdin_path.c_str(), GENERIC_READ,
+                                             FILE_SHARE_READ, &redirect_security, OPEN_EXISTING,
+                                             FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (!redirected_input) {
+            return std::unexpected(win::system_error("CreateFileW(stdin)", ::GetLastError()));
+        }
+        redirected_output.reset(::CreateFileW(options.stdout_path.c_str(), GENERIC_WRITE,
+                                              FILE_SHARE_READ, &redirect_security, CREATE_ALWAYS,
+                                              FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (!redirected_output) {
+            return std::unexpected(win::system_error("CreateFileW(stdout)", ::GetLastError()));
+        }
+    }
+
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.lpAttributeList = attributes.value;
     // A console parent would otherwise hand its own console's standard handles
     // to the pseudoconsole client, and console hosts such as PowerShell would
-    // write their banner there instead of into the ConPTY stream. Explicitly
-    // clear the inherited standard handles and let the console subsystem
-    // attach the client to the pseudoconsole.
+    // write their banner there instead of into the ConPTY stream. Clear the
+    // inherited handles and let the console subsystem attach the client to the
+    // pseudoconsole, unless the caller explicitly redirects data handles.
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
-    startup.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
+    startup.StartupInfo.hStdInput = redirect ? redirected_input.get() : INVALID_HANDLE_VALUE;
+    startup.StartupInfo.hStdOutput = redirect ? redirected_output.get() : INVALID_HANDLE_VALUE;
     startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
 
     PROCESS_INFORMATION process_info{};
     const wchar_t* working_directory_pointer =
         working_directory_path.empty() ? nullptr : working_directory_path.c_str();
-    const BOOL created = ::CreateProcessW(program.c_str(), command_line.data(), nullptr, nullptr, FALSE,
+    const BOOL created = ::CreateProcessW(program.c_str(), command_line.data(), nullptr, nullptr,
+                                          redirect ? TRUE : FALSE,
                                           creation_flags, environment_pointer, working_directory_pointer,
                                           &startup.StartupInfo, &process_info);
     if (!created) {

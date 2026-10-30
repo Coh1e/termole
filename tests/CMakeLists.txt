@@ -149,17 +149,8 @@ if(TERMOLE_FZF)
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 
-  add_executable(termole_picker_test picker_test.cpp)
-  add_dependencies(termole_picker_test termole_picker)
-  add_test(NAME t15_picker COMMAND termole_picker_test
-    "$<TARGET_FILE:termole_picker>" "${TERMOLE_FZF}")
-  set_tests_properties(t15_picker PROPERTIES
-    TIMEOUT 60
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
   add_executable(termole_embedded_picker_test embedded_picker_test.cpp)
-  add_dependencies(termole_embedded_picker_test termole_app termole_picker)
+  add_dependencies(termole_embedded_picker_test termole_app)
   add_test(NAME t15_embedded_picker COMMAND termole_embedded_picker_test
     "$<TARGET_FILE:termole_app>")
   set_tests_properties(t15_embedded_picker PROPERTIES
@@ -172,6 +163,12 @@ add_executable(termole_cmd_test cmd_test.cpp)
 target_link_libraries(termole_cmd_test PRIVATE termole termole_build_options)
 add_test(NAME t17_cmd_target COMMAND termole_cmd_test)
 set_tests_properties(t17_cmd_target PROPERTIES TIMEOUT 30
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
+add_executable(termole_wrap_test wrap_test.cpp)
+target_link_libraries(termole_wrap_test PRIVATE termole termole_build_options)
+add_test(NAME t17_wrap COMMAND termole_wrap_test)
+set_tests_properties(t17_wrap PROPERTIES TIMEOUT 30
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 add_executable(termole_app_window_test app_window_test.cpp)
