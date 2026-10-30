@@ -13,6 +13,11 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 - [T14 配置验证](docs/t14-validation.md)
 - [SDK 与便携包](docs/sdk.md)
 - [Picker 基础实现](docs/picker.md)
+- [资源有界](docs/t20-resources.md)
+- [性能基线](docs/t21-performance.md)
+- [CMD/WSL 基础验证](docs/t17-validation.md)
+- [编辑器/Git TUI 验证状态](docs/t18-t19-validation.md)
+- [首版交付验收状态](docs/t24-acceptance.md)
 - [T22/T23 验证](docs/t22-t23-validation.md)
 - [T02 启动任意目标程序验证](docs/t02-validation.md)
 - [T01 双入口验证报告](docs/t01-validation.md)
@@ -58,7 +63,7 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T14、T15/T16 基础、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、嵌入 Termole 窗口的 picker/多选完整验收（T15/T16）、CMD/WSL/编辑器/Git TUI 的完整验收（T17–T19）、资源/性能基线（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T16 基础、T17 WSL 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、嵌入 Termole 窗口的 picker/多选完整验收（T15/T16）、Neovim/Helix/lazygit 流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 

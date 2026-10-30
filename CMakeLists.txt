@@ -45,7 +45,9 @@ if(TERMOLE_BUILD_APP)
   )
   install(DIRECTORY include/termole DESTINATION include)
   install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
-  install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md DESTINATION docs)
+  install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md
+    docs/t17-validation.md docs/t18-t19-validation.md docs/t20-resources.md
+    docs/t21-performance.md docs/t24-acceptance.md DESTINATION docs)
   install(EXPORT termoleTargets
     FILE termoleTargets.cmake
     NAMESPACE Termole::

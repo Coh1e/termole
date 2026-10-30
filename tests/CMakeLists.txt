@@ -58,6 +58,7 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
 
 find_program(TERMOLE_POWERSHELL NAMES powershell.exe)
 find_program(TERMOLE_FZF NAMES fzf.exe)
+find_program(TERMOLE_WSL NAMES wsl.exe)
 if(NOT TERMOLE_POWERSHELL)
   message(STATUS "powershell.exe not found: PowerShell CLI launch test is omitted.")
 endif()
@@ -86,6 +87,15 @@ set_tests_properties(t08_unicode_internal PROPERTIES
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 
+if(TERMOLE_WSL)
+  add_executable(termole_wsl_test wsl_test.cpp)
+  target_link_libraries(termole_wsl_test PRIVATE termole termole_build_options)
+  add_test(NAME t17_wsl COMMAND termole_wsl_test "${TERMOLE_WSL}")
+  set_tests_properties(t17_wsl PROPERTIES
+    TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+endif()
 if(TERMOLE_FZF)
   add_executable(termole_fzf_test fzf_test.cpp)
   target_link_libraries(termole_fzf_test PRIVATE termole termole_build_options)

@@ -41,7 +41,7 @@ $candidates | .\termole-picker.exe --read0 --print0 --multi
 - ASCII 单选 `banana` 只返回匹配项。
 - NUL 输入/输出与中文候选保持原始字节（`中文\0`）。
 - 缺失 fzf 返回 127 并写 stderr。
-- 完整套件 18/18。
+- 完整套件 19/19。
 
 ## 限制
 

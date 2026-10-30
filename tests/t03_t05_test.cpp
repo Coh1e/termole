@@ -297,6 +297,26 @@ int wmain()
         }
     }
 
+    std::vector<std::optional<termole::Session>> sessions;
+    for (int index = 0; index < 5; ++index) {
+        termole::Session::Options resource_options;
+        resource_options.program = helper.wstring();
+        resource_options.arguments = { L"--lines", L"1500" };
+        resource_options.columns = 80;
+        resource_options.rows = 10;
+        auto resource_session = termole::Session::create(resource_options);
+        check(resource_session.has_value(), "resource session created");
+        if (resource_session) sessions.emplace_back(std::move(*resource_session));
+    }
+    for (auto& session : sessions) {
+        if (!session) continue;
+        check(wait_for_stopped(*session, 10000), "resource session stops");
+        const auto history = session->scrollback_text();
+        check(history && line_count(*history) <= 1000, "each session history stays bounded");
+        (void)session->terminate();
+    }
+    sessions.clear();
+
     const HWND parent = create_parent();
     check(parent != nullptr, "test parent window created");
 
