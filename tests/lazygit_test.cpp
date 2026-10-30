@@ -73,6 +73,8 @@ int wmain(int argc, wchar_t** argv)
     }
     (void)session->send_key(termole::Key::Escape);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    (void)session->resize(100, 30);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     (void)session->write("q");
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (session->running() && std::chrono::steady_clock::now() < deadline)

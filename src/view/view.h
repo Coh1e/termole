@@ -36,6 +36,7 @@ public:
     [[nodiscard]] HWND hwnd() const noexcept { return window_.load(std::memory_order_acquire); }
     [[nodiscard]] float cell_width() const noexcept { return renderer_ ? renderer_->cell_width() : 0.0f; }
     [[nodiscard]] float cell_height() const noexcept { return renderer_ ? renderer_->cell_height() : 0.0f; }
+    [[nodiscard]] uint64_t paint_count() const noexcept { return paint_count_.load(std::memory_order_relaxed); }
     void focus();
     Result<void> set_appearance(const Options& options);
 
@@ -95,6 +96,7 @@ private:
     wchar_t high_surrogate_ = 0;
     uint16_t last_columns_ = 0;
     uint16_t last_rows_ = 0;
+    std::atomic<uint64_t> paint_count_{ 0 };
 };
 
 } // namespace termole

@@ -14,9 +14,8 @@ struct Run {
 };
 
 Run run(const std::filesystem::path& app, const std::vector<std::wstring>& arguments,
-        const std::string& candidates)
-{
-    const auto root = std::filesystem::temp_directory_path() /
+        const std::string& candidates, bool close_stdout = false)
+{    const auto root = std::filesystem::temp_directory_path() /
         ("termole-embedded-picker-" + std::to_string(::GetCurrentProcessId()));
     std::error_code error;
     std::filesystem::create_directories(root, error);
@@ -29,8 +28,15 @@ Run run(const std::filesystem::path& app, const std::vector<std::wstring>& argum
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE input_handle = ::CreateFileW(input.c_str(), GENERIC_READ, FILE_SHARE_READ, &security,
                                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    HANDLE output_handle = ::CreateFileW(output.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security,
-                                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE output_handle = INVALID_HANDLE_VALUE;
+    if (close_stdout) {
+        HANDLE read_handle = INVALID_HANDLE_VALUE;
+        ::CreatePipe(&read_handle, &output_handle, &security, 0);
+        if (read_handle != INVALID_HANDLE_VALUE) ::CloseHandle(read_handle);
+    } else {
+        output_handle = ::CreateFileW(output.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security,
+                                      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
     STARTUPINFOW startup{ sizeof(startup) };
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = input_handle;
@@ -49,7 +55,7 @@ Run run(const std::filesystem::path& app, const std::vector<std::wstring>& argum
     ::GetExitCodeProcess(process.hProcess, &result.exit_code);
     ::CloseHandle(process.hThread);
     ::CloseHandle(process.hProcess);
-    {
+    if (!close_stdout) {
         std::ifstream file(output, std::ios::binary);
         result.output.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
     }
@@ -115,6 +121,12 @@ int wmain(int argc, wchar_t** argv)
         multi_result.output.find("item-11999") == std::string::npos) {
         std::cerr << "embedded multi-filter failed: exit=" << multi_result.exit_code
                   << " bytes=" << multi_result.output.size() << '\n';
+        ++failures;
+    }
+
+    const auto closed = run(app, { L"--filter", L"banana" }, "apple\r\nbanana\r\n", true);
+    if (closed.exit_code != 0) {
+        std::cerr << "closed stdout did not complete cleanly: exit=" << closed.exit_code << '\n';
         ++failures;
     }
 

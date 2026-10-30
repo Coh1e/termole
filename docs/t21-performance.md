@@ -36,6 +36,8 @@ Start-Process $app -ArgumentList '--close-on-exit','--',$helper,'--lines','50000
 
 启动包含 Termole 进程、ConPTY、目标子程序和退出清理；不是单看 DLL 加载。空闲期间没有持续重绘或定时器重绘，100 ms 定时器只检查目标/退出状态。
 
+`t21_idle_paint` 用公开 `termole_view_get_paint_count` 验证：View 完成首次绘制后，空闲 800 ms 无新增 paint；`echo` 输出到达后 paint 计数增加。该测试不依赖截图，也不把静态库体积当运行内存。
+
 ## 结论
 
 - 空闲 CPU 没有可测增长，当前 100 ms 定时器不触发重绘。

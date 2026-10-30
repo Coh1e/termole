@@ -280,6 +280,10 @@ termole_view_get_text(termole_view* view, char** out_text, size_t* out_size);
 /* Rendered cell metrics in DIPs at the View's current DPI. */
 TERMOLE_API termole_status TERMOLE_CALL
 termole_view_get_cell_metrics(termole_view* view, float* out_width, float* out_height);
+
+/* Number of successful paints; useful for idle/render baselines. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_view_get_paint_count(termole_view* view, uint64_t* out_count);
 TERMOLE_API termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view);
 TERMOLE_API termole_status TERMOLE_CALL termole_view_paste(termole_view* view);
 

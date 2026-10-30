@@ -460,6 +460,17 @@ termole_status TERMOLE_CALL termole_view_get_cell_metrics(termole_view* view, fl
     });
 }
 
+termole_status TERMOLE_CALL termole_view_get_paint_count(termole_view* view, uint64_t* out_count)
+{
+    return guard([&]() -> termole_status {
+        if (!view || !view->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "view is null");
+        if (!out_count) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_count is null");
+        *out_count = view->implementation->paint_count();
+        return TERMOLE_STATUS_OK;
+    });
+}
+
 termole_status TERMOLE_CALL termole_view_copy_selection(termole_view* view)
 {
     return guard([&]() -> termole_status {

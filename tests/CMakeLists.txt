@@ -155,6 +155,19 @@ add_test(NAME t17_cmd_target COMMAND termole_cmd_test)
 set_tests_properties(t17_cmd_target PROPERTIES TIMEOUT 30
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
+add_executable(termole_soak_test soak_test.cpp)
+target_link_libraries(termole_soak_test PRIVATE termole termole_build_options psapi)
+add_dependencies(termole_soak_test termole_cli_report_helper)
+add_test(NAME t20_soak COMMAND termole_soak_test "$<TARGET_FILE:termole_cli_report_helper>")
+set_tests_properties(t20_soak PROPERTIES TIMEOUT 180
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
+add_executable(termole_idle_paint_test idle_paint_test.cpp)
+target_link_libraries(termole_idle_paint_test PRIVATE termole termole_build_options)
+add_test(NAME t21_idle_paint COMMAND termole_idle_paint_test)
+set_tests_properties(t21_idle_paint PROPERTIES TIMEOUT 30
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
 add_test(NAME t02_cli_args
   COMMAND "${CMAKE_COMMAND}"
     "-DAPP=$<TARGET_FILE:termole_app>"

@@ -372,6 +372,7 @@ void View::on_paint()
 
     PAINTSTRUCT paint{};
     HDC device = ::BeginPaint(window, &paint);
+    paint_count_.fetch_add(1, std::memory_order_relaxed);
     bool painted = false;
     if (renderer_) {
         Snapshot snapshot = session_->snapshot(scroll_offset_);

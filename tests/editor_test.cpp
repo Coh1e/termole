@@ -46,6 +46,8 @@ bool edit(const std::filesystem::path& editor, const std::filesystem::path& dire
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     (void)session->write("iHELLO-T18");
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    (void)session->resize(80, 20);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     (void)session->send_key(termole::Key::Escape);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     (void)session->write(":wq");

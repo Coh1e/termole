@@ -369,6 +369,13 @@ public:
         return height;
     }
 
+    uint64_t paint_count() const noexcept
+    {
+        uint64_t count = 0;
+        if (handle_) (void)termole_view_get_paint_count(handle_, &count);
+        return count;
+    }
+
     std::expected<void, Error> copy_selection()
     {
         if (!handle_) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_STATE, "view is null" });
