@@ -94,8 +94,31 @@ termole_status TERMOLE_CALL termole_session_create(const termole_session_options
 
         termole::SessionOptions internal;
         if (options->program) internal.program = options->program;
-        if (options->arguments) internal.arguments = options->arguments;
+        if (options->argument_count != 0) {
+            if (!options->arguments) {
+                return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "arguments array is null");
+            }
+            internal.arguments.reserve(options->argument_count);
+            for (uint32_t index = 0; index < options->argument_count; ++index) {
+                if (!options->arguments[index]) {
+                    return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "argument entry is null");
+                }
+                internal.arguments.emplace_back(options->arguments[index]);
+            }
+        }
         if (options->working_directory) internal.working_directory = options->working_directory;
+        if (options->environment_count != 0) {
+            if (!options->environment) {
+                return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "environment array is null");
+            }
+            internal.environment.reserve(options->environment_count);
+            for (uint32_t index = 0; index < options->environment_count; ++index) {
+                if (!options->environment[index]) {
+                    return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "environment entry is null");
+                }
+                internal.environment.emplace_back(options->environment[index]);
+            }
+        }
         internal.columns = options->columns;
         internal.rows = options->rows;
 

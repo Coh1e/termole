@@ -16,13 +16,15 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace termole {
 
 struct SessionOptions {
     std::wstring program;
-    std::wstring arguments;
+    std::vector<std::wstring> arguments;
     std::wstring working_directory;
+    std::vector<std::wstring> environment;
     uint16_t columns = 80;
     uint16_t rows = 24;
 };
@@ -59,11 +61,13 @@ private:
     explicit Session(uint16_t columns, uint16_t rows);
 
     void read_loop();
+    void exit_loop();
     Result<void> write_raw(std::string_view bytes);
 
     mutable std::mutex mutex_;
     std::mutex input_mutex_;
     std::mutex terminate_mutex_;
+    std::mutex pseudo_mutex_;
     Terminal terminal_;
     Utf8Decoder decoder_;
 
@@ -74,6 +78,7 @@ private:
     win::unique_handle data_event_;
     win::unique_pseudo_console pseudo_console_;
     std::thread reader_;
+    std::thread exit_thread_;
 
     std::atomic<bool> running_{ true };
     std::atomic<bool> stopping_{ false };

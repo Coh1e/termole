@@ -19,7 +19,6 @@ target_link_libraries(termole
     d2d1
     dwrite
     gdi32
-    ole32
     user32
 )
 set_target_properties(termole PROPERTIES

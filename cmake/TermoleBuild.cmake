@@ -15,7 +15,17 @@ if(MSVC)
     /permissive-
     /utf-8
     /Zc:__cplusplus
+    /Zc:inline
     /EHsc
+    /GR-
+    /Gy
+    /Gw
+    /Oi
+  )
+  target_link_options(termole_build_options INTERFACE
+    "$<$<CONFIG:Release>:/OPT:REF>"
+    "$<$<CONFIG:Release>:/OPT:ICF>"
+    "$<$<CONFIG:Release>:/INCREMENTAL:NO>"
   )
 else()
   target_compile_options(termole_build_options INTERFACE -Wall -Wextra -Wpedantic)

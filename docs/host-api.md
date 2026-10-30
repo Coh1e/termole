@@ -16,6 +16,8 @@
 
 T01 的首批实现额外提供 `termole_session_get_screen_text`：返回可见屏幕的 UTF-8 快照，供宿主诊断、无障碍或验收读取；它不是选择查询，也不暴露 VT 引擎内部状态。完整事件与查询契约仍按后续任务冻结。
 
+T02 将 ABI 升级到 2：`termole_session_options` 分别接收 program、逻辑 argv 数组、工作目录和 `KEY=VALUE` 环境数组。参数不经过字符串拼接，空参数与 Unicode 保真；环境数组在调用方环境副本上覆盖，不修改调用方进程。
+
 CreateView 附加既有会话；同一会话已有 View 时返回明确错误。T01 已用每 Session 的 attach 标志强制该约束，重复附加返回 `TERMOLE_STATUS_INVALID_STATE`。DestroyView 不结束会话；会话本身仍消费输出并保留有界历史。关闭独立窗口是应用层先终止会话再销毁视图，不在基础 View 析构中隐藏进程终止策略。
 
 ## C ABI 与数据所有权

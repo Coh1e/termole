@@ -2,7 +2,10 @@
 
 #include <array>
 #include <cstddef>
+#include <cwchar>
+#include <map>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -84,6 +87,126 @@ std::wstring find_default_shell()
     return search_path(L"powershell.exe");
 }
 
+bool path_has_separator(const std::wstring& path)
+{
+    return path.find_first_of(L"\\/") != std::wstring::npos ||
+        (path.size() >= 2 && path[1] == L':');
+}
+
+std::wstring absolute_path(const std::wstring& path)
+{
+    std::array<wchar_t, 32768> buffer{};
+    const DWORD length = ::GetFullPathNameW(path.c_str(), static_cast<DWORD>(buffer.size()),
+                                            buffer.data(), nullptr);
+    if (length == 0 || length >= buffer.size()) return path;
+    return std::wstring(buffer.data(), length);
+}
+
+Result<std::wstring> resolve_program(const std::wstring& requested)
+{
+    if (requested.empty()) {
+        const std::wstring shell = find_default_shell();
+        if (shell.empty()) {
+            return std::unexpected(
+                make_error(TERMOLE_STATUS_NOT_FOUND, "no PowerShell executable was found"));
+        }
+        return shell;
+    }
+
+    if (path_has_separator(requested)) {
+        const std::wstring full_path = absolute_path(requested);
+        if (!file_exists(full_path)) {
+            return std::unexpected(make_error(
+                TERMOLE_STATUS_NOT_FOUND, "program not found: " + win::wide_to_utf8(full_path)));
+        }
+        return full_path;
+    }
+
+    std::array<wchar_t, 32768> buffer{};
+    const wchar_t* extension = requested.find(L'.') == std::wstring::npos ? L".exe" : nullptr;
+    const DWORD length = ::SearchPathW(nullptr, requested.c_str(), extension,
+                                       static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
+    if (length == 0 || length >= buffer.size()) {
+        return std::unexpected(make_error(
+            TERMOLE_STATUS_NOT_FOUND, "program not found: " + win::wide_to_utf8(requested)));
+    }
+    return std::wstring(buffer.data(), length);
+}
+
+Result<void> validate_working_directory(const std::wstring& directory)
+{
+    if (directory.empty()) return {};
+    const DWORD attributes = ::GetFileAttributesW(directory.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        return std::unexpected(make_error(
+            TERMOLE_STATUS_INVALID_ARGUMENT,
+            "working directory is not a directory: " + win::wide_to_utf8(directory)));
+    }
+    return {};
+}
+
+struct CaseInsensitiveLess {
+    bool operator()(const std::wstring& left, const std::wstring& right) const noexcept
+    {
+        return ::_wcsicmp(left.c_str(), right.c_str()) < 0;
+    }
+};
+
+struct EnvironmentBlock {
+    std::vector<wchar_t> data;
+};
+
+Result<EnvironmentBlock> build_environment_block(const std::vector<std::wstring>& overrides)
+{
+    EnvironmentBlock block;
+    if (overrides.empty()) return block;
+
+    wchar_t* raw = ::GetEnvironmentStringsW();
+    if (!raw) {
+        return std::unexpected(win::system_error("GetEnvironmentStringsW", ::GetLastError()));
+    }
+    struct EnvironmentStringsGuard {
+        wchar_t* value;
+        ~EnvironmentStringsGuard()
+        {
+            if (value) ::FreeEnvironmentStringsW(value);
+        }
+    } guard{ raw };
+
+    std::map<std::wstring, std::wstring, CaseInsensitiveLess> values;
+    for (const wchar_t* cursor = raw; *cursor != L'\0';) {
+        const std::wstring_view entry(cursor);
+        const size_t separator =
+            entry[0] == L'=' ? entry.find(L'=', 1) : entry.find(L'=');
+        if (separator != std::wstring_view::npos) {
+            values[std::wstring(entry.substr(0, separator))] =
+                std::wstring(entry.substr(separator + 1));
+        }
+        cursor += entry.size() + 1;
+    }
+
+    for (const auto& override_entry : overrides) {
+        const size_t separator = override_entry.find(L'=');
+        if (separator == std::wstring::npos || separator == 0 || override_entry[0] == L'=') {
+            return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT,
+                                              "environment entries must be KEY=VALUE"));
+        }
+        values[override_entry.substr(0, separator)] = override_entry.substr(separator + 1);
+    }
+
+    size_t total = 1;
+    for (const auto& [key, value] : values) total += key.size() + value.size() + 2;
+    block.data.reserve(total);
+    for (const auto& [key, value] : values) {
+        block.data.insert(block.data.end(), key.begin(), key.end());
+        block.data.push_back(L'=');
+        block.data.insert(block.data.end(), value.begin(), value.end());
+        block.data.push_back(L'\0');
+    }
+    block.data.push_back(L'\0');
+    return block;
+}
+
 struct ProcThreadAttributeList {
     std::vector<std::byte> storage;
     LPPROC_THREAD_ATTRIBUTE_LIST value = nullptr;
@@ -135,14 +258,17 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     const uint16_t columns = options.columns == 0 ? 80 : options.columns;
     const uint16_t rows = options.rows == 0 ? 24 : options.rows;
 
-    std::wstring program = options.program;
-    if (program.empty()) {
-        program = find_default_shell();
-        if (program.empty()) {
-            return std::unexpected(
-                make_error(TERMOLE_STATUS_NOT_FOUND, "no PowerShell executable was found"));
-        }
-    }
+    auto resolved_program = resolve_program(options.program);
+    if (!resolved_program) return std::unexpected(resolved_program.error());
+    const std::wstring program = std::move(*resolved_program);
+
+    std::wstring working_directory_path = options.working_directory;
+    auto working_directory = validate_working_directory(working_directory_path);
+    if (!working_directory) return std::unexpected(working_directory.error());
+    if (!working_directory_path.empty()) working_directory_path = absolute_path(working_directory_path);
+
+    auto environment = build_environment_block(options.environment);
+    if (!environment) return std::unexpected(environment.error());
 
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE input_read_raw = nullptr;
@@ -197,9 +323,16 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     }
 
     std::wstring command_line = quote_argument(program);
-    if (!options.arguments.empty()) {
+    for (const auto& argument : options.arguments) {
         command_line.push_back(L' ');
-        command_line += options.arguments;
+        command_line += quote_argument(argument);
+    }
+
+    DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED;
+    LPVOID environment_pointer = nullptr;
+    if (!environment->data.empty()) {
+        creation_flags |= CREATE_UNICODE_ENVIRONMENT;
+        environment_pointer = environment->data.data();
     }
 
     STARTUPINFOEXW startup{};
@@ -216,16 +349,20 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
 
     PROCESS_INFORMATION process_info{};
-    const wchar_t* working_directory =
-        options.working_directory.empty() ? nullptr : options.working_directory.c_str();
+    const wchar_t* working_directory_pointer =
+        working_directory_path.empty() ? nullptr : working_directory_path.c_str();
     const BOOL created = ::CreateProcessW(program.c_str(), command_line.data(), nullptr, nullptr, FALSE,
-                                          EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED, nullptr,
-                                          working_directory, &startup.StartupInfo, &process_info);
+                                          creation_flags, environment_pointer, working_directory_pointer,
+                                          &startup.StartupInfo, &process_info);
     if (!created) {
         const DWORD code = ::GetLastError();
         if (code == ERROR_FILE_NOT_FOUND || code == ERROR_PATH_NOT_FOUND) {
             return std::unexpected(make_error(TERMOLE_STATUS_NOT_FOUND,
                                               "program not found: " + win::win32_error_message(code)));
+        }
+        if (code == ERROR_DIRECTORY) {
+            return std::unexpected(
+                make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "working directory is not valid"));
         }
         return std::unexpected(win::system_error("CreateProcessW", code));
     }
@@ -262,6 +399,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     // The reader holds a raw pointer, not a shared_ptr: the Session's
     // destructor joins this thread, and a shared_ptr cycle here would keep the
     // session (and its process tree) alive forever after termole_session_destroy.
+    session->exit_thread_ = std::thread([pointer = session.get()] { pointer->exit_loop(); });
     session->reader_ = std::thread([pointer = session.get()] { pointer->read_loop(); });
     return session;
 }
@@ -287,6 +425,18 @@ void Session::read_loop()
     if (data_event_) ::SetEvent(data_event_.get());
 }
 
+void Session::exit_loop()
+{
+    if (process_) ::WaitForSingleObject(process_.get(), INFINITE);
+
+    // The client has exited. Closing the pseudoconsole forces the output pipe to
+    // EOF and lets the reader flush the child's final bytes before running()
+    // becomes false. running_ is owned by read_loop so completion is only
+    // reported after the output is drained.
+    std::lock_guard lock(pseudo_mutex_);
+    pseudo_console_.reset();
+}
+
 Result<void> Session::terminate()
 {
     std::lock_guard terminate_lock(terminate_mutex_);
@@ -301,9 +451,14 @@ Result<void> Session::terminate()
     bool failed = false;
     Error first_error{};
     if (job_) {
-        if (!::TerminateJobObject(job_.get(), 1) && was_running) {
-            first_error = win::system_error("TerminateJobObject", ::GetLastError());
-            failed = true;
+        if (!::TerminateJobObject(job_.get(), 1)) {
+            const DWORD job_error = ::GetLastError();
+            // Keep the direct-child guarantee even if the job call fails.
+            if (process_) ::TerminateProcess(process_.get(), 1);
+            if (was_running) {
+                first_error = win::system_error("TerminateJobObject", job_error);
+                failed = true;
+            }
         }
     } else if (process_) {
         if (!::TerminateProcess(process_.get(), 1) && was_running) {
@@ -316,11 +471,13 @@ Result<void> Session::terminate()
         // The reader keeps draining while this closes, avoiding the
         // synchronous-close deadlock described by the ConPTY contract.
         // reset() invokes ClosePseudoConsole exactly once through the deleter.
+        std::lock_guard lock(pseudo_mutex_);
         pseudo_console_.reset();
     }
 
     try {
         if (reader_.joinable()) reader_.join();
+        if (exit_thread_.joinable()) exit_thread_.join();
     } catch (const std::exception& exception) {
         if (!failed) {
             first_error = make_error(TERMOLE_STATUS_SYSTEM_ERROR, exception.what());
@@ -438,6 +595,7 @@ Result<void> Session::resize(uint16_t columns, uint16_t rows)
         terminal_.resize(columns, rows);
     }
     if (pseudo_console_) {
+        std::lock_guard lock(pseudo_mutex_);
         const HRESULT status = ::ResizePseudoConsole(
             static_cast<HPCON>(pseudo_console_.get()),
             COORD{ static_cast<SHORT>(columns), static_cast<SHORT>(rows) });

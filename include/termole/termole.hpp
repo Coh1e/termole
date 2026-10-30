@@ -17,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace termole {
 
@@ -80,8 +81,9 @@ class Session {
 public:
     struct Options {
         std::optional<std::wstring> program;
-        std::optional<std::wstring> arguments;
+        std::vector<std::wstring> arguments;
         std::optional<std::wstring> working_directory;
+        std::vector<std::wstring> environment;
         uint16_t columns = 0;
         uint16_t rows = 0;
     };
@@ -90,13 +92,24 @@ public:
     {
         termole_session_options raw = TERMOLE_SESSION_OPTIONS_INIT;
         raw.program = options.program && !options.program->empty() ? options.program->c_str() : nullptr;
-        raw.arguments =
-            options.arguments && !options.arguments->empty() ? options.arguments->c_str() : nullptr;
         raw.working_directory = options.working_directory && !options.working_directory->empty()
             ? options.working_directory->c_str()
             : nullptr;
         raw.columns = options.columns;
         raw.rows = options.rows;
+
+        std::vector<const wchar_t*> argument_pointers;
+        argument_pointers.reserve(options.arguments.size());
+        for (const auto& argument : options.arguments) argument_pointers.push_back(argument.c_str());
+        raw.arguments = argument_pointers.empty() ? nullptr : argument_pointers.data();
+        raw.argument_count = static_cast<uint32_t>(argument_pointers.size());
+
+        std::vector<const wchar_t*> environment_pointers;
+        environment_pointers.reserve(options.environment.size());
+        for (const auto& entry : options.environment) environment_pointers.push_back(entry.c_str());
+        raw.environment = environment_pointers.empty() ? nullptr : environment_pointers.data();
+        raw.environment_count = static_cast<uint32_t>(environment_pointers.size());
+
         termole_session* handle = nullptr;
         const termole_status status = termole_session_create(&raw, &handle);
         if (status != TERMOLE_STATUS_OK) return std::unexpected(detail::take_error(status));

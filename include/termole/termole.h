@@ -59,7 +59,7 @@
 extern "C" {
 #endif
 
-#define TERMOLE_ABI_VERSION 1u
+#define TERMOLE_ABI_VERSION 2u
 
 typedef struct termole_session termole_session;
 typedef struct termole_view termole_view;
@@ -106,18 +106,24 @@ typedef struct termole_session_options {
     /* NULL/empty selects PowerShell 7 when installed, otherwise Windows
        PowerShell. */
     const wchar_t* program;
-    /* Optional command-line tail for program. It is passed through as one
-       string; argument quoting semantics are refined by the CLI slice. */
-    const wchar_t* arguments;
+    /* Logical arguments after the program (argv[1..]). NULL with count 0 means
+       no arguments. Empty strings and Unicode are preserved. */
+    const wchar_t* const* arguments;
+    uint32_t argument_count;
     /* NULL/empty inherits the caller's current directory. */
     const wchar_t* working_directory;
+    /* Optional "KEY=VALUE" entries. When count > 0 the child receives a copy of
+       the caller's environment with these entries overlaid; the caller's own
+       environment is never modified. NULL with count 0 inherits unchanged. */
+    const wchar_t* const* environment;
+    uint32_t environment_count;
     /* 0 selects 80 x 24. */
     uint16_t columns;
     uint16_t rows;
 } termole_session_options;
 
 #define TERMOLE_SESSION_OPTIONS_INIT \
-    { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, NULL, 0, 0 }
+    { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, 0, NULL, NULL, 0, 0, 0 }
 
 typedef struct termole_view_options {
     uint32_t size;
@@ -167,7 +173,8 @@ termole_session_send_key(termole_session* session, termole_key key);
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_get_size(termole_session* session, uint16_t* out_columns, uint16_t* out_rows);
 
-/* 1 while the child process (or its output pipe) is still alive, 0 otherwise. */
+/* 1 while the child process is alive or its ConPTY output is still being
+   drained; 0 after the child exits and buffered output has been consumed. */
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_is_running(termole_session* session, int* out_running);
 

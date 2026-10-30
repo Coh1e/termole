@@ -154,7 +154,7 @@ int wmain()
     ::UpdateWindow(parent);
 
     termole::Session::Options options;
-    options.arguments = L"-NoProfile";
+    options.arguments = { L"-NoProfile" };
     auto session_result = termole::Session::create(options);
     check(session_result.has_value(), "default PowerShell session created");
     if (!session_result) {
@@ -248,7 +248,7 @@ int wmain()
 
     termole::Session::Options tree_options;
     tree_options.program = helper_path().wstring();
-    tree_options.arguments = L"--spawn-child \"" + pid_file.wstring() + L"\"";
+    tree_options.arguments = { L"--spawn-child", pid_file.wstring() };
     auto tree_result = termole::Session::create(tree_options);
     check(tree_result.has_value(), "process-tree helper session created");
     if (tree_result) {

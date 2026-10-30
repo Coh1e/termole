@@ -64,6 +64,8 @@ Release 产物（`.local/build/windows/bin`）：
 | `termole-host.exe` | 226,816 |
 | `termole-test-helper.exe` | 174,080 |
 
+上表是 T01 完成时的数字；T02 加入 argv/env/CLI 与 smoke 分离后，当前体积见 [T02 验证报告](t02-validation.md)。
+
 `dumpbin /dependents termole.dll` 只列出 `d2d1.dll`、`DWrite.dll`、`GDI32.dll`、`USER32.dll`、`KERNEL32.dll`；没有 `VCRUNTIME140.dll`、MSVCP 或第三方 DLL。`termole.exe` 只额外依赖 `termole.dll`。所有 Termole 目标使用静态 CRT（`/MT`），Release 启用 LTO、`/OPT:REF` 与 `/OPT:ICF`。
 
 产品目标没有第三方库依赖，也不随包分发第三方源码；ConPTY 初始化沿用 MIT EchoCon 的公开模式并在 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) 署名。根构建入口加载 FetchContent 作为唯一依赖获取路径，但产品 configure 不调用任何 `FetchContent_MakeAvailable`，因此干净构建不访问网络；`TERMOLE_BUILD_SPIKES=ON` 时才获取 WIL/Contour 比较等探针源码。启动路径不初始化 QuickJS、WebView、Qt 或后台服务；Direct2D/DirectWrite 仅在创建 View 时惰性初始化。

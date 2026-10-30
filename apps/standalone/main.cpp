@@ -1,8 +1,11 @@
 #include <termole/termole.hpp>
 
+#include "common/cli.h"
+#include "common/diagnostics.h"
 #include "common/smoke.h"
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include <array>
 #include <optional>
@@ -15,10 +18,12 @@ constexpr wchar_t kWindowClassName[] = L"TermoleStandaloneWindow";
 constexpr UINT_PTR kTimerId = 1;
 
 struct AppState {
+    termole::app::CliOptions cli;
     std::optional<termole::Session> session;
     std::optional<termole::View> view;
     termole::app::SmokeProbe smoke;
     bool closing = false;
+    bool reported_error = false;
     int exit_code = 0;
 };
 
@@ -33,10 +38,23 @@ bool automated_run()
 #endif
 }
 
-void report_error(HWND owner, const std::string& message)
+void report_error(AppState& state, const std::wstring& message)
 {
-    if (automated_run()) return;
-    ::MessageBoxA(owner, message.c_str(), "Termole", MB_OK | MB_ICONERROR);
+    state.reported_error = true;
+    const std::wstring text = L"Termole: " + message + L"\n";
+    if (!termole::app::write_standard_error(text) && !automated_run()) {
+        termole::app::show_message(text, true);
+    }
+}
+
+termole::Session::Options session_options(const termole::app::CliOptions& cli)
+{
+    termole::Session::Options options;
+    if (cli.program) options.program = *cli.program;
+    options.arguments = cli.arguments;
+    if (cli.working_directory) options.working_directory = *cli.working_directory;
+    options.environment = cli.environment;
+    return options;
 }
 
 void layout_view(AppState& state, HWND window)
@@ -57,16 +75,16 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         ::SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
         if (!state) return -1;
 
-        auto session = termole::Session::create();
+        auto session = termole::Session::create(session_options(state->cli));
         if (!session) {
-            report_error(window, session.error().message());
+            report_error(*state, termole::app::utf8_to_wide(session.error().message()));
             return -1;
         }
         state->session.emplace(std::move(*session));
 
         auto view = termole::View::create(*state->session, window);
         if (!view) {
-            report_error(window, view.error().message());
+            report_error(*state, termole::app::utf8_to_wide(view.error().message()));
             state->session.reset();
             return -1;
         }
@@ -128,11 +146,47 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 
 } // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command)
 {
+    int argc = 0;
+    wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+    if (!argv) {
+        const std::wstring text = L"Termole: could not parse the command line\n";
+        if (!termole::app::write_standard_error(text) && !automated_run()) {
+            termole::app::show_message(text, true);
+        }
+        return 1;
+    }
+    auto parsed = termole::app::parse_cli(argc, argv);
+    ::LocalFree(argv);
+
+    if (parsed.action == termole::app::CliAction::Help) {
+        const std::wstring text = termole::app::help_text();
+        if (!termole::app::write_standard_output(text) && !automated_run()) {
+            termole::app::show_message(text, false);
+        }
+        return 0;
+    }
+    if (parsed.action == termole::app::CliAction::Version) {
+        const std::wstring text = termole::app::version_text();
+        if (!termole::app::write_standard_output(text) && !automated_run()) {
+            termole::app::show_message(text, false);
+        }
+        return 0;
+    }
+    if (parsed.action == termole::app::CliAction::Error) {
+        const std::wstring text = L"termole: " + parsed.message + L"\n";
+        if (!termole::app::write_standard_error(text)) {
+            termole::app::show_message(text + L"\nUse 'termole --help' for usage.\n", true);
+        }
+        return 2;
+    }
+
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     AppState state;
+    state.cli = std::move(parsed.options);
+
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
@@ -142,15 +196,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     window_class.hbrBackground = static_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH));
     window_class.lpszClassName = kWindowClassName;
 
-    if (!::RegisterClassExW(&window_class)) return 1;
+    if (!::RegisterClassExW(&window_class)) {
+        report_error(state, L"could not register the window class");
+        return 1;
+    }
 
     const HWND window = ::CreateWindowExW(0, kWindowClassName, L"Termole", WS_OVERLAPPEDWINDOW,
                                           CW_USEDEFAULT, CW_USEDEFAULT, 1000, 640, nullptr, nullptr,
                                           instance, &state);
-    if (!window) return 1;
+    if (!window) {
+        if (!state.reported_error) report_error(state, L"could not create the terminal window");
+        return 1;
+    }
 
-    ::ShowWindow(window, SW_SHOW);
-    ::UpdateWindow(window);
+    ::ShowWindow(window, show_command);
+    if (show_command != SW_HIDE) ::UpdateWindow(window);
 
     MSG message{};
     while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
