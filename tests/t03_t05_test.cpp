@@ -116,7 +116,12 @@ HWND create_parent()
 
 bool set_clipboard(const std::wstring& text)
 {
-    if (!::OpenClipboard(nullptr)) return false;
+    bool opened = false;
+    for (int attempt = 0; attempt < 20 && !opened; ++attempt) {
+        opened = ::OpenClipboard(nullptr) != FALSE;
+        if (!opened) ::Sleep(2);
+    }
+    if (!opened) return false;
     ::EmptyClipboard();
     HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t));
     if (!memory) {
@@ -139,7 +144,12 @@ bool set_clipboard(const std::wstring& text)
 
 std::wstring get_clipboard()
 {
-    if (!::OpenClipboard(nullptr)) return {};
+    bool opened = false;
+    for (int attempt = 0; attempt < 20 && !opened; ++attempt) {
+        opened = ::OpenClipboard(nullptr) != FALSE;
+        if (!opened) ::Sleep(2);
+    }
+    if (!opened) return {};
     std::wstring text;
     HANDLE data = ::GetClipboardData(CF_UNICODETEXT);
     if (data) {

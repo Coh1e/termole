@@ -33,7 +33,12 @@ std::wstring wide_from_utf8(std::string_view text)
 
 bool write_clipboard(std::wstring_view text)
 {
-    if (!::OpenClipboard(nullptr)) return false;
+    bool opened = false;
+    for (int attempt = 0; attempt < 10 && !opened; ++attempt) {
+        opened = ::OpenClipboard(nullptr) != FALSE;
+        if (!opened) ::Sleep(1);
+    }
+    if (!opened) return false;
     ::EmptyClipboard();
     const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
     HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
@@ -61,7 +66,12 @@ bool write_clipboard(std::wstring_view text)
 
 std::wstring read_clipboard()
 {
-    if (!::OpenClipboard(nullptr)) return {};
+    bool opened = false;
+    for (int attempt = 0; attempt < 10 && !opened; ++attempt) {
+        opened = ::OpenClipboard(nullptr) != FALSE;
+        if (!opened) ::Sleep(1);
+    }
+    if (!opened) return {};
     std::wstring text;
     HANDLE data = ::GetClipboardData(CF_UNICODETEXT);
     if (data) {

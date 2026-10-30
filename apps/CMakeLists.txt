@@ -5,7 +5,7 @@ function(add_termole_window_app target output_name source smoke_enabled cli_enab
     set(smoke_source common/smoke_noop.cpp)
   endif()
   if(cli_enabled)
-    set(cli_sources common/cli.cpp common/diagnostics.cpp)
+    set(cli_sources common/cli.cpp common/config.cpp common/diagnostics.cpp)
   else()
     set(cli_sources)
   endif()
@@ -39,3 +39,10 @@ if(BUILD_TESTING)
   add_termole_window_app(termole_smoke_app "termole-smoke" standalone/main.cpp ON ON)
   add_termole_window_app(termole_smoke_host "termole-smoke-host" host/main.cpp ON OFF)
 endif()
+
+add_executable(termole_picker picker/main.cpp)
+set_target_properties(termole_picker PROPERTIES
+  OUTPUT_NAME "termole-picker"
+  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+)
+target_link_libraries(termole_picker PRIVATE termole_build_options)

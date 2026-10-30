@@ -63,14 +63,6 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 result.action = CliAction::Version;
                 return result;
             }
-            if (token == L"--keep-window") {
-                result.options.exit_policy = ExitPolicy::KeepWindow;
-                continue;
-            }
-            if (token == L"--close-on-exit") {
-                result.options.exit_policy = ExitPolicy::CloseOnExit;
-                continue;
-            }
             const auto take_value = [&](std::wstring_view option, std::wstring& value) -> bool {
                 if (token == option) {
                     if (index + 1 >= argc) return false;
@@ -83,6 +75,33 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 }
                 return false;
             };
+
+            if (token == L"--keep-window") {
+                result.options.exit_policy = ExitPolicy::KeepWindow;
+                continue;
+            }
+            if (token == L"--close-on-exit") {
+                result.options.exit_policy = ExitPolicy::CloseOnExit;
+                continue;
+            }
+            if (token == L"--no-config") {
+                result.options.no_config = true;
+                continue;
+            }
+            if (token == L"--config" || starts_with(token, L"--config=")) {
+                std::wstring value;
+                if (!take_value(L"--config", value)) return error(L"--config requires a path");
+                if (value.empty()) return error(L"--config requires a non-empty path");
+                result.options.config_path = std::move(value);
+                continue;
+            }
+            if (token == L"--profile" || starts_with(token, L"--profile=")) {
+                std::wstring value;
+                if (!take_value(L"--profile", value)) return error(L"--profile requires a name");
+                if (value.empty()) return error(L"--profile requires a non-empty name");
+                result.options.profile = std::move(value);
+                continue;
+            }
 
             if (token == L"--font" || starts_with(token, L"--font=")) {
                 std::wstring value;
@@ -231,6 +250,9 @@ std::wstring help_text()
            L"  --opacity <1..100>   Applet opacity percentage\n"
            L"  --title <TEXT>       Applet title\n"
            L"  --icon <PATH>        Applet icon file\n"
+           L"  --config <PATH>      Use a specific TOML configuration file\n"
+           L"  --profile <NAME>     Apply a [profiles.NAME] group\n"
+           L"  --no-config          Ignore the user configuration file\n"
            L"  --keep-window        Keep the window open when the child exits\n"
            L"  --close-on-exit      Close the window even when the child fails\n"
            L"  --help, -h           Show this help\n"

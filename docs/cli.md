@@ -19,6 +19,22 @@ termole [options] [--] [program [arguments...]]
 | --- | --- |
 | `--cwd <directory>` | 子进程工作目录；不存在或不是目录时启动失败 |
 | `--env <KEY=VALUE>` | 在继承的调用方环境上覆盖/新增变量，可重复；不修改调用方环境 |
+| `--font <FAMILY>` | 字体族 |
+| `--font-size <DIP>` | 8..96 DIP |
+| `--theme <system\|dark\|light>` | 主题 |
+| `--columns/--rows <N>` | Applet 字符网格 1..1000 |
+| `--x/--y <PX>` | Applet 位置；不能与 `--center` 同用 |
+| `--center` | 居中 |
+| `--floating` | 置顶 |
+| `--borderless` | 无边框 |
+| `--opacity <10..100>` | 透明度百分比 |
+| `--title <TEXT>` | 窗口标题 |
+| `--icon <PATH>` | 图标文件 |
+| `--config <PATH>` | 指定 TOML 配置 |
+| `--profile <NAME>` | 应用 `[profiles.NAME]` |
+| `--no-config` | 忽略用户配置 |
+| `--keep-window` | 目标退出后保留窗口 |
+| `--close-on-exit` | 目标失败也关闭窗口 |
 | `--help`, `-h` | 打印用法并退出 0 |
 | `--version` | 打印版本并退出 0 |
 
@@ -45,8 +61,8 @@ Get-Content names.txt | termole.exe -- some-tui
 
 - 用法错误（未知选项、缺少选项值）：stderr 诊断，退出码 `2`。
 - 目标程序/工作目录/环境变量启动失败：stderr 诊断，退出码 `1`；无控制台时以 MessageBox 呈现。
+- 目标自然退出：成功默认关窗并返回 0；非零默认保留画面、显示退出码，用户关闭后返回该退出码。`--keep-window`/`--close-on-exit` 覆盖默认策略。
 - `--help`/`--version`：stdout，退出码 `0`。
-- 目标程序的非零退出码尚未由 T02 转交；退出码传播与最后输出保留属于 T03。
 
 `termole.exe` 是 Windows GUI 子系统程序。正常启动是异步的；需要等待时使用：
 
@@ -58,7 +74,7 @@ start "" /wait termole.exe -- pwsh -NoProfile
 Start-Process -FilePath .\termole.exe -ArgumentList '--','pwsh','-NoProfile' -Wait
 ```
 
-目标进程退出后 Termole 会先让 reader 排空 ConPTY 尾部输出，再关闭窗口，等待调用因此返回；T03 再补非零退出码转交和保留窗口策略。在 CMD/PowerShell 的 `start /wait` / `Start-Process -Wait` 调用下，T02 已验证等待、启动错误退出码和目标进程获得真实 ConPTY 标准输出。
+目标进程退出后 Termole 会先让 reader 排空 ConPTY 尾部输出，再关闭窗口，等待调用因此返回。非零退出码默认保留窗口；`--close-on-exit` 可让脚本直接取得目标退出码。在 CMD/PowerShell 的 `start /wait` / `Start-Process -Wait` 调用下，已有测试验证等待、启动错误退出码和目标进程获得真实 ConPTY 标准输出。
 
 ## 环境变量语义
 

@@ -9,7 +9,7 @@ add_library(termole SHARED
 )
 
 target_include_directories(termole
-  PUBLIC "${PROJECT_SOURCE_DIR}/include"
+  PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>"
   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 target_compile_definitions(termole PRIVATE TERMOLE_BUILDING_DLL)

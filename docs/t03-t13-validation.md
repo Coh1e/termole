@@ -34,7 +34,7 @@
 - 主题/字号 18 DIP 的真实窗口：[t10-appearance.png](evidence/t10-appearance.png)
 - 独立入口默认窗口：[t02-standalone.png](evidence/t02-standalone.png)
 - fzf 测试使用真实 `fzf.exe`（0.74.5），不修改 fzf，不把 fzf 捆绑进产品。
-- 当前 Release 体积：`termole.dll` 325,632 B、`termole.exe` 198,656 B、`termole-host.exe` 123,392 B；仍为静态 CRT，无 VC++ 运行库 DLL，发布入口不含 smoke/`std::filesystem`。
+- 当前 Release 体积：`termole.dll` 325,632 B、`termole.exe` 326,656 B、`termole-host.exe` 123,392 B；仍为静态 CRT，无 VC++ 运行库 DLL，发布入口不含 smoke/`std::filesystem`。
 
 ## 已知限制
 

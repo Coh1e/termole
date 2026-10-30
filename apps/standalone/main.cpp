@@ -1,6 +1,7 @@
 #include <termole/termole.hpp>
 
 #include "common/cli.h"
+#include "common/config.h"
 #include "common/diagnostics.h"
 #include "common/smoke.h"
 
@@ -297,10 +298,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_command)
         return 2;
     }
 
-    ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
     AppState state;
     state.cli = std::move(parsed.options);
+
+    if (!state.cli.no_config) {
+        const std::wstring path = state.cli.config_path ? *state.cli.config_path
+                                                        : termole::app::default_config_path();
+        const bool explicit_path = state.cli.config_path.has_value();
+        const bool exists = !path.empty() &&
+            ::GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+        if (!path.empty() && (exists || explicit_path)) {
+            auto loaded = termole::app::load_config(path, state.cli.profile);
+            if (!loaded.ok) {
+                report_error(state, L"configuration error: " + loaded.error +
+                                        L"\nUsing defaults.");
+            } else {
+                termole::app::apply_config(state.cli, loaded.config, state.cli.profile);
+            }
+        }
+    }
+
+    ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);

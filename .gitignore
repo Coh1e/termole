@@ -2,3 +2,5 @@
 /build/
 /out/
 /CMakeUserPresets.json
+/_CPack_Packages/
+/Termole-*.zip

@@ -31,6 +31,9 @@ struct CliOptions {
     std::optional<uint8_t> opacity_percent;
     std::optional<std::wstring> window_title;
     std::optional<std::wstring> window_icon;
+    std::optional<std::wstring> config_path;
+    std::optional<std::wstring> profile;
+    bool no_config = false;
     ExitPolicy exit_policy = ExitPolicy::Auto;
 };
 

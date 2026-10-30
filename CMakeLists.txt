@@ -36,6 +36,45 @@ if(TERMOLE_BUILD_APP)
   if(BUILD_TESTING)
     add_subdirectory(tests)
   endif()
+
+  install(TARGETS termole termole_app termole_host termole_picker
+    EXPORT termoleTargets
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION bin
+    ARCHIVE DESTINATION lib
+  )
+  install(DIRECTORY include/termole DESTINATION include)
+  install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
+  install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md DESTINATION docs)
+  install(EXPORT termoleTargets
+    FILE termoleTargets.cmake
+    NAMESPACE Termole::
+    DESTINATION lib/cmake/termole
+  )
+  include(CMakePackageConfigHelpers)
+  configure_package_config_file(cmake/termoleConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/termoleConfig.cmake"
+    INSTALL_DESTINATION lib/cmake/termole
+  )
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/termoleConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/termoleConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/termoleConfigVersion.cmake"
+    DESTINATION lib/cmake/termole
+  )
+  install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
+  set(CPACK_GENERATOR ZIP)
+  set(CPACK_PACKAGE_NAME "Termole")
+  set(CPACK_PACKAGE_VENDOR "Termole")
+  set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+  set(CPACK_PACKAGE_FILE_NAME "Termole-${PROJECT_VERSION}-win64")
+  set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
+  set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+  include(CPack)
 endif()
 
 if(TERMOLE_BUILD_SPIKES)

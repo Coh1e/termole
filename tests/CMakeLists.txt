@@ -41,6 +41,14 @@ add_executable(termole_terminal_unicode_test
 target_include_directories(termole_terminal_unicode_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(termole_terminal_unicode_test PRIVATE termole_build_options)
 
+add_executable(termole_config_test
+  config_test.cpp
+  "${PROJECT_SOURCE_DIR}/apps/common/config.cpp"
+)
+target_include_directories(termole_config_test PRIVATE "${PROJECT_SOURCE_DIR}/apps"
+  "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_config_test PRIVATE termole_build_options)
+
 add_executable(termole_cli_no_console_test cli_no_console_test.cpp)
 target_link_libraries(termole_cli_no_console_test PRIVATE termole_build_options)
 add_dependencies(termole_cli_no_console_test termole_app termole_cli_report_helper)
@@ -84,6 +92,15 @@ if(TERMOLE_FZF)
   add_test(NAME t06_fzf COMMAND termole_fzf_test "${TERMOLE_FZF}")
   set_tests_properties(t06_fzf PROPERTIES
     TIMEOUT 30
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  add_executable(termole_picker_test picker_test.cpp)
+  add_dependencies(termole_picker_test termole_picker)
+  add_test(NAME t15_picker COMMAND termole_picker_test
+    "$<TARGET_FILE:termole_picker>" "${TERMOLE_FZF}")
+  set_tests_properties(t15_picker PROPERTIES
+    TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 endif()
@@ -160,6 +177,15 @@ if(TERMOLE_POWERSHELL)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_applet.cmake"
   )
   set_tests_properties(t13_cli_applet PROPERTIES TIMEOUT 60)
+
+  add_test(NAME t14_cli_config
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAPP=$<TARGET_FILE:termole_app>"
+      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-config"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_config.cmake"
+  )
+  set_tests_properties(t14_cli_config PROPERTIES TIMEOUT 60)
 endif()
 
 add_test(NAME t02_cli_no_console
