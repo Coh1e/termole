@@ -59,6 +59,6 @@ fzf 的交互可以独立打开终端，见官方 [`src/tui/light_unix.go:42–6
 
 这份核查说明：**不能把 foot `-e` 当作“调用方 stdin/stdout 透传”的证据**。Termole 若要实现 `candidates | termole ...` 的选择器行为，必须在 Termole 层显式建立候选/结果数据通道，或由调用方 shell 用额外 FD/临时文件包装；不能声称与 foot `-e` 等价。
 
-具体接口（`-e` 是否转发 stdio、是否叫 execute、是否保留 picker）属于待确认决策，以修订后的 spec #1 和 ADR 0006 为准。
+具体接口以修订后的 spec #1 v0.3 和 [ADR 0006](adr/0006-terminal-selector-boundary.md) 为准：`-e` 是 PTY-only，`--stdio` 是显式调用方数据通道，pipe-* 是单向动作。
 
 若存在用户实际使用的 foot 版本、补丁、别名或包装脚本，需要针对那个具体入口继续核查；本笔记不声称检查了所有历史版本与下游补丁。
