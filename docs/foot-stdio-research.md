@@ -32,6 +32,17 @@ foot 的 `pipe-command-output` 将已经显示的命令输出交给另一个程�
 
 实现上，[`input.c:239–335`](https://codeberg.org/dnkl/foot/src/commit/152487e494993ad7fb5633a27c7d7ad0f8810ea5/input.c#L239) 将屏幕、滚屏、选择或上个命令的输出转换成文本，经新建管道送入外部程序的 stdin；该程序的 stdout 和 stderr 指向 `/dev/null`。这里也没有将外部程序的结果返回给 foot 的原始调用方。
 
+## foot 的外部程序用例：pipe-*
+
+foot 没有“picker 结果返回调用方”的能力，但有另一套通用外部程序集成：
+
+- [`foot.ini.5.scd:1393–1415`](https://codeberg.org/dnkl/foot/src/commit/152487e494993ad7fb5633a27c7d7ad0f8810ea5/doc/foot.ini.5.scd#L1393) 定义 `pipe-visible`、`pipe-scrollback`、`pipe-selected`、`pipe-command-output`：把当前可见文本、全部回滚、当前选择或上一条命令输出送到外部命令的 stdin。
+- 外部命令的 stdout/stderr 指向 `/dev/null`，结果是**单向**的；命令内部可以再运行 fzf/fuzzel 等选择器，但选择结果由该命令自己消费，不回到 foot 的调用方。
+- 示例 [`foot.ini.5.scd:1409`](https://codeberg.org/dnkl/foot/src/commit/152487e494993ad7fb5633a27c7d7ad0f8810ea5/doc/foot.ini.5.scd#L1409)：`pipe-visible=[sh -c "xurls | uniq | tac | fuzzel | xargs -r firefox"] Control+Print`。fuzzel 是 UI 选择器，但结果被 `xargs` 用来启动 firefox，而不是返回给调用 foot 的 shell。
+- `spawn-terminal` 只新建终端；`--server`/`footclient` 只转发退出码，不转发 stdout。
+
+因此 foot 支持的是“**终端文本 → 外部命令 → 命令内部的选择/动作**”，不支持“**调用方管道 → 终端 UI 选择器 → 调用方结果管道**”。`-e` 也不是后者的实现。
+
 ## 通过额外文件描述符实现所需组合
 
 对于直接启动的 foot（不是跨 server 的 footclient），可由外层 shell 先将原 stdin/stdout 保存在额外文件描述符，再由 foot 内的 shell 恢复：
