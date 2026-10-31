@@ -158,9 +158,14 @@ if(TERMOLE_POWERSHELL)
   add_executable(termole_visual_child visual/alt_screen_child.cpp)
   target_link_libraries(termole_visual_child PRIVATE termole_build_options)
 
+  # T12 (#13) controlled target: enables mouse/bracketed-paste modes and reads
+  # the real ConPTY input bytes for the mouse/paste acceptance.
+  add_executable(termole_input_child visual/t12_input_child.cpp)
+  target_link_libraries(termole_input_child PRIVATE termole_build_options)
+
   add_executable(termole_visual_test visual/visual_test.cpp)
   target_link_libraries(termole_visual_test PRIVATE termole termole_build_options)
-  add_dependencies(termole_visual_test termole_visual_child)
+  add_dependencies(termole_visual_test termole_visual_child termole_input_child termole_app)
 
   add_test(NAME visual_alt_screen COMMAND termole_visual_test
     --mode alt-screen
@@ -171,6 +176,36 @@ if(TERMOLE_POWERSHELL)
   set_tests_properties(visual_alt_screen PROPERTIES
     TIMEOUT 120
     LABELS "visual"
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  # T12 interaction: mouse/wheel messages through the View path, Shift+Insert
+  # and bracketed paste, with a pixel capture at every step.
+  add_test(NAME visual_input_interaction COMMAND termole_visual_test
+    --mode input-interaction
+    --input-child "$<TARGET_FILE:termole_input_child>"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-interaction")
+  set_tests_properties(visual_input_interaction PROPERTIES
+    TIMEOUT 240
+    LABELS "visual"
+    SKIP_RETURN_CODE 77
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  # Same T12 interactions through the public standalone entry (`termole -e`).
+  add_test(NAME visual_input_standalone COMMAND termole_visual_test
+    --mode input-standalone
+    --input-child "$<TARGET_FILE:termole_input_child>"
+    --app "$<TARGET_FILE:termole_app>"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-standalone")
+  set_tests_properties(visual_input_standalone PROPERTIES
+    TIMEOUT 240
+    LABELS "visual"
+    SKIP_RETURN_CODE 77
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 
@@ -207,7 +242,6 @@ if(TERMOLE_POWERSHELL)
     # Same interactions through the public standalone entry (`termole -e`).
     # Keys are posted to the app's TermoleViewWindow child; the app has no
     # screen-text API, so the captures are the evidence.
-    add_dependencies(termole_visual_test termole_app)
     add_test(NAME visual_fzf_standalone COMMAND termole_visual_test
       --mode fzf-standalone
       --app "$<TARGET_FILE:termole_app>"

@@ -65,8 +65,8 @@ private:
     void on_ime_composition(LPARAM flags);
     void on_mouse_move(int x, int y);
     void on_left_button_down(int x, int y, bool shift);
-    void on_left_button_up();
-    void on_mouse_wheel(int delta, bool shift);
+    void on_left_button_up(int x, int y);
+    void on_mouse_wheel(int delta, bool shift, int x, int y);
     [[nodiscard]] bool mouse_coordinates(int x, int y, int& row, int& column) const;
     [[nodiscard]] bool mouse_screen_coordinates(int x, int y, int& row, int& column) const;
     void report_mouse(int button, int x, int y, bool press);
@@ -83,6 +83,8 @@ private:
     std::thread watcher_;
     HANDLE stop_event_ = nullptr;
     bool focused_ = false;
+    bool shift_down_ = false;
+    int mouse_modifiers_ = 0;
     bool attached_ = false;
     int scroll_offset_ = 0;
     bool has_selection_ = false;

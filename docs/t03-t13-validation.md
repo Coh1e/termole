@@ -39,7 +39,9 @@
 ## 已知限制
 
 - T09 IME 的组合窗口/候选位置与 `GCS_RESULTSTR` 提交已实现，但真实中文 IME 的候选定位、取消、焦点切换仍需人工/自动混合验收，不能以 Unicode 文本 API 代替。
-- T12 的鼠标编码由单元/本地选择覆盖，尚未对 fzf 完成真实点击/拖动/滚轮的端到端报告；后续在 T12 验收补齐。
+- T12 的鼠标编码由单元/本地选择覆盖；真实点击/拖动/滚轮、bracketed paste、Shift+Insert
+  和关闭鼠标模式后的回退已在 [#13](https://github.com/Coh1e/termole/issues/13) 补齐，
+  见 [t12-validation.md](t12-validation.md)。
 - 1000 行历史不做宽度 reflow；改变列宽后历史行保持旧网格。
 - ConPTY 对完整 UAX #29/彩色 Emoji 的字形呈现受系统字体与 ConPTY 限制；本切片验证网格单元、常用 ZWJ 组合和文本往返，不承诺所有旗帜/肤色/高级序列。
 - T03 非零退出码只在保留窗口关闭时返回；picker/脚本结果语义仍属 T15。

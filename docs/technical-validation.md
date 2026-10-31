@@ -27,6 +27,7 @@
 - [T24](t24-acceptance.md)：Windows 11 部分自动验收；Windows 10/IME/无开发工具/双系统未执行，状态未完成。
 - [像素护栏（#27）](visual-harness-validation.md)：`PrintWindow` 截图 + 宽容 ink/strong 统计；默认套件包含确定性 alt-screen、真实 fzf 静态画面和 T06 的两个交互用例（fzf 按探测注册）。#26 的空白根因是渲染目标 DPI 与设备像素坐标混用，修复与像素证据见 [fzf-blank-validation.md](fzf-blank-validation.md)。
 - [T06 真实 fzf 交互](t06-validation.md)：公开宿主 Session+View 与 `termole -e` 独立入口都经 View 的 `WM_KEYDOWN`/`WM_CHAR` 完成方向键移动、输入筛选、Enter、Escape，退出后主屏标记与光标恢复；全部结论附 `PrintWindow` 截图与行带像素，未使用 `--filter`/`--no-color`/删除 alt-screen。4 个视觉用例全绿；只覆盖 150% 缩放。
+- [T12 鼠标与 bracketed paste](t12-validation.md)：受控 VT 程序经真实 ConPTY；两个入口覆盖 `?1000/1002/1003/1006/2004`、`?1` 应用光标键、SGR/X10、点击/拖动/滚轮、Ctrl+C/V、Shift+Insert、关闭鼠标模式后的本地选择/滚动、调整尺寸后的坐标；每步附 `PrintWindow` 截图和固定行带像素，线上字节由受控程序记录。只覆盖 150% 缩放。
 
 T01 构建在全新的 `.local/build/windows` 目录完成，不依赖探针源码缓存或网络下载。这是本机现有编译工具链的验证，未模拟干净联网机器、旧版 Windows 或无开发工具的发布环境。
 

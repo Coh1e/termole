@@ -18,6 +18,15 @@ namespace {
 
 constexpr wchar_t kViewClassName[] = L"TermoleViewWindow";
 constexpr UINT kRedrawMessage = WM_APP + 1;
+constexpr uint8_t kMouseButtonEventMode = 2;
+constexpr uint8_t kMouseAnyEventMode = 3;
+constexpr int kMouseMotionButton = 32;
+constexpr int kMouseAnyMotionButton = 35;
+
+bool is_shift_key(WPARAM key)
+{
+    return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
+}
 
 std::wstring wide_from_utf8(std::string_view text)
 {
@@ -85,12 +94,12 @@ std::wstring read_clipboard()
     return text;
 }
 
-int mouse_modifiers()
+int xterm_mouse_modifiers(WPARAM buttons)
 {
     int modifiers = 0;
-    if ((::GetKeyState(VK_SHIFT) & 0x8000) != 0) modifiers |= 4;
+    if ((buttons & MK_SHIFT) != 0) modifiers |= 4;
+    if ((buttons & MK_CONTROL) != 0) modifiers |= 16;
     if ((::GetKeyState(VK_MENU) & 0x8000) != 0) modifiers |= 8;
-    if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) modifiers |= 16;
     return modifiers;
 }
 
@@ -287,26 +296,39 @@ LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lp
         return 0;
     case WM_KILLFOCUS:
         focused_ = false;
+        shift_down_ = false;
         high_surrogate_ = 0;
         ::InvalidateRect(window, nullptr, FALSE);
         return 0;
     case WM_LBUTTONDOWN:
         ::SetFocus(window);
+        mouse_modifiers_ = xterm_mouse_modifiers(wparam);
         on_left_button_down(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam),
                             (wparam & MK_SHIFT) != 0);
         return 0;
     case WM_LBUTTONUP:
-        on_left_button_up();
+        on_left_button_up(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
         return 0;
     case WM_MOUSEMOVE:
+        mouse_modifiers_ = xterm_mouse_modifiers(wparam);
         on_mouse_move(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
         return 0;
     case WM_CHAR:
         on_character(static_cast<wchar_t>(wparam));
         return 0;
     case WM_KEYDOWN:
+        if (is_shift_key(wparam)) {
+            shift_down_ = true;
+            return 0;
+        }
         on_key_down(wparam);
         return 0;
+    case WM_KEYUP:
+        if (is_shift_key(wparam)) {
+            shift_down_ = false;
+            return 0;
+        }
+        return ::DefWindowProcW(window, message, wparam, lparam);
     case WM_IME_STARTCOMPOSITION:
         position_ime();
         return ::DefWindowProcW(window, message, wparam, lparam);
@@ -325,7 +347,9 @@ LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lp
     case WM_MOUSEWHEEL: {
         POINT point{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
         ::ScreenToClient(window, &point);
-        on_mouse_wheel(GET_WHEEL_DELTA_WPARAM(wparam), (wparam & MK_SHIFT) != 0);
+        mouse_modifiers_ = xterm_mouse_modifiers(wparam);
+        on_mouse_wheel(GET_WHEEL_DELTA_WPARAM(wparam), (wparam & MK_SHIFT) != 0, point.x,
+                       point.y);
         return 0;
     }
     case WM_SETCURSOR:
@@ -539,7 +563,7 @@ void View::report_mouse(int button, int x, int y, bool press)
     int row = 0;
     int column = 0;
     if (!mouse_screen_coordinates(x, y, row, column)) return;
-    const int encoded = button + mouse_modifiers();
+    const int encoded = button + mouse_modifiers_;
     (void)session_->write(mouse_sequence(encoded, column + 1, row + 1, press, session_->sgr_mouse()));
 }
 
@@ -566,13 +590,10 @@ void View::on_left_button_down(int x, int y, bool shift)
         ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::on_left_button_up()
+void View::on_left_button_up(int x, int y)
 {
     if (mouse_reporting_) {
-        POINT point{};
-        ::GetCursorPos(&point);
-        ::ScreenToClient(window_.load(std::memory_order_acquire), &point);
-        report_mouse(mouse_button_, point.x, point.y, false);
+        report_mouse(mouse_button_, x, y, false);
         mouse_reporting_ = false;
         return;
     }
@@ -583,27 +604,33 @@ void View::on_left_button_up()
 
 void View::on_mouse_move(int x, int y)
 {
-    if (mouse_reporting_ && session_->mouse_mode() >= 2) {
-        report_mouse(mouse_button_ + 32, x, y, true);
+    if (selecting_) {
+        int row = 0;
+        int column = 0;
+        if (!mouse_coordinates(x, y, row, column)) return;
+        selection_focus_row_ = row;
+        selection_focus_column_ = column;
+        if (const HWND window = window_.load(std::memory_order_acquire))
+            ::InvalidateRect(window, nullptr, FALSE);
         return;
     }
-    if (!selecting_) return;
-    int row = 0;
-    int column = 0;
-    if (!mouse_coordinates(x, y, row, column)) return;
-    selection_focus_row_ = row;
-    selection_focus_column_ = column;
-    if (const HWND window = window_.load(std::memory_order_acquire))
-        ::InvalidateRect(window, nullptr, FALSE);
+    const uint8_t mouse_mode = session_->mouse_mode();
+    if (mouse_mode == kMouseAnyEventMode) {
+        // Any-event tracking: report every motion, including motion with no
+        // button held (SGR button 35).
+        report_mouse(mouse_reporting_ ? mouse_button_ + kMouseMotionButton : kMouseAnyMotionButton,
+                     x, y, true);
+        return;
+    }
+    if (mouse_reporting_ && mouse_mode == kMouseButtonEventMode) {
+        report_mouse(mouse_button_ + kMouseMotionButton, x, y, true);
+    }
 }
 
-void View::on_mouse_wheel(int delta, bool shift)
+void View::on_mouse_wheel(int delta, bool shift, int x, int y)
 {
     if (session_->mouse_mode() != 0 && !shift) {
-        POINT point{};
-        ::GetCursorPos(&point);
-        ::ScreenToClient(window_.load(std::memory_order_acquire), &point);
-        report_mouse(delta > 0 ? 64 : 65, point.x, point.y, true);
+        report_mouse(delta > 0 ? 64 : 65, x, y, true);
         return;
     }
     scroll(delta > 0 ? 3 : -3);
@@ -724,6 +751,14 @@ void View::on_key_down(WPARAM key)
         translated = TERMOLE_KEY_DELETE;
         break;
     case VK_INSERT:
+        // Shift+Insert is the conventional Windows terminal paste shortcut.
+        // It must follow the same bracketed-paste path as Ctrl+V. Hardware
+        // chords expose Shift through GetKeyState; posted key sequences expose
+        // it through the WM_KEYDOWN/VK_SHIFT tracking above.
+        if (shift_down_ || (::GetKeyState(VK_SHIFT) & 0x8000) != 0) {
+            (void)paste();
+            return;
+        }
         translated = TERMOLE_KEY_INSERT;
         break;
     case VK_PRIOR:
