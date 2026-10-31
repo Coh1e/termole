@@ -1,7 +1,7 @@
 # Picker（历史；已被通用 execute 取代）
 
 > **状态：superseded（2026-10-31）**。用户要求 foot 设计对齐：
-> fzf/rofi 是外部选择器，Termole 只提供通用 execute、显式 `--stdio` 和终端/ConPTY。
+> fzf 是外部选择器，Termole 只提供通用 execute、显式 `--stdio` 和终端/ConPTY。
 > 本文只保留历史；当前决策见 [ADR 0006](adr/0006-terminal-selector-boundary.md)。
 
 ## 旧设计（不要实现）
@@ -17,6 +17,6 @@ candidates | termole -e fzf [fzf args...]
 - 调用方 stdin/stdout 直接交给 fzf；
 - fzf 的 UI 走 ConPTY；
 - Termole 不解析候选/结果，不提供 `--picker`/`--picker-arg`；
-- rofi 同样是外部 GUI 选择器，不由 Termole 内嵌。
+- 选择器是外部 GUI 程序，不由 Termole 内嵌。
 
 具体契约以替代 spec / ADR 0006 为准。
