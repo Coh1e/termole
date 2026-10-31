@@ -280,9 +280,10 @@ add_test(NAME t26_cli_pipelines
     "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
     "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/launcher-pipelines"
     "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
+    "-DFZF=${TERMOLE_FZF}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_pipelines.cmake"
 )
-set_tests_properties(t26_cli_pipelines PROPERTIES TIMEOUT 90)
+set_tests_properties(t26_cli_pipelines PROPERTIES TIMEOUT 180)
 
 add_test(NAME t02_cli_no_console
   COMMAND termole_cli_no_console_test
