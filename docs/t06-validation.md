@@ -37,15 +37,15 @@
     普通候选文字，因此用两行的强像素差值判断“选择块在哪一行”，不依赖精确颜色。
 - 行带映射：宿主用例用 `View::cell_height()`（1000×640、22 行，单元格高 28.1016 px）；
   独立用例先用同进程、同默认字体/DPI 的探针 View 测出 `cell_height()`，再按 app 客户区高度
-  得到 24 行。没有用 `height / rows` 的近似值，避免底部行带错位半行（#27 的旧映射在 22 行
-  窗口上到第 17 行时已累计约 20 px 误差）。
+  得到 24 行。没有用 `height / rows` 的近似值，避免底部行带错位（#27 的旧映射在 22 行
+  窗口上到第 17 行时已累计约 17 px 误差）。
 - 两个用例都先截取 fzf 出现前的主屏（`MAIN-SCREEN-READY`），再在 Escape / Enter 之后
   截取同一主屏；主屏标记、取消行、光标和 fzf 页脚行带分别断言。
 
 ## 公开宿主入口证据
 
 用例：`visual_fzf_interaction`（`tests/visual/visual_test.cpp` 的 `--mode fzf-interaction`），
-1000×640，22 行。最近一次运行 31.86 s。
+1000×640，22 行。最近一次运行约 32 s。
 
 | 步骤 | 像素证据 | 截图 |
 | --- | --- | --- |
@@ -65,7 +65,7 @@
 用例：`visual_fzf_standalone`（`--mode fzf-standalone`），通过公开入口
 `termole.exe --no-config --borderless --columns 81 --rows 25 --title <unique> -e cmd.exe ...`
 启动真实 app，1068×702、24 行；按键发给 app 的 `TermoleViewWindow` 子窗口。
-最近一次运行 33.07 s。
+最近一次运行约 33 s。
 
 | 步骤 | 像素证据 | 截图 |
 | --- | --- | --- |
