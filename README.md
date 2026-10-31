@@ -75,7 +75,7 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T19 基础、T20/T21 初步、T22/T23/T26 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI 与字节/背压矩阵（T15/T16）、pipe 动作（T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20/T21 初步、T22/T23/T26 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI（字节/退出码/背压矩阵已由 [T16 验证](docs/t16-validation.md) 覆盖）、pipe 动作（T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 

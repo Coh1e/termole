@@ -16,7 +16,7 @@
 
 ## 本次改动
 
-- `tests/launcher_test.cpp`：新增 2 MiB 二进制负载 + 慢读消费者、`--stdio` 用户取消、`--stdio` 缺失程序与存在但无法启动的程序；`-e` 用例增加“调用方 stdout 管道没有收到程序输出”的断言。
+- `tests/launcher_test.cpp`：新增 2 MiB 二进制负载 + 慢读消费者、`--stdio` 用户取消、`--stdio` 缺失程序与存在但无法启动的程序、`--multi` 等参数原样到达受控程序的 argv 报告；`-e` 用例增加“调用方 stdout 管道没有收到程序输出”的断言。
 - `tests/run_cli_pipelines.cmake`：新增真实 CMD 的 fzf `--filter`/`--multi`/无匹配退出码、2.2 MB 管道输入。
 - `tests/run_cli_pipeline.ps1`：新增 PowerShell fzf `--filter`/`--multi`/无匹配退出码、fzf `--read0 --print0`（NUL 分隔 + 内嵌换行）、真实 CMD 重定向下 128 KiB 全字节值 + 中文/Emoji 往返。
 - `tests/CMakeLists.txt`：把 `fzf.exe` 探针路径传给管道测试，并提高该测试的超时。
@@ -28,8 +28,8 @@
 
 | 验收标准 | 证据 | 结果 |
 | --- | --- | --- |
-| `--stdio fzf --filter ...` 从真实 CMD/PowerShell 调用：stdout 与 fzf 结果字节一致，无绘制/诊断污染，退出码转交 | **CMD**：`type candidates \| termole --stdio fzf --filter=alp > via` 与直接 `fzf --filter=alp < candidates > direct` 对比；均为 6 B，SHA-256 `B6A98D9C…B51060`，退出 `0`，结果不含 ESC。`--multi` 变体均为 16 B，SHA-256 `EF5BB271…D8D9650`。无匹配时转交 fzf 的 `1`。**PowerShell**：`$candidates \| & termole --stdio fzf --filter=alp` 的行与直接 fzf 一致；`--multi` 一致；无匹配 `$LASTEXITCODE` 为 `1`；结果不含 ESC。 | 通过 |
-| NUL 输入输出、`--multi`、内嵌换行、中文/Emoji、超大输入和慢读消费者不丢字节、不永久等待 | **NUL/Unicode/内嵌换行**：PowerShell 经真实 CMD 重定向往返 131,086 B（0x00–0xFF 全字节值 + `中文-🐭` + CRLF/LF），输入输出 SHA-256 均为 `812B6F64…7709C8D`，输出含 NUL；fzf `--read0 --print0` 的候选包含内嵌 LF 和 Emoji，直接与经 Termole 的输出均为 29 B（`alpha\nwith newline\0beta\0zeta\0`）且哈希相同。**超大输入**：C++ 侧 2,097,152 B 数据库式全字节负载逐字节相等；真实 CMD `type` 管道 2,228,224 B 输入输出 SHA-256 均为 `8F66849B…F9B434`。**慢读消费者**：消费者每 8 KiB 读一次并休眠 2 ms，2 MiB 负载仍逐字节相等，程序退出码 `5` 转交，耗时 ≥200 ms 且远小于超时。**`--multi`**：作为普通程序参数原样到达 fzf；Termole 不解析选择结果。 | 通过 |
+| `--stdio fzf --filter ...` 从真实 CMD/PowerShell 调用：stdout 与 fzf 结果字节一致，无绘制/诊断污染，退出码转交 | **CMD**：`type candidates \| termole --stdio fzf --filter=alp > via` 与直接 `fzf --filter=alp < candidates > direct` 对比；均为 6 B，SHA-256 `B6A98D9C…B51060`，退出 `0`，结果不含 ESC。`--multi` 变体均为 16 B，SHA-256 `EF5BB271…D8D9650`。无匹配时转交 fzf 的 `1`。**PowerShell**：`$candidates \| & termole --stdio fzf --filter=alp` 的行与直接 fzf 一致；`Start-Process` 把 stdin/stdout 重定向到文件后，直接/经 Termole 的 6 B 结果 SHA-256 相同，排除 PowerShell 文本解码和丢失行尾的影响；`--multi` 一致；无匹配 `$LASTEXITCODE` 为 `1`；结果不含 ESC。 | 通过 |
+| NUL 输入输出、`--multi`、内嵌换行、中文/Emoji、超大输入和慢读消费者不丢字节、不永久等待 | **NUL/Unicode/内嵌换行**：PowerShell 经真实 CMD 重定向往返 131,086 B（0x00–0xFF 全字节值 + `中文-🐭` + CRLF/LF），输入输出 SHA-256 均为 `812B6F64…7709C8D`，输出含 NUL；fzf `--read0 --print0` 的候选包含内嵌 LF 和 Emoji，直接与经 Termole 的输出均为 29 B（`alpha\nwith newline\0beta\0zeta\0`）且哈希相同。**超大输入**：C++ 侧 2,097,152 B 全字节值负载逐字节相等；真实 CMD `type` 管道 2,228,224 B 输入输出 SHA-256 均为 `8F66849B…F9B434`。**慢读消费者**：消费者每 8 KiB 读一次并休眠 2 ms，2 MiB 负载仍逐字节相等，程序退出码 `5` 转交，耗时 ≥200 ms 且远小于超时。**`--multi`**：用 `--stdio <helper> --multi --exit-code 6` 的 argv 报告证明 token 原样到达（`arg1=--multi`）；fzf 的 `--filter` 本身忽略 `--multi`，所以不把 filter 输出当作多选语义证据，真实多选交互留给 T06/#26。 | 通过 |
 | 调用方提前关闭 stdout、候选输入提前结束、程序启动失败和用户取消均有确定结束路径 | **提前关闭 stdout**：`t26_launcher` 的 `closed_output_pipe_ends_cleanly`（消费端在启动前已关闭，256 KiB 输入）在 15 s 内结束并转交程序状态；CMD/PowerShell 的 `--read-one`/`Select-Object -First 1` 用例均在超时内结束。**输入提前结束**：`--copy-stdin` 在 EOF 返回；fzf `--filter` 读完候选即退出；`stdio_stream_probe` 立即关闭 stdin 仍正常退出。**启动失败**：缺失程序返回 `1` 且 stderr 为 `program not found`；存在但被独占打开的程序返回 `1`、诊断含 `CreateProcessW`、不含 `program not found`，无加载器对话框。**取消**：`-e` 关闭窗口返回 `130`（既有）；新增 `--stdio` 关闭窗口返回 `130`，且调用方 stdout 未收到额外字节。 | 通过 |
 | `-e` 测试证明子进程拿到的是 PTY 而不是调用方 pipe；调用方管道不被偷偷转发 | 给 launcher 一个含数据的调用方 stdin 管道和一个 stdout 管道：子程序报告 `stdin.console=1`、`stdout.console=1`、`stderr.console=1`；程序结束时调用方 stdout 管道为空（新增断言），程序的最终 marker 只进入 ConPTY。 | 通过 |
 | `--stdio` 对非 fzf 的受控程序同样成立，测试不得依赖 fzf 特例 | 所有字节、NUL、大输入、慢读、提前关闭、启动失败和取消用例都使用 `cli-report-helper`；fzf 只出现在验收点名的 `--filter` 组合。 | 通过 |
@@ -39,9 +39,9 @@
 
 ## 自动测试
 
-`build.cmd`（configure + 全量构建 + CTest）：**31/31 通过**，78.76 s。
+`build.cmd`（configure + 全量构建 + CTest）：**31/31 通过**，87.23 s。
 
-### `t26_launcher`（70 项断言，0 失败，17.49 s）
+### `t26_launcher`（77 项断言，0 失败，23.58 s）
 
 新增与本票相关的断言：
 
@@ -49,12 +49,13 @@
 - `--stdio` 取消：窗口存在、关闭后 launcher 返回 `130`、输出流无额外字节。
 - `--stdio` 缺失程序：返回 `1`，stderr 含 `program not found`，stdout 不被诊断污染。
 - `--stdio` 存在但无法启动：独占打开真实程序副本，返回 `1`，stderr 含 `CreateProcessW` 且不含 `program not found`。
+- `--stdio --multi --exit-code 6`：helper 的 argv 报告为 `arg1=--multi`、`arg2=--exit-code`、`arg3=6`，程序退出码转交。
 - `-e` 调用方 stdout 管道为空，同时子进程三个标准流仍报告 `console=1`。
 
-### `t26_cli_pipelines`（7.51 s）
+### `t26_cli_pipelines`（9.38 s）
 
 - CMD fzf `--filter` 字节对比、`--multi` 参数透传、无匹配退出码 `1`、无 ESC。
-- PowerShell fzf `--filter` 行对比、`--multi` 对比、无匹配 `$LASTEXITCODE=1`。
+- PowerShell fzf `--filter` 行对比、`Start-Process` 文件重定向后的字节 SHA-256 对比、`--multi` 对比、无匹配 `$LASTEXITCODE=1`。
 - PowerShell fzf `--read0 --print0`：29 B 含 NUL 与内嵌 LF，直接/经 Termole 哈希相同。
 - 真实 CMD 重定向：131,086 B 全字节值 + 中文/Emoji 往返，SHA-256 相同且输出含 NUL。
 - 真实 CMD 管道：2,228,224 B 超大输入逐字节相等。
@@ -66,11 +67,12 @@ scripts\test-one.cmd termole_launcher_test t26_launcher
 scripts\test-one.cmd termole_cli_report_helper t26_cli_pipelines
 ```
 
-`t26_cli_pipelines` 在 CMake 配置期探测 `fzf.exe`；未安装 fzf 时该段显式打印 SKIP，其余非 fzf 用例照常运行。测试产物（管道输入/输出、fzf 原始/经 Termole 输出）位于构建目录的 `tests/launcher-pipelines/`。
+`t26_cli_pipelines` 在 CMake 配置期探测 `fzf.exe`；本次运行使用 fzf 0.74.5，fzf 分支实际执行。未安装 fzf 时该段打印 SKIP、其余非 fzf 用例照常运行，但本票的 fzf 验收项不能算已验证；发布验收环境应安装 fzf 后再跑。测试产物（管道输入/输出、fzf 原始/经 Termole 输出）位于构建目录的 `tests/launcher-pipelines/`。
 
 ## 未覆盖/限制
 
-- 交互式 fzf 全屏 UI、鼠标、resize 和 `--multi` 的真实多选交互仍依赖 #26/#27 与 T06/T12；本票只验证 `--filter` 数据路径，`--multi` 仅证明参数透传。
+- 交互式 fzf 全屏 UI、鼠标、resize 和 `--multi` 的真实多选交互仍依赖 #26/#27 与 T06/T12；本票只验证 `--filter` 数据路径和参数透传。
+- fzf 分支在未安装 fzf 的机器上按既有约定 SKIP，CTest 仍会通过；此时不能引用本文件的 fzf 证据。
 - NUL 无法经 CMD `type` 文本管道原样传输，因此 NUL 用例使用 CMD 文件重定向（仍是公开 `--stdio` 入口）；匿名管道上的 NUL 由 `t26_launcher` 直接覆盖。
 - 慢读消费者在 C++ launcher harness 中精确控制读取节奏；真实 Shell 侧覆盖字节、退出码和提前关闭，未重复做慢读矩阵。
 - `125`（GUI/基础设施失败）仍无故障注入，和 T15 记录一致。

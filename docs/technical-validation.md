@@ -18,7 +18,7 @@
 
 - [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。
 - [T14 配置](t14-validation.md)：TOML 根/Profile/CLI 优先级、错误文件与行号、默认配置回退。`t14_cli_config` 通过。
-- [外部程序边界](adr/0006-terminal-selector-boundary.md)：`-e` 对齐 foot 的 PTY-only execute；`--stdio` 是 Termole 显式 stdin/stdout 扩展；pipe-visible/selected/scrollback 为单向动作。旧 picker 文档仅保留历史。控制台 launcher / GUI 双角色与默认等待见 [ADR 0007](adr/0007-console-launcher-wait.md)、[T26 验证](t26-validation.md)：`t26_launcher` 与 `t26_cli_pipelines` 覆盖普通模式立即返回、`-e`/`--stdio` 等待与退出码、真实 CMD/PowerShell 管道字节、取消 `130`、控制台隐藏与保留；`-e`/`--stdio` 的完整 fzf UI 可见性与大输入矩阵仍属 T15/T16。
+- [外部程序边界](adr/0006-terminal-selector-boundary.md)：`-e` 对齐 foot 的 PTY-only execute；`--stdio` 是 Termole 显式 stdin/stdout 扩展；pipe-visible/selected/scrollback 为单向动作。旧 picker 文档仅保留历史。控制台 launcher / GUI 双角色与默认等待见 [ADR 0007](adr/0007-console-launcher-wait.md)、[T26 验证](t26-validation.md)：`t26_launcher` 与 `t26_cli_pipelines` 覆盖普通模式立即返回、`-e`/`--stdio` 等待与退出码、真实 CMD/PowerShell 管道字节、取消 `130`、控制台隐藏与保留；`-e`/`--stdio` 的字节、退出码、大输入和慢读矩阵见 [T16 验证](t16-validation.md)，完整 fzf UI 可见性仍待 #26/#27 与 T06。
 - [T22/T23 SDK 与单包](t22-t23-validation.md)：单 ZIP、只有一个 DLL/EXE（launcher 与 GUI 角色在同一 exe）、外部 `find_package` 宿主编译、CPack 许可/文档/示例检查；未在无开发工具机器验收。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
 - [T17 CMD/WSL](t17-validation.md)：CMD 既有用例；`t17_wsl` 通过已安装 WSL 执行 `sh -c`。IME/粘贴/尺寸/失败诊断仍不完整。
 - [T20 资源](t20-resources.md)：1000 行历史、256 事件、5 并发 Session、View 重附加；soak/背压未完成。

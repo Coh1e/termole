@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -363,59 +364,118 @@ struct Scenario {
 };
 
 struct StartFailureRun {
-    bool launcher_started = false;
-    DWORD code = 0xFFFFFFFFu;
+    std::optional<DWORD> code;
     std::string diagnostics;
     std::string output;
 };
 
-// Starts --stdio for a program that should fail to start, with candidate input
-// already at EOF and both caller streams redirected to capture files.
-StartFailureRun run_stdio_start_failure(const Scenario& scenario, const std::wstring& program,
-                                        const std::wstring& tag)
+// Starts -e or --stdio for a program that should fail to start. --stdio also
+// gets candidate input already at EOF and both caller streams redirected to
+// capture files; -e keeps the ConPTY streams and only captures stderr.
+StartFailureRun run_start_failure(const Scenario& scenario, const std::wstring& program,
+                                  const std::wstring& tag, bool stdio)
 {
     StartFailureRun run;
-    const auto stdout_path = scenario.root / (tag + L"-stdout.txt");
     const auto stderr_path = scenario.root / (tag + L"-stderr.txt");
+    const auto stdout_path = scenario.root / (tag + L"-stdout.txt");
     std::error_code ignored;
-    std::filesystem::remove(stdout_path, ignored);
     std::filesystem::remove(stderr_path, ignored);
+    std::filesystem::remove(stdout_path, ignored);
 
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE stdin_pipe[2]{};
-    if (!::CreatePipe(&stdin_pipe[0], &stdin_pipe[1], &security, 0)) return run;
-    ::CloseHandle(stdin_pipe[1]);  // candidate input ends at once
-    pipe_end(stdin_pipe, true, true);
-    const HANDLE stdout_file = ::CreateFileW(stdout_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
-                                             &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-                                             nullptr);
+    HANDLE output = INVALID_HANDLE_VALUE;
+    if (stdio) {
+        if (!::CreatePipe(&stdin_pipe[0], &stdin_pipe[1], &security, 0)) return run;
+        ::CloseHandle(stdin_pipe[1]);  // candidate input ends at once
+        pipe_end(stdin_pipe, true, true);
+        output = ::CreateFileW(stdout_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (output == INVALID_HANDLE_VALUE) {
+            ::CloseHandle(stdin_pipe[0]);
+            return run;
+        }
+    }
     const HANDLE stderr_file = ::CreateFileW(stderr_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                              &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
                                              nullptr);
-    if (stdout_file == INVALID_HANDLE_VALUE || stderr_file == INVALID_HANDLE_VALUE) {
-        ::CloseHandle(stdin_pipe[0]);
-        if (stdout_file != INVALID_HANDLE_VALUE) ::CloseHandle(stdout_file);
-        if (stderr_file != INVALID_HANDLE_VALUE) ::CloseHandle(stderr_file);
+    if (stderr_file == INVALID_HANDLE_VALUE) {
+        if (stdio) ::CloseHandle(stdin_pipe[0]);
+        if (stdio) ::CloseHandle(output);
         return run;
     }
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = stdin_pipe[0];
-    startup.hStdOutput = stdout_file;
+    startup.hStdInput = stdio ? stdin_pipe[0] : INVALID_HANDLE_VALUE;
+    startup.hStdOutput = stdio ? output : INVALID_HANDLE_VALUE;
     startup.hStdError = stderr_file;
-    Process launcher = spawn(scenario.app, L"--stdio " + quote(program), TRUE, 0, &startup);
-    ::CloseHandle(stdin_pipe[0]);
-    ::CloseHandle(stdout_file);
+    Process launcher = spawn(scenario.app, (stdio ? L"--stdio " : L"-e ") + quote(program), TRUE,
+                             0, &startup);
+    if (stdio) {
+        ::CloseHandle(stdin_pipe[0]);
+        ::CloseHandle(output);
+    }
     ::CloseHandle(stderr_file);
-    run.launcher_started = launcher.started;
     if (launcher.started) {
         run.code = wait_for(launcher, 20000);
         close(launcher);
     }
     run.diagnostics = read_file(stderr_path);
-    run.output = read_file(stdout_path);
+    if (stdio) run.output = read_file(stdout_path);
+    return run;
+}
+
+struct CancelRun {
+    std::optional<DWORD> code;
+    bool window = false;
+    std::string output;
+};
+
+// Starts a waiting session, closes its window while the program still runs,
+// and returns the launcher status. --stdio also opens caller pipes so the test
+// can prove cancellation adds no bytes to the result.
+CancelRun cancel_waiting_window(const Scenario& scenario, const std::wstring& title,
+                                const std::wstring& arguments, bool stdio)
+{
+    CancelRun run;
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    HANDLE stdin_pipe[2]{};
+    HANDLE stdout_pipe[2]{};
+    STARTUPINFOW startup{};
+    if (stdio) {
+        ::CreatePipe(&stdin_pipe[0], &stdin_pipe[1], &security, 0);
+        ::CreatePipe(&stdout_pipe[0], &stdout_pipe[1], &security, 0);
+        pipe_end(stdin_pipe, true, true);
+        pipe_end(stdin_pipe, false, false);
+        pipe_end(stdout_pipe, false, true);
+        pipe_end(stdout_pipe, true, false);
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = stdin_pipe[0];
+        startup.hStdOutput = stdout_pipe[1];
+        startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
+    }
+    Process launcher = spawn(scenario.app, arguments, stdio ? TRUE : FALSE, 0,
+                             stdio ? &startup : nullptr);
+    if (stdio) {
+        ::CloseHandle(stdin_pipe[0]);
+        ::CloseHandle(stdout_pipe[1]);
+        // The candidate stream ends immediately; the program is still running
+        // when the window closes, which must take the cancel path.
+        ::CloseHandle(stdin_pipe[1]);
+    }
+    if (!launcher.started) {
+        if (stdio) ::CloseHandle(stdout_pipe[0]);
+        return run;
+    }
+    const HWND window = wait_for_window(title, 15000);
+    run.window = window != nullptr;
+    if (window) ::PostMessageW(window, WM_CLOSE, 0, 0);
+    run.code = wait_for(launcher, 15000);
+    close(launcher);
+    if (stdio) run.output = drain_pipe(stdout_pipe[0]);
     return run;
 }
 
@@ -572,6 +632,61 @@ void stdio_forwards_bytes(const Scenario& scenario)
     check(output == payload, "--stdio: bytes arrive unchanged and nothing else is added");
 }
 
+void stdio_forwards_program_arguments(const Scenario& scenario)
+{
+    // --multi belongs to the external program. Termole's only job is to pass
+    // every token through unchanged; a selector that ignores it in filter mode
+    // cannot prove that, so this uses the argv-reporting helper.
+    const auto report = scenario.root / L"stdio-args-report.txt";
+    std::filesystem::remove(report);
+    set_report_env(report);
+
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    HANDLE stdin_pipe[2]{};
+    HANDLE stdout_pipe[2]{};
+    check(::CreatePipe(&stdin_pipe[0], &stdin_pipe[1], &security, 0) != FALSE,
+          "--stdio arguments: stdin pipe created");
+    check(::CreatePipe(&stdout_pipe[0], &stdout_pipe[1], &security, 0) != FALSE,
+          "--stdio arguments: stdout pipe created");
+    pipe_end(stdin_pipe, true, true);
+    pipe_end(stdin_pipe, false, false);
+    pipe_end(stdout_pipe, false, true);
+    pipe_end(stdout_pipe, true, false);
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = stdin_pipe[0];
+    startup.hStdOutput = stdout_pipe[1];
+    startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
+    Process launcher = spawn(scenario.app,
+                             L"--stdio " + quote(scenario.helper) +
+                                 L" --multi --exit-code 6",
+                             TRUE, 0, &startup);
+    ::CloseHandle(stdin_pipe[0]);
+    ::CloseHandle(stdin_pipe[1]);  // candidate input ends at once
+    ::CloseHandle(stdout_pipe[1]);
+    check(launcher.started, "--stdio arguments: launcher starts");
+    if (!launcher.started) {
+        ::CloseHandle(stdout_pipe[0]);
+        clear_report_env();
+        return;
+    }
+    const std::string output = drain_pipe(stdout_pipe[0]);
+    (void)output;
+    const DWORD code = wait_for(launcher, 15000);
+    close(launcher);
+    check(code == 6, "--stdio arguments: the program exit code is forwarded");
+    check(wait_for_file(report, 5000), "--stdio arguments: the program wrote an argv report");
+    const std::string content = read_file(report);
+    check(line_value(content, "arg1") == "--multi",
+          "--stdio arguments: --multi reaches the program unchanged");
+    check(line_value(content, "arg2") == "--exit-code",
+          "--stdio arguments: later arguments stay in order");
+    check(line_value(content, "arg3") == "6",
+          "--stdio arguments: argument values are not rewritten");
+    clear_report_env();
+}
+
 void stdio_stream_probe(const Scenario& scenario)
 {
     const auto report = scenario.root / L"stdio-report.txt";
@@ -687,52 +802,25 @@ void stdio_large_slow_consumer(const Scenario& scenario)
 void stdio_cancel_returns_130(const Scenario& scenario)
 {
     const std::wstring title = L"T16 stdio cancel " + std::to_wstring(::GetCurrentProcessId());
-    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
-    HANDLE stdin_pipe[2]{};
-    HANDLE stdout_pipe[2]{};
-    ::CreatePipe(&stdin_pipe[0], &stdin_pipe[1], &security, 0);
-    ::CreatePipe(&stdout_pipe[0], &stdout_pipe[1], &security, 0);
-    pipe_end(stdin_pipe, true, true);
-    pipe_end(stdout_pipe, false, true);
-    pipe_end(stdout_pipe, true, false);
-
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = stdin_pipe[0];
-    startup.hStdOutput = stdout_pipe[1];
-    startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
-    Process launcher = spawn(scenario.app,
-                             L"--title " + quote(title) + L" --stdio " +
-                                 quote(scenario.helper) + L" --sleep-ms 8000",
-                             TRUE, 0, &startup);
-    ::CloseHandle(stdin_pipe[0]);
-    ::CloseHandle(stdout_pipe[1]);
-    // The candidate stream ends immediately; the program is still running when
-    // the user closes the window, which must take the cancel path.
-    ::CloseHandle(stdin_pipe[1]);
-    check(launcher.started, "--stdio cancel: launcher starts");
-    if (!launcher.started) {
-        ::CloseHandle(stdout_pipe[0]);
-        return;
-    }
-    const HWND window = wait_for_window(title, 15000);
-    check(window != nullptr, "--stdio cancel: the waiting window exists");
-    if (window) ::PostMessageW(window, WM_CLOSE, 0, 0);
-    const DWORD code = wait_for(launcher, 15000);
-    close(launcher);
-    const std::string output = drain_pipe(stdout_pipe[0]);
-    check(code == 130, "--stdio cancel: closing the window while the program runs returns 130");
-    check(output.empty(), "--stdio cancel: cancellation adds no bytes to the caller stream");
+    const CancelRun run = cancel_waiting_window(
+        scenario, title,
+        L"--title " + quote(title) + L" --stdio " + quote(scenario.helper) + L" --sleep-ms 8000",
+        true);
+    check(run.code.has_value(), "--stdio cancel: launcher starts");
+    check(run.window, "--stdio cancel: the waiting window exists");
+    check(run.code.value_or(0xFFFFFFFFu) == 130,
+          "--stdio cancel: closing the window while the program runs returns 130");
+    check(run.output.empty(), "--stdio cancel: cancellation adds no bytes to the caller stream");
 }
 
 void stdio_start_failure_is_distinguishable(const Scenario& scenario)
 {
-    const StartFailureRun run = run_stdio_start_failure(
+    const StartFailureRun run = run_start_failure(
         scenario, (scenario.root / L"missing-t16-program.exe").wstring(),
-        L"stdio-missing-start-failure");
-    check(run.launcher_started, "--stdio start failure: launcher starts");
-    check(run.code == 1, "--stdio start failure: a missing program returns 1");
+        L"stdio-missing-start-failure", true);
+    check(run.code.has_value(), "--stdio start failure: launcher starts");
+    check(run.code.value_or(0xFFFFFFFFu) == 1,
+          "--stdio start failure: a missing program returns 1");
     check(run.diagnostics.find("program not found") != std::string::npos,
           "--stdio start failure: the diagnostic names the missing tool");
     check(run.output.empty(), "--stdio start failure: no diagnostic leaks into the caller stdout");
@@ -755,10 +843,11 @@ void stdio_locked_program_fails_cleanly(const Scenario& scenario)
     if (exclusive == INVALID_HANDLE_VALUE) return;
 
     const StartFailureRun run =
-        run_stdio_start_failure(scenario, locked.wstring(), L"stdio-locked-start-failure");
+        run_start_failure(scenario, locked.wstring(), L"stdio-locked-start-failure", true);
     ::CloseHandle(exclusive);
-    check(run.launcher_started, "--stdio locked program: launcher starts");
-    check(run.code == 1, "--stdio locked program: the start failure returns 1");
+    check(run.code.has_value(), "--stdio locked program: launcher starts");
+    check(run.code.value_or(0xFFFFFFFFu) == 1,
+          "--stdio locked program: the start failure returns 1");
     check(run.diagnostics.find("CreateProcessW") != std::string::npos,
           "--stdio locked program: the diagnostic names the failing call");
     check(run.diagnostics.find("program not found") == std::string::npos,
@@ -842,18 +931,13 @@ void shared_console_is_preserved(const Scenario& scenario)
 void canceling_the_window_returns_130(const Scenario& scenario)
 {
     const std::wstring title = L"T26 cancel " + std::to_wstring(::GetCurrentProcessId());
-    Process launcher = spawn(scenario.app,
-                             L"--title " + quote(title) + L" -e " + quote(scenario.helper) +
-                                 L" --sleep-ms 8000",
-                             FALSE, 0, nullptr);
-    check(launcher.started, "cancel: launcher starts");
-    if (!launcher.started) return;
-    const HWND window = wait_for_window(title, 15000);
-    check(window != nullptr, "cancel: the waiting window exists");
-    if (window) ::PostMessageW(window, WM_CLOSE, 0, 0);
-    const DWORD code = wait_for(launcher, 15000);
-    close(launcher);
-    check(code == 130, "cancel: closing the window before the program exits returns 130");
+    const CancelRun run = cancel_waiting_window(
+        scenario, title,
+        L"--title " + quote(title) + L" -e " + quote(scenario.helper) + L" --sleep-ms 8000", false);
+    check(run.code.has_value(), "cancel: launcher starts");
+    check(run.window, "cancel: the waiting window exists");
+    check(run.code.value_or(0xFFFFFFFFu) == 130,
+          "cancel: closing the window before the program exits returns 130");
 }
 
 void closed_output_pipe_ends_cleanly(const Scenario& scenario)
@@ -903,40 +987,15 @@ void start_failure_is_distinguishable(const Scenario& scenario)
     check(exclusive != INVALID_HANDLE_VALUE, "start failure: the program is opened exclusively");
     if (exclusive == INVALID_HANDLE_VALUE) return;
 
-    const auto capture = scenario.root / L"start-failure-stderr.txt";
-    std::error_code ignored;
-    std::filesystem::remove(capture, ignored);
-    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
-    const HANDLE stderr_file = ::CreateFileW(capture.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
-                                             &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-                                             nullptr);
-    check(stderr_file != INVALID_HANDLE_VALUE, "start failure: stderr capture opens");
-    if (stderr_file == INVALID_HANDLE_VALUE) {
-        ::CloseHandle(exclusive);
-        return;
-    }
-
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = INVALID_HANDLE_VALUE;
-    startup.hStdOutput = INVALID_HANDLE_VALUE;
-    startup.hStdError = stderr_file;
-    Process launcher = spawn(scenario.app, L"-e " + quote(locked.wstring()), TRUE, 0, &startup);
-    ::CloseHandle(stderr_file);
-    check(launcher.started, "start failure: launcher starts");
-    if (!launcher.started) {
-        ::CloseHandle(exclusive);
-        return;
-    }
-    const DWORD code = wait_for(launcher, 20000);
-    close(launcher);
+    const StartFailureRun run =
+        run_start_failure(scenario, locked.wstring(), L"start-failure", false);
     ::CloseHandle(exclusive);
-    const std::string diagnostics = read_file(capture);
-    check(code == 1, "start failure: launcher returns the start-failure status");
-    check(diagnostics.find("CreateProcessW") != std::string::npos,
+    check(run.code.has_value(), "start failure: launcher starts");
+    check(run.code.value_or(0xFFFFFFFFu) == 1,
+          "start failure: launcher returns the start-failure status");
+    check(run.diagnostics.find("CreateProcessW") != std::string::npos,
           "start failure: the diagnostic names the failing call");
-    check(diagnostics.find("program not found") == std::string::npos,
+    check(run.diagnostics.find("program not found") == std::string::npos,
           "start failure: the diagnostic is distinguishable from a missing tool");
 }
 
@@ -965,6 +1024,7 @@ int wmain(int argc, wchar_t** argv)
     normal_mode_returns_immediately(scenario);
     execute_mode_waits(scenario);
     stdio_forwards_bytes(scenario);
+    stdio_forwards_program_arguments(scenario);
     stdio_stream_probe(scenario);
     stdio_large_slow_consumer(scenario);
     stdio_requires_redirection(scenario);

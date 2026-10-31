@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [Parameter(Mandatory = $true)][string]$Helper,
   [string]$Fzf = ''
@@ -82,8 +82,10 @@ try {
   }
   $inputHash = (Get-FileHash -LiteralPath $binaryInput -Algorithm SHA256).Hash
   $outputHash = (Get-FileHash -LiteralPath $binaryOutput -Algorithm SHA256).Hash
+  $inputLength = (Get-Item -LiteralPath $binaryInput).Length
+  $outputLength = (Get-Item -LiteralPath $binaryOutput).Length
   if ($inputHash -ne $outputHash) {
-    Write-Error "binary --stdio roundtrip changed NUL/Unicode bytes"
+    Write-Error "binary --stdio roundtrip changed NUL/Unicode bytes (in ${inputLength} B $inputHash, out ${outputLength} B $outputHash)"
     exit 1
   }
 } finally {
@@ -116,7 +118,7 @@ if ($Fzf -and (Test-Path -LiteralPath $Fzf)) {
   $multiDirect = @($candidates | & $Fzf --filter=a --multi)
   $multiVia = @($candidates | & $Exe --stdio $Fzf --filter=a --multi)
   if (($multiDirect -join "`n") -ne ($multiVia -join "`n")) {
-    Write-Error "fzf --multi argument did not pass through unchanged"
+    Write-Error "fzf --multi argument did not pass through unchanged: direct '$($multiDirect -join '|')', via '$($multiVia -join '|')'"
     exit 1
   }
 
@@ -124,6 +126,42 @@ if ($Fzf -and (Test-Path -LiteralPath $Fzf)) {
   if ($LASTEXITCODE -ne 1) {
     Write-Error "fzf no-match status is not forwarded (got $LASTEXITCODE)"
     exit 1
+  }
+
+  # PowerShell as the caller with byte-level stdout: Start-Process redirects the
+  # launcher's stdin/stdout to files, so PowerShell's text decoding cannot hide
+  # a changed byte or a lost trailing newline.
+  $byteCandidates = Join-Path $env:TEMP ("termole-t16-fzf-bytes-in-" + [guid]::NewGuid().ToString('N') + ".txt")
+  $byteDirect = Join-Path $env:TEMP ("termole-t16-fzf-bytes-direct-" + [guid]::NewGuid().ToString('N') + ".txt")
+  $byteVia = Join-Path $env:TEMP ("termole-t16-fzf-bytes-via-" + [guid]::NewGuid().ToString('N') + ".txt")
+  $byteError = Join-Path $env:TEMP ("termole-t16-fzf-bytes-err-" + [guid]::NewGuid().ToString('N') + ".txt")
+  try {
+    [IO.File]::WriteAllText($byteCandidates, "alpha`r`nbeta`r`n中文-🐭`r`nmulti word`r`nzeta`r`n",
+                            (New-Object System.Text.UTF8Encoding($false)))
+    $directProcess = Start-Process -FilePath $Fzf -ArgumentList '--filter=alp' `
+      -RedirectStandardInput $byteCandidates -RedirectStandardOutput $byteDirect `
+      -RedirectStandardError $byteError -NoNewWindow -Wait -PassThru
+    if ($directProcess.ExitCode -ne 0) {
+      Write-Error "direct fzf --filter byte run exited with $($directProcess.ExitCode)"
+      exit 1
+    }
+    $viaProcess = Start-Process -FilePath $Exe -ArgumentList "--stdio `"$Fzf`" --filter=alp" `
+      -RedirectStandardInput $byteCandidates -RedirectStandardOutput $byteVia `
+      -RedirectStandardError $byteError -NoNewWindow -Wait -PassThru
+    if ($viaProcess.ExitCode -ne 0) {
+      Write-Error "termole --stdio fzf --filter byte run exited with $($viaProcess.ExitCode)"
+      exit 1
+    }
+    $byteDirectHash = (Get-FileHash -LiteralPath $byteDirect -Algorithm SHA256).Hash
+    $byteViaHash = (Get-FileHash -LiteralPath $byteVia -Algorithm SHA256).Hash
+    if ($byteDirectHash -ne $byteViaHash) {
+      $byteDirectLength = (Get-Item -LiteralPath $byteDirect).Length
+      $byteViaLength = (Get-Item -LiteralPath $byteVia).Length
+      Write-Error "termole --stdio changed fzf --filter bytes (direct ${byteDirectLength} B $byteDirectHash, via ${byteViaLength} B $byteViaHash)"
+      exit 1
+    }
+  } finally {
+    Remove-Item -LiteralPath $byteCandidates, $byteDirect, $byteVia, $byteError -ErrorAction SilentlyContinue
   }
 
   # NUL-delimited candidates (--read0/--print0) with an embedded newline and
@@ -155,7 +193,9 @@ if ($Fzf -and (Test-Path -LiteralPath $Fzf)) {
     $nulDirectHash = (Get-FileHash -LiteralPath $nulDirect -Algorithm SHA256).Hash
     $nulViaHash = (Get-FileHash -LiteralPath $nulVia -Algorithm SHA256).Hash
     if ($nulDirectHash -ne $nulViaHash) {
-      Write-Error "termole --stdio changed NUL-delimited fzf output"
+      $nulDirectBytes = [IO.File]::ReadAllBytes($nulDirect)
+      $nulViaBytes = [IO.File]::ReadAllBytes($nulVia)
+      Write-Error "termole --stdio changed NUL-delimited fzf output (direct $($nulDirectBytes.Length) B $nulDirectHash, via $($nulViaBytes.Length) B $nulViaHash)"
       exit 1
     }
     $nulBytes = [IO.File]::ReadAllBytes($nulVia)
