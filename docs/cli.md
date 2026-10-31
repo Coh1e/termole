@@ -92,10 +92,13 @@ Get-Content names.txt | termole.exe --stdio fzf | ForEach-Object { "picked: $_" 
 
 ## Pipe 动作
 
-T25 提供 `pipe-visible` / `pipe-selected` / `pipe-scrollback`：把当前可见文本、选区或回滚以 UTF-8 送到配置的外部命令 stdin。命令 stdout/stderr 丢弃；命令内部可以运行 fzf/fuzzel 等选择器并执行动作。
+T25 提供 `pipe-visible` / `pipe-selected` / `pipe-scrollback`：把当前可见文本、选区或回滚以 UTF-8 送到配置的外部命令 stdin。命令 stdout/stderr 丢弃；命令内部可以运行 fzf/fuzzel 等选择器并执行动作，但选择器的终端/UI 由命令自己提供。
 
-- 首版不注册默认热键；需要用户在配置中显式绑定按键和命令。
-- 命令由 Windows shell 执行，Termole 不实现自己的命令语言。
+- 首版不注册默认热键；需要用户在配置中显式绑定按键和命令，配置形状见 [config.md](config.md#pipe-动作按键)。
+- 命令由 `%COMSPEC%`（缺省 `cmd.exe`）以 `/d /s /c "<command>"` 执行，Termole 不实现自己的命令语言。
+- 文本固定 UTF-8，行分隔符是 `\n`，不追加尾随换行：`pipe-visible` 使用当前 View 视口（去掉每行行尾空格和末尾空行），`pipe-selected` 使用当前选区（保留空格），`pipe-scrollback` 使用 Session 保留的、有界的最多 1000 行回滚。
+- 命令 stdout/stderr 指向 `NUL`，不进入终端，也不污染调用方 stdout；命令退出码不影响 Termole 会话，只有 shell 进程无法启动写诊断，命令内部失败（含工具缺失/语法错误）由命令退出码表示且不被解析。
+- 命令自己负责 UI：pipe 命令没有控制台，`termole -e` 打开的新窗口不继承 pipe 文本；需要选择器 UI 的命令应自己保存 stdin 并打开读取它的窗口。
 - 命令自己的临时文件和业务清理由命令负责；若命令通过 `termole -e` 打开新的交互窗口，launcher 的默认等待使命令可以在窗口关闭后再清理。
 - `pipe-command-output` 依赖 shell 的 OSC 133 命令边界，不在首版范围。
 

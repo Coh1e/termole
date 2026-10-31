@@ -314,7 +314,244 @@ std::optional<std::wstring> read_utf8(const std::wstring& path, std::wstring& er
     return text;
 }
 
+struct PipeActionInfo {
+    std::wstring_view suffix;
+    std::wstring_view table;
+};
+
+constexpr PipeActionInfo kPipeActions[]{
+    { L"visible", L"pipe.visible" },
+    { L"selected", L"pipe.selected" },
+    { L"scrollback", L"pipe.scrollback" },
+};
+
+std::optional<PipeAction> pipe_action_from_name(std::wstring_view name)
+{
+    for (size_t index = 0; index < std::size(kPipeActions); ++index) {
+        if (name == kPipeActions[index].suffix) return static_cast<PipeAction>(index);
+    }
+    return std::nullopt;
+}
+
+struct NamedKey {
+    std::wstring_view name;
+    uint32_t virtual_key;
+};
+
+constexpr NamedKey kNamedKeys[]{
+    { L"insert", VK_INSERT },   { L"delete", VK_DELETE }, { L"home", VK_HOME },
+    { L"end", VK_END },         { L"pageup", VK_PRIOR },  { L"pagedown", VK_NEXT },
+    { L"up", VK_UP },           { L"down", VK_DOWN },     { L"left", VK_LEFT },
+    { L"right", VK_RIGHT },     { L"space", VK_SPACE },   { L"tab", VK_TAB },
+    { L"enter", VK_RETURN },    { L"escape", VK_ESCAPE }, { L"backspace", VK_BACK },
+};
+
+std::wstring lowercase(std::wstring_view text)
+{
+    std::wstring result(text);
+    for (wchar_t& character : result) character = static_cast<wchar_t>(std::towlower(character));
+    return result;
+}
+
+std::optional<uint32_t> virtual_key_from_name(const std::wstring& name)
+{
+    if (name.size() == 1) {
+        const wchar_t character = name.front();
+        if (character >= L'a' && character <= L'z') {
+            return static_cast<uint32_t>(L'A' + (character - L'a'));
+        }
+        if (character >= L'0' && character <= L'9') {
+            return static_cast<uint32_t>(character);
+        }
+        return std::nullopt;
+    }
+    if (name.size() >= 2 && name[0] == L'f') {
+        const std::wstring digits = name.substr(1);
+        if (std::all_of(digits.begin(), digits.end(),
+                        [](wchar_t character) { return character >= L'0' && character <= L'9'; })) {
+            const int number = std::wcstol(digits.c_str(), nullptr, 10);
+            if (number >= 1 && number <= 24) {
+                return static_cast<uint32_t>(VK_F1 + number - 1);
+            }
+        }
+    }
+    for (const NamedKey& key : kNamedKeys) {
+        if (name == key.name) return key.virtual_key;
+    }
+    return std::nullopt;
+}
+
+std::wstring key_name_from_virtual_key(uint32_t virtual_key)
+{
+    if (virtual_key >= L'A' && virtual_key <= L'Z') {
+        return std::wstring(1, static_cast<wchar_t>(L'a' + (virtual_key - L'A')));
+    }
+    if (virtual_key >= L'0' && virtual_key <= L'9') {
+        return std::wstring(1, static_cast<wchar_t>(virtual_key));
+    }
+    if (virtual_key >= VK_F1 && virtual_key <= VK_F24) {
+        return L"f" + std::to_wstring(virtual_key - VK_F1 + 1);
+    }
+    for (const NamedKey& key : kNamedKeys) {
+        if (virtual_key == key.virtual_key) return std::wstring(key.name);
+    }
+    return L"0x" + std::to_wstring(virtual_key);
+}
+
+std::vector<std::wstring> split_chord_parts(const std::wstring& text)
+{
+    std::vector<std::wstring> parts;
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t plus = text.find(L'+', begin);
+        const size_t end = plus == std::wstring::npos ? text.size() : plus;
+        parts.push_back(text.substr(begin, end - begin));
+        if (plus == std::wstring::npos) break;
+        begin = plus + 1;
+    }
+    return parts;
+}
+
+struct PipeIssue {
+    int line = 0;
+    std::wstring detail;
+};
+
+std::optional<std::wstring> builtin_shortcut_name(const KeyChord& chord)
+{
+    const auto matches = [&](uint32_t modifiers, uint32_t key) {
+        return chord.modifiers == modifiers && chord.virtual_key == key;
+    };
+    if (matches(MOD_CONTROL, 'C') || matches(MOD_CONTROL | MOD_SHIFT, 'C')) return L"copy";
+    if (matches(MOD_CONTROL, 'V') || matches(MOD_CONTROL | MOD_SHIFT, 'V')) return L"paste";
+    if (matches(MOD_SHIFT, VK_INSERT)) return L"paste";
+    return std::nullopt;
+}
+
+std::optional<PipeIssue> validate_pipes(const ConfigValues& values)
+{
+    std::map<std::pair<uint32_t, uint32_t>, PipeAction> bound;
+    for (size_t index = 0; index < values.pipes.size(); ++index) {
+        const auto& slot = values.pipes[index];
+        if (!slot) continue;
+        const auto action = static_cast<PipeAction>(index);
+        const std::wstring name = pipe_action_name(action);
+        if (!slot->key || trim(*slot->key).empty()) {
+            return PipeIssue{ slot->table_line, name + L" requires key" };
+        }
+        if (!slot->command || trim(*slot->command).empty()) {
+            return PipeIssue{ slot->command_line != 0 ? slot->command_line : slot->table_line,
+                              name + L" requires command" };
+        }
+        std::wstring detail;
+        const auto chord = parse_key_chord(*slot->key, detail);
+        if (!chord) {
+            return PipeIssue{ slot->key_line,
+                              L"invalid key binding \"" + *slot->key + L"\": " + detail };
+        }
+        if (const auto conflict = builtin_shortcut_name(*chord)) {
+            return PipeIssue{ slot->key_line,
+                              L"key \"" + format_key_chord(*chord) + L"\" conflicts with the " +
+                                  L"built-in " + *conflict + L" shortcut" };
+        }
+        const auto key = std::make_pair(chord->virtual_key, chord->modifiers);
+        const auto found = bound.find(key);
+        if (found != bound.end()) {
+            return PipeIssue{ slot->key_line,
+                              L"key \"" + format_key_chord(*chord) + L"\" is already bound to " +
+                                  pipe_action_name(found->second) };
+        }
+        bound.emplace(key, action);
+    }
+    return std::nullopt;
+}
+
 } // namespace
+
+std::wstring pipe_action_name(PipeAction action)
+{
+    const size_t index = static_cast<size_t>(action);
+    if (index < std::size(kPipeActions)) return std::wstring(kPipeActions[index].table);
+    return L"pipe";
+}
+
+std::optional<KeyChord> parse_key_chord(std::wstring_view input, std::wstring& detail)
+{
+    constexpr std::wstring_view kNeedsCtrlOrAlt = L"needs ctrl or alt";
+    const std::wstring text = lowercase(trim(input));
+    if (text.empty()) {
+        detail = L"empty key binding";
+        return std::nullopt;
+    }
+    std::vector<std::wstring> parts = split_chord_parts(text);
+    if (parts.size() < 2) {
+        detail.assign(kNeedsCtrlOrAlt);
+        return std::nullopt;
+    }
+
+    KeyChord chord;
+    for (size_t index = 0; index + 1 < parts.size(); ++index) {
+        const std::wstring& part = parts[index];
+        if (part.empty()) {
+            detail = L"empty modifier";
+            return std::nullopt;
+        }
+        uint32_t flag = 0;
+        if (part == L"ctrl" || part == L"control") flag = MOD_CONTROL;
+        else if (part == L"shift") flag = MOD_SHIFT;
+        else if (part == L"alt") flag = MOD_ALT;
+        else {
+            detail = L"unknown modifier \"" + part + L"\"";
+            return std::nullopt;
+        }
+        if ((chord.modifiers & flag) != 0) {
+            detail = L"duplicate modifier \"" + part + L"\"";
+            return std::nullopt;
+        }
+        chord.modifiers |= flag;
+    }
+    if ((chord.modifiers & (MOD_CONTROL | MOD_ALT)) == 0) {
+        detail.assign(kNeedsCtrlOrAlt);
+        return std::nullopt;
+    }
+
+    const std::wstring& base = parts.back();
+    if (base.empty()) {
+        detail = L"empty key name";
+        return std::nullopt;
+    }
+    const auto virtual_key = virtual_key_from_name(base);
+    if (!virtual_key) {
+        detail = L"unknown key \"" + base + L"\"";
+        return std::nullopt;
+    }
+    chord.virtual_key = *virtual_key;
+    return chord;
+}
+
+std::wstring format_key_chord(const KeyChord& chord)
+{
+    std::wstring text;
+    if ((chord.modifiers & MOD_CONTROL) != 0) text += L"ctrl+";
+    if ((chord.modifiers & MOD_SHIFT) != 0) text += L"shift+";
+    if ((chord.modifiers & MOD_ALT) != 0) text += L"alt+";
+    text += key_name_from_virtual_key(chord.virtual_key);
+    return text;
+}
+
+std::vector<PipeBinding> pipe_bindings(const Config& config)
+{
+    std::vector<PipeBinding> result;
+    for (size_t index = 0; index < config.root.pipes.size(); ++index) {
+        const auto& slot = config.root.pipes[index];
+        if (!slot || !slot->key || !slot->command) continue;
+        std::wstring detail;
+        const auto chord = parse_key_chord(*slot->key, detail);
+        if (!chord) continue;
+        result.push_back(PipeBinding{ static_cast<PipeAction>(index), *chord, *slot->command });
+    }
+    return result;
+}
 
 std::wstring default_config_path()
 {
@@ -337,6 +574,8 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
     }
 
     ConfigValues* current = &result.config.root;
+    PipeConfig* current_pipe = nullptr;
+    std::wstring current_pipe_name;
     std::wistringstream input(*text);
     std::wstring line;
     int line_number = 0;
@@ -355,6 +594,24 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
             const std::wstring section = trim(content.substr(1, content.size() - 2));
             if (section == L"termole") {
                 current = &result.config.root;
+                current_pipe = nullptr;
+            } else if (section.rfind(L"pipe.", 0) == 0) {
+                const std::wstring name = section.substr(5);
+                const auto action = pipe_action_from_name(name);
+                if (!action) {
+                    result.ok = false;
+                    result.error = path + L":" + std::to_wstring(line_number) +
+                        L": unsupported table [" + section + L"]";
+                    return result;
+                }
+                auto& slot = result.config.root.pipes[static_cast<size_t>(*action)];
+                if (!slot) {
+                    slot.emplace();
+                    slot->table_line = line_number;
+                }
+                current = &result.config.root;
+                current_pipe = &*slot;
+                current_pipe_name = section;
             } else if (section.rfind(L"profiles.", 0) == 0) {
                 const std::wstring name = section.substr(9);
                 if (name.empty()) {
@@ -362,7 +619,15 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
                     result.error = path + L":" + std::to_wstring(line_number) + L": empty profile name";
                     return result;
                 }
+                if (name.rfind(L"pipe.", 0) == 0 || name.find(L".pipe.") != std::wstring::npos) {
+                    result.ok = false;
+                    result.error = path + L":" + std::to_wstring(line_number) +
+                        L": pipe bindings are global; use [pipe.visible], [pipe.selected] or "
+                        L"[pipe.scrollback]";
+                    return result;
+                }
                 current = &result.config.profiles[name];
+                current_pipe = nullptr;
             } else {
                 result.ok = false;
                 result.error = path + L":" + std::to_wstring(line_number) +
@@ -391,6 +656,28 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
             result.error = path + L":" + std::to_wstring(line_number) + L": " + value_error;
             return result;
         }
+        if (current_pipe) {
+            if (key != L"key" && key != L"command") {
+                result.ok = false;
+                result.error = path + L":" + std::to_wstring(line_number) +
+                    L": unknown key in [" + current_pipe_name + L"]: " + key;
+                return result;
+            }
+            if (value.kind != Value::Kind::String) {
+                result.ok = false;
+                result.error = path + L":" + std::to_wstring(line_number) + L": " + key +
+                    L" must be a string";
+                return result;
+            }
+            if (key == L"key") {
+                current_pipe->key = value.string;
+                current_pipe->key_line = line_number;
+            } else {
+                current_pipe->command = value.string;
+                current_pipe->command_line = line_number;
+            }
+            continue;
+        }
         if (!assign(*current, key, value, value_error)) {
             result.ok = false;
             result.error = path + L":" + std::to_wstring(line_number) + L": " + value_error;
@@ -403,6 +690,10 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
             result.ok = false;
             result.error = path + L": profile not found: " + *profile;
         }
+    }
+    if (const auto issue = validate_pipes(result.config.root)) {
+        result.ok = false;
+        result.error = path + L":" + std::to_wstring(issue->line) + L": " + issue->detail;
     }
     return result;
 }

@@ -49,6 +49,34 @@ target_include_directories(termole_config_test PRIVATE "${PROJECT_SOURCE_DIR}/ap
   "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(termole_config_test PRIVATE termole_build_options)
 
+add_executable(termole_pipe_helper pipe_helper.cpp)
+target_link_libraries(termole_pipe_helper PRIVATE termole_build_options)
+set_target_properties(termole_pipe_helper PROPERTIES
+  OUTPUT_NAME "pipe-helper"
+  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+)
+
+add_executable(termole_pipe_runner_test
+  pipe_runner_test.cpp
+  "${PROJECT_SOURCE_DIR}/apps/common/pipe.cpp"
+)
+target_include_directories(termole_pipe_runner_test PRIVATE "${PROJECT_SOURCE_DIR}/apps")
+target_link_libraries(termole_pipe_runner_test PRIVATE termole_build_options)
+add_dependencies(termole_pipe_runner_test termole_pipe_helper)
+add_test(NAME t25_pipe_runner COMMAND termole_pipe_runner_test)
+set_tests_properties(t25_pipe_runner PROPERTIES TIMEOUT 60
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
+add_executable(termole_pipe_e2e_test pipe_e2e_test.cpp)
+target_link_libraries(termole_pipe_e2e_test PRIVATE termole termole_build_options)
+add_dependencies(termole_pipe_e2e_test termole_app termole_pipe_helper)
+add_test(NAME t25_pipe_e2e COMMAND termole_pipe_e2e_test
+  "$<TARGET_FILE:termole_app>"
+  "$<TARGET_FILE:termole_pipe_helper>"
+  "${CMAKE_CURRENT_BINARY_DIR}/pipe-e2e")
+set_tests_properties(t25_pipe_e2e PROPERTIES TIMEOUT 120
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
 add_executable(termole_cli_no_console_test cli_no_console_test.cpp)
 target_link_libraries(termole_cli_no_console_test PRIVATE termole_build_options)
 add_dependencies(termole_cli_no_console_test termole_app termole_cli_report_helper)

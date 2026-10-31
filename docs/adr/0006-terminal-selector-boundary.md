@@ -56,6 +56,15 @@ Termole 采用“终端与外部程序分离”的三层边界：
 - 不再需要 picker helper、候选/结果临时文件协议或 fzf 专用分支。
 - 以后若要支持“调用方拿回选择结果”，应作为独立的 launcher 设计，而不是重新把 picker 塞回终端。
 
+## 实现记录（2026-11-01）
+
+T25 按本 ADR 落地 pipe 动作，三层边界不变：
+
+- pipe 绑定来自配置文件，是独立入口的应用层能力；嵌入宿主按既有约定不读取用户配置，因此不注册 pipe 热键，仍用公开查询（视口、选区、回滚）或自己的数据通道组合命令。未新增 C ABI。
+- 三个文本来源直接复用 View 视口、View 选区和 Session 回滚的现有定义；命令 stdout/stderr 指向 `NUL`，退出码不进入会话，不新增结果返回协议。
+- 命令由 `%COMSPEC%`（缺省 `cmd.exe`）以 `/d /s /c "<command>"` 执行；按键在独立入口拦截。交付仍是 1 个 `termole.exe` + 1 个 `termole.dll`。
+- 验证见 [T25 验证](../t25-validation.md)。
+
 ## 参考
 
 - [foot 源码核查](../foot-stdio-research.md)

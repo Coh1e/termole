@@ -75,10 +75,10 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T19 基础、T20/T21 初步、T22/T23/T26 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI（字节/退出码/背压矩阵已由 [T16 验证](docs/t16-validation.md) 覆盖）、pipe 动作（T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20/T21 初步、T22/T23/T25/T26 只承诺已列出的切片，不宣称完整终端兼容性。pipe 动作（T25）已实现，证据见 [T25 验证](docs/t25-validation.md)。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI（字节/退出码/背压矩阵已由 [T16 验证](docs/t16-validation.md) 覆盖）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 
-产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite）和静态 CRT；`termole.dll`、`termole.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 327,168 B、`termole.exe` 344,064 B（launcher/GUI 改造后）。依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md)、[T22/T23 报告](docs/t22-t23-validation.md) 与 [T26 验证](docs/t26-validation.md)。
+产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite）和静态 CRT；`termole.dll`、`termole.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 327,680 B、`termole.exe` 379,904 B（launcher/GUI 改造与 pipe 动作后）。依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md)、[T22/T23 报告](docs/t22-t23-validation.md)、[T25 验证](docs/t25-validation.md) 与 [T26 验证](docs/t26-validation.md)。
 
 第三方代码来源、许可证与产品/探针边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -49,6 +49,8 @@
 
 **Blocked by:** T11、T14、T16、T26。
 
+**状态：已实现并通过本机验证，见 [T25 验证](t25-validation.md)。** 任务关闭状态以 GitHub 为准。
+
 **What it delivers:** 把当前可见文本、选区或回滚送到外部命令 stdin；外部命令拥有自己的 UI/选择语义，stdout/stderr 丢弃；Termole 不把结果返回调用方。
 
 **Acceptance criteria:**

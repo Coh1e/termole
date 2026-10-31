@@ -5,6 +5,7 @@
 #include "common/console.h"
 #include "common/diagnostics.h"
 #include "common/exit_codes.h"
+#include "common/pipe.h"
 #include "common/smoke.h"
 #include "standalone/gui.h"
 
@@ -14,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace termole::app {
 namespace {
@@ -27,6 +29,8 @@ struct AppState {
     std::optional<termole::Session> session;
     std::optional<termole::View> view;
     termole::app::SmokeProbe smoke;
+    termole::app::PipeRunner pipe_runner;
+    std::vector<termole::app::PipeBinding> pipe_bindings;
     HWND status = nullptr;
     // Captured before any diagnostics attach to a console: the --stdio data
     // channel handles must not be disturbed by error reporting.
@@ -38,6 +42,12 @@ struct AppState {
     bool wait_for_exit = false;
     bool interactive_errors = true;
     int exit_code = 0;
+    // Pipe key state, tracked from the messages the View itself receives so
+    // posted test messages and hardware input follow the same path.
+    WNDPROC view_proc = nullptr;
+    uint32_t key_modifiers = 0;
+    bool suppress_pipe_character = false;
+    UINT suppressed_key = 0;
 };
 
 bool automated_run()
@@ -59,6 +69,122 @@ void report_error(AppState& state, const std::wstring& message)
         !automated_run()) {
         termole::app::show_message(text, true);
     }
+}
+
+void run_pipe_action(AppState& state, const termole::app::PipeBinding& binding)
+{
+    if (!state.view || !state.session) return;
+    std::string text;
+    switch (binding.action) {
+    case termole::app::PipeAction::Visible: {
+        const auto value = state.view->viewport_text();
+        if (value) text = *value;
+        break;
+    }
+    case termole::app::PipeAction::Selected: {
+        const auto value = state.view->selection_text();
+        if (value) text = *value;
+        break;
+    }
+    case termole::app::PipeAction::Scrollback: {
+        const auto value = state.session->scrollback_text();
+        if (value) text = *value;
+        break;
+    }
+    }
+    std::wstring error;
+    if (!state.pipe_runner.launch(binding.command, std::move(text), error)) {
+        report_error(state, termole::app::pipe_action_name(binding.action) + L" could not start: " +
+                                error);
+    }
+}
+
+uint32_t modifier_flag(WPARAM key)
+{
+    if (key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL) return MOD_CONTROL;
+    if (key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT) return MOD_SHIFT;
+    if (key == VK_MENU || key == VK_LMENU || key == VK_RMENU) return MOD_ALT;
+    return 0;
+}
+
+// Returns a result only when the pipe binding consumes the message.
+std::optional<LRESULT> handle_pipe_message(AppState& state, UINT message, WPARAM wparam,
+                                            LPARAM lparam)
+{
+    switch (message) {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        if (const uint32_t flag = modifier_flag(wparam)) {
+            state.key_modifiers |= flag;
+            return std::nullopt;
+        }
+        for (const auto& binding : state.pipe_bindings) {
+            if (binding.chord.virtual_key != wparam ||
+                binding.chord.modifiers != state.key_modifiers) {
+                continue;
+            }
+            state.suppress_pipe_character = true;
+            state.suppressed_key = static_cast<UINT>(wparam);
+            // Ignore auto-repeat: one chord press launches one command.
+            if ((lparam & (1 << 30)) == 0) run_pipe_action(state, binding);
+            return 0;
+        }
+        return std::nullopt;
+    }
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        state.key_modifiers &= ~modifier_flag(wparam);
+        if (state.suppress_pipe_character && wparam == state.suppressed_key) {
+            state.suppress_pipe_character = false;
+            state.suppressed_key = 0;
+        }
+        return std::nullopt;
+    case WM_CHAR:
+    case WM_SYSCHAR:
+        if (state.suppress_pipe_character) {
+            state.suppress_pipe_character = false;
+            state.suppressed_key = 0;
+            return 0;
+        }
+        return std::nullopt;
+    case WM_KILLFOCUS:
+        state.key_modifiers = 0;
+        state.suppress_pipe_character = false;
+        state.suppressed_key = 0;
+        return std::nullopt;
+    default:
+        return std::nullopt;
+    }
+}
+
+constexpr wchar_t kPipeKeyProperty[] = L"TermolePipeKeys";
+
+LRESULT CALLBACK pipe_key_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    auto* state = static_cast<AppState*>(::GetPropW(window, kPipeKeyProperty));
+    if (state) {
+        if (const auto consumed = handle_pipe_message(*state, message, wparam, lparam)) {
+            return *consumed;
+        }
+    }
+    WNDPROC original = state ? state->view_proc : nullptr;
+    const LRESULT result = original
+        ? ::CallWindowProcW(original, window, message, wparam, lparam)
+        : ::DefWindowProcW(window, message, wparam, lparam);
+    if (message == WM_NCDESTROY && state) {
+        ::RemovePropW(window, kPipeKeyProperty);
+        state->view_proc = nullptr;
+    }
+    return result;
+}
+
+void install_pipe_keys(AppState& state, HWND view)
+{
+    if (!view || state.pipe_bindings.empty()) return;
+    state.view_proc = reinterpret_cast<WNDPROC>(::GetWindowLongPtrW(view, GWLP_WNDPROC));
+    if (!state.view_proc) return;
+    ::SetPropW(view, kPipeKeyProperty, &state);
+    ::SetWindowLongPtrW(view, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&pipe_key_proc));
 }
 
 termole::Session::Options session_options(const termole::app::CliOptions& cli,
@@ -229,6 +355,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             return -1;
         }
         state->view.emplace(std::move(*view));
+        install_pipe_keys(*state, state->view->hwnd());
         state->status = ::CreateWindowExW(0, L"STATIC", L"", WS_CHILD | SS_LEFT, 0, 0, 0, 0, window,
                                           nullptr, ::GetModuleHandleW(nullptr), nullptr);
         layout_view(*state, window);
@@ -350,6 +477,7 @@ int run_gui(int argc, wchar_t** argv)
                                         L"\nUsing defaults.");
             } else {
                 termole::app::apply_config(state.cli, loaded.config, state.cli.profile);
+                state.pipe_bindings = termole::app::pipe_bindings(loaded.config);
             }
         }
     }
