@@ -16,4 +16,5 @@
 
 ## 测试边界
 
-- 一个契约只在一个测试家族里验证：launcher/等待/数据通道在 `t26_*`，Session/View 与宿主能力在现有 C API 测试。不要为同一行为并行搭第二套 harness。
+- 一个契约只在一个测试家族里验证：launcher/等待/数据通道在 `t26_*`，Session/View 与宿主能力在现有 C API 测试，像素可见性在 `tests/visual/`。不要为同一行为并行搭第二套 harness。
+- `t26_launcher` 的窗口截图只作 launcher 冒烟（窗口有内容），不替代视觉结论；界面可见性以 `tests/visual/` 为准。

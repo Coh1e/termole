@@ -150,6 +150,47 @@ if(TERMOLE_FZF)
   )
 endif()
 
+# Pixel harness (#27). The deterministic alt-screen scenario is part of the
+# default suite; the real-fzf scenario registers only when fzf exists (the same
+# condition as t06_fzf) and carries the known-red label while issue #26 makes
+# the fzf View blank. The default test preset excludes known-red; run
+# `ctest --preset windows-visual` to see the reproducible red.
+if(TERMOLE_POWERSHELL)
+  add_executable(termole_visual_child visual/alt_screen_child.cpp)
+  target_link_libraries(termole_visual_child PRIVATE termole_build_options)
+
+  add_executable(termole_visual_test visual/visual_test.cpp)
+  target_link_libraries(termole_visual_test PRIVATE termole termole_build_options)
+  add_dependencies(termole_visual_test termole_visual_child)
+
+  add_test(NAME visual_alt_screen COMMAND termole_visual_test
+    --mode alt-screen
+    --child "$<TARGET_FILE:termole_visual_child>"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/alt-screen")
+  set_tests_properties(visual_alt_screen PROPERTIES
+    TIMEOUT 120
+    LABELS "visual"
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+
+  if(TERMOLE_FZF)
+    add_test(NAME visual_fzf COMMAND termole_visual_test
+      --mode fzf
+      --fzf "${TERMOLE_FZF}"
+      --powershell "${TERMOLE_POWERSHELL}"
+      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf")
+    set_tests_properties(visual_fzf PROPERTIES
+      TIMEOUT 120
+      LABELS "visual;known-red"
+      SKIP_RETURN_CODE 77
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+  endif()
+endif()
+
 add_executable(termole_cmd_test cmd_test.cpp)
 target_link_libraries(termole_cmd_test PRIVATE termole termole_build_options)
 add_test(NAME t17_cmd_target COMMAND termole_cmd_test)

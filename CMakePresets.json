@@ -29,7 +29,23 @@
     { "name": "windows-spikes", "configurePreset": "windows-spikes" }
   ],
   "testPresets": [
-    { "name": "windows", "configurePreset": "windows", "output": { "outputOnFailure": true } },
-    { "name": "windows-spikes", "configurePreset": "windows-spikes", "output": { "outputOnFailure": true } }
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "filter": { "exclude": { "label": "known-red" } },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-visual",
+      "configurePreset": "windows",
+      "filter": { "include": { "label": "visual" } },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-spikes",
+      "configurePreset": "windows-spikes",
+      "filter": { "exclude": { "label": "known-red" } },
+      "output": { "outputOnFailure": true }
+    }
   ]
 }
