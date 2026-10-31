@@ -48,36 +48,60 @@ bool write_console(HANDLE handle, std::wstring_view text)
     return true;
 }
 
-HANDLE prepare_handle(DWORD standard_handle)
+struct PreparedHandle {
+    HANDLE handle = nullptr;
+    bool attached = false;
+};
+
+PreparedHandle prepare_handle(DWORD standard_handle)
 {
+    PreparedHandle result;
     HANDLE handle = ::GetStdHandle(standard_handle);
-    if (handle && handle != INVALID_HANDLE_VALUE && ::GetFileType(handle) != FILE_TYPE_UNKNOWN) {
-        return handle;
+    if (handle && handle != INVALID_HANDLE_VALUE &&
+        ::GetFileType(handle) != FILE_TYPE_UNKNOWN) {
+        result.handle = handle;
+        return result;
     }
 
     // A GUI-subsystem process launched from a console has invalid standard
     // handles by default; attach to the parent console only when diagnostics
-    // are needed.
-    if (::AttachConsole(ATTACH_PARENT_PROCESS) || ::GetLastError() == ERROR_ACCESS_DENIED) {
+    // are needed, and detach again after writing so the process is not exposed
+    // to that console's Ctrl+C/close events.
+    if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
+        result.attached = true;
         handle = ::GetStdHandle(standard_handle);
         if (handle && handle != INVALID_HANDLE_VALUE &&
             ::GetFileType(handle) != FILE_TYPE_UNKNOWN) {
-            return handle;
+            result.handle = handle;
+            return result;
+        }
+        ::FreeConsole();
+        result.attached = false;
+    } else if (::GetLastError() == ERROR_ACCESS_DENIED) {
+        handle = ::GetStdHandle(standard_handle);
+        if (handle && handle != INVALID_HANDLE_VALUE &&
+            ::GetFileType(handle) != FILE_TYPE_UNKNOWN) {
+            result.handle = handle;
         }
     }
-    return nullptr;
+    return result;
 }
 
 bool write_standard(DWORD standard_handle, std::wstring_view text)
 {
-    const HANDLE handle = prepare_handle(standard_handle);
-    if (!handle) return false;
+    const PreparedHandle prepared = prepare_handle(standard_handle);
+    if (!prepared.handle) return false;
 
+    bool ok = false;
     DWORD mode = 0;
-    if (::GetConsoleMode(handle, &mode)) return write_console(handle, text);
-
-    const std::string utf8 = wide_to_utf8(text);
-    return write_all(handle, utf8.data(), utf8.size());
+    if (::GetConsoleMode(prepared.handle, &mode)) {
+        ok = write_console(prepared.handle, text);
+    } else {
+        const std::string utf8 = wide_to_utf8(text);
+        ok = write_all(prepared.handle, utf8.data(), utf8.size());
+    }
+    if (prepared.attached) ::FreeConsole();
+    return ok;
 }
 
 } // namespace
@@ -91,6 +115,24 @@ std::wstring utf8_to_wide(std::string_view text)
     std::wstring result(static_cast<size_t>(size), L'\0');
     ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size);
     return result;
+}
+
+std::wstring win32_error_message(DWORD code)
+{
+    wchar_t* buffer = nullptr;
+    const DWORD length = ::FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
+    std::wstring text;
+    if (length > 0 && buffer) {
+        text.assign(buffer, length);
+        while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n')) text.pop_back();
+    }
+    if (buffer) ::LocalFree(buffer);
+    if (text.empty()) text = L"error " + std::to_wstring(code);
+    return text;
 }
 
 bool write_standard_output(std::wstring_view text)

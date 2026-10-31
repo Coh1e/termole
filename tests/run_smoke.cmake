@@ -3,8 +3,9 @@ if(NOT DEFINED APP OR NOT DEFINED RESULT)
 endif()
 
 file(REMOVE "${RESULT}")
+separate_arguments(app_arguments WINDOWS_COMMAND "${APP_ARGS}")
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" -E env "TERMOLE_SMOKE_RESULT=${RESULT}" "${APP}"
+  COMMAND "${CMAKE_COMMAND}" -E env "TERMOLE_SMOKE_RESULT=${RESULT}" "${APP}" ${app_arguments}
   RESULT_VARIABLE result
   TIMEOUT 45
 )

@@ -1,4 +1,4 @@
-# 嵌入式 SDK（v0.1 / ABI 2）
+# 嵌入式 SDK（v0.1 / ABI 3）
 
 Termole 以 `termole.dll` 提供 C ABI，并提供 C++23 头文件包装。宿主只消费公开头文件、导入库和 DLL，不需要产品内部源码。
 
@@ -31,8 +31,9 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 
 ## 契约
 
-- `TERMOLE_ABI_VERSION` 当前为 2；结构体首字段为 `size`，`*_INIT` 宏设置完整大小。版本或大小不匹配时返回 `TERMOLE_STATUS_ABI_MISMATCH`。
+- `TERMOLE_ABI_VERSION` 当前为 3；结构体首字段为 `size`，`*_INIT` 宏设置完整大小。版本或大小不匹配时返回 `TERMOLE_STATUS_ABI_MISMATCH`。
 - 所有 C 接口使用 `__cdecl`；任何失败通过 `termole_status` 和 `termole_last_error()` 返回，C++ 异常不跨 DLL 边界。
+- `termole_session_options` 的 `stdin_handle` / `stdout_handle` 可选地把调用方标准句柄直接接到子进程（独立入口的 `--stdio` 数据通道）；两者必须同时设置，且与 `stdin_path` / `stdout_path` 互斥。子进程 stderr 与 UI 仍使用 ConPTY。
 - `termole_session*` 与 `termole_view*` 是库拥有的不透明句柄。`termole_session_destroy` 释放调用方句柄；若 View 仍持有 Session，Session 继续存活，直到 View 销毁或显式 terminate。
 - 一个 Session 同时最多一个 View。View 是父窗口的子 HWND；宿主负责显示、布局、焦点和 DPI 上下文。
 - Session 的 I/O 在库线程；View 创建、销毁、外观、滚动、选择和输入转发必须在宿主 UI 线程调用。事件通过 `termole_session_poll_event` 由 UI 线程消费，库不回调宿主 UI。

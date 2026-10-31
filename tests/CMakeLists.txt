@@ -148,15 +148,6 @@ if(TERMOLE_FZF)
     TIMEOUT 30
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
-
-  add_executable(termole_embedded_picker_test embedded_picker_test.cpp)
-  add_dependencies(termole_embedded_picker_test termole_app)
-  add_test(NAME t15_embedded_picker COMMAND termole_embedded_picker_test
-    "$<TARGET_FILE:termole_app>")
-  set_tests_properties(t15_embedded_picker PROPERTIES
-    TIMEOUT 60
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
 endif()
 
 add_executable(termole_cmd_test cmd_test.cpp)
@@ -273,6 +264,26 @@ if(TERMOLE_POWERSHELL)
   set_tests_properties(t14_cli_config PROPERTIES TIMEOUT 60)
 endif()
 
+add_executable(termole_launcher_test launcher_test.cpp)
+target_link_libraries(termole_launcher_test PRIVATE termole_build_options)
+add_dependencies(termole_launcher_test termole_app termole_cli_report_helper)
+add_test(NAME t26_launcher COMMAND termole_launcher_test
+  "$<TARGET_FILE:termole_app>"
+  "$<TARGET_FILE:termole_cli_report_helper>"
+  "${CMAKE_CURRENT_BINARY_DIR}/launcher")
+set_tests_properties(t26_launcher PROPERTIES TIMEOUT 120
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
+add_test(NAME t26_cli_pipelines
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/launcher-pipelines"
+    "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_pipelines.cmake"
+)
+set_tests_properties(t26_cli_pipelines PROPERTIES TIMEOUT 90)
+
 add_test(NAME t02_cli_no_console
   COMMAND termole_cli_no_console_test
     "$<TARGET_FILE:termole_app>"
@@ -285,6 +296,7 @@ set_tests_properties(t02_cli_no_console PROPERTIES TIMEOUT 60)
 add_test(NAME t01_standalone_smoke
   COMMAND "${CMAKE_COMMAND}"
     "-DAPP=$<TARGET_FILE:termole_smoke_app>"
+    "-DAPP_ARGS=--gui"
     "-DRESULT=${CMAKE_CURRENT_BINARY_DIR}/standalone-smoke.txt"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/run_smoke.cmake"
 )

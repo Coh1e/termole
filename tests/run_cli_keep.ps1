@@ -4,7 +4,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Report
 )
 
-$line = "--env `"TERMOLE_PROBE_REPORT=$Report`" -- `"$Helper`" --exit-code 7"
+$line = "--gui --env `"TERMOLE_PROBE_REPORT=$Report`" -- `"$Helper`" --exit-code 7"
 $process = Start-Process -FilePath $Exe -ArgumentList $line -PassThru
 $deadline = (Get-Date).AddSeconds(10)
 while (-not (Test-Path $Report) -and (Get-Date) -lt $deadline) {

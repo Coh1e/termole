@@ -6,7 +6,7 @@ file(MAKE_DIRECTORY "${ROOT}")
 file(REMOVE "${report}")
 
 execute_process(
-  COMMAND "${APP}" --env "TERMOLE_PROBE_REPORT=${report}" --close-on-exit -- "${HELPER}" --exit-code 7
+  COMMAND "${APP}" --gui --env "TERMOLE_PROBE_REPORT=${report}" --close-on-exit -- "${HELPER}" --exit-code 7
   RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 20
 )
 if(NOT result EQUAL 7)

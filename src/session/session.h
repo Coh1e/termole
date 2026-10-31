@@ -28,6 +28,10 @@ struct SessionOptions {
     std::vector<std::wstring> environment;
     std::wstring stdin_path;
     std::wstring stdout_path;
+    // Direct child stdin/stdout handles (application data channel). Exclusive
+    // with the file paths above; both are set together.
+    HANDLE stdin_handle = nullptr;
+    HANDLE stdout_handle = nullptr;
     uint16_t columns = 80;
     uint16_t rows = 24;
 };
@@ -96,6 +100,10 @@ private:
 
     win::unique_handle input_write_;
     win::unique_handle output_read_;
+    // Kept only for the stdio data channel: it is the child's stderr handle,
+    // wired to the ConPTY output stream. It must be closed with the pseudoconsole
+    // so the reader can observe EOF.
+    win::unique_handle console_output_write_;
     win::unique_handle process_;
     win::unique_handle job_;
     win::unique_handle data_event_;

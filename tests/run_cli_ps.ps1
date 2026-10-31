@@ -5,10 +5,12 @@ param(
   [Parameter(Mandatory = $true)][string]$Report
 )
 
-$line = "--cwd `"$Cwd`" --env `"TERMOLE_PROBE_REPORT=$Report`" --env `"TERMOLE_PROBE_VALUE=ps value`" -- `"$Helper`" `"alpha`" `"a b`""
-$process = Start-Process -FilePath $Exe -ArgumentList $line -Wait -PassThru -WindowStyle Hidden
-if ($process.ExitCode -ne 0) {
-  Write-Error "PowerShell launch exited with $($process.ExitCode)"
-  exit $process.ExitCode
+# A native console program is waited for by PowerShell, so -e alone makes the
+# pipeline sequential: this asserts the launcher forwards the program status.
+& $Exe --cwd $Cwd --env "TERMOLE_PROBE_REPORT=$Report" --env "TERMOLE_PROBE_VALUE=ps value" `
+  -e $Helper alpha "a b"
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "PowerShell launch exited with $LASTEXITCODE"
+  exit $LASTEXITCODE
 }
 exit 0

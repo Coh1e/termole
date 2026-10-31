@@ -32,6 +32,15 @@ std::wstring quote_argument(const std::wstring& argument)
     return result;
 }
 
+// cmd.exe re-parses its own command line instead of using argv, so adding
+// quotes that are not required silently changes what programs such as
+// `cmd /c ...` execute. Quote only tokens that would otherwise be split or
+// lose characters, and leave plain tokens untouched like a shell would.
+bool needs_quoting(const std::wstring& argument)
+{
+    return argument.empty() || argument.find_first_of(L" \t\"") != std::wstring::npos;
+}
+
 bool file_exists(const std::wstring& path)
 {
     if (path.empty()) return false;
@@ -263,6 +272,18 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     const uint16_t columns = options.columns == 0 ? 80 : options.columns;
     const uint16_t rows = options.rows == 0 ? 24 : options.rows;
 
+    const bool file_redirect = !options.stdin_path.empty() || !options.stdout_path.empty();
+    const bool handle_redirect = options.stdin_handle && options.stdout_handle;
+    if (file_redirect && handle_redirect) {
+        return std::unexpected(make_error(
+            TERMOLE_STATUS_INVALID_ARGUMENT,
+            "file redirection and direct standard handles are mutually exclusive"));
+    }
+    if (file_redirect && (options.stdin_path.empty() || options.stdout_path.empty())) {
+        return std::unexpected(
+            make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "both stdin and stdout paths are required"));
+    }
+
     auto resolved_program = resolve_program(options.program);
     if (!resolved_program) return std::unexpected(resolved_program.error());
     const std::wstring program = std::move(*resolved_program);
@@ -305,10 +326,16 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     }
     win::unique_pseudo_console pseudo(pseudo_raw);
     input_read.reset();
-    output_write.reset();
+    // In handle-redirect mode the child's stderr is wired to the ConPTY output
+    // stream, so the terminal keeps stderr/UI while stdin/stdout carry raw data.
+    if (handle_redirect) {
+        ::SetHandleInformation(output_write.get(), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    } else {
+        output_write.reset();
+    }
 
     ProcThreadAttributeList attributes;
-    if (!attributes.initialize(1)) {
+    if (!attributes.initialize(2)) {
         return std::unexpected(
             win::system_error("InitializeProcThreadAttributeList", ::GetLastError()));
     }
@@ -331,7 +358,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         program.find_first_of(L" \t\"") == std::wstring::npos ? program : quote_argument(program);
     for (const auto& argument : options.arguments) {
         command_line.push_back(L' ');
-        command_line += quote_argument(argument);
+        command_line += needs_quoting(argument) ? quote_argument(argument) : argument;
     }
 
     DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED;
@@ -341,14 +368,9 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         environment_pointer = environment->data.data();
     }
 
-    const bool redirect = !options.stdin_path.empty() || !options.stdout_path.empty();
     win::unique_handle redirected_input;
     win::unique_handle redirected_output;
-    if (redirect) {
-        if (options.stdin_path.empty() || options.stdout_path.empty()) {
-            return std::unexpected(
-                make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "both stdin and stdout paths are required"));
-        }
+    if (file_redirect) {
         SECURITY_ATTRIBUTES redirect_security{ sizeof(redirect_security), nullptr, TRUE };
         redirected_input.reset(::CreateFileW(options.stdin_path.c_str(), GENERIC_READ,
                                              FILE_SHARE_READ, &redirect_security, OPEN_EXISTING,
@@ -364,6 +386,38 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         }
     }
 
+    HANDLE child_input = INVALID_HANDLE_VALUE;
+    HANDLE child_output = INVALID_HANDLE_VALUE;
+    HANDLE child_error = INVALID_HANDLE_VALUE;
+    HANDLE inherited_handles[3]{};
+    if (handle_redirect) {
+        // The data channel is passed to the child handle-for-handle; Termole
+        // neither reads nor buffers these bytes. stderr joins the ConPTY output
+        // stream so terminal UI and diagnostics stay in the window.
+        if (!::SetHandleInformation(options.stdin_handle, HANDLE_FLAG_INHERIT,
+                                    HANDLE_FLAG_INHERIT) ||
+            !::SetHandleInformation(options.stdout_handle, HANDLE_FLAG_INHERIT,
+                                    HANDLE_FLAG_INHERIT)) {
+            return std::unexpected(win::system_error("SetHandleInformation", ::GetLastError()));
+        }
+        child_input = options.stdin_handle;
+        child_output = options.stdout_handle;
+        child_error = output_write.get();
+        inherited_handles[0] = child_input;
+        inherited_handles[1] = child_output;
+        inherited_handles[2] = child_error;
+        if (!::UpdateProcThreadAttribute(attributes.value, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                         inherited_handles, sizeof(inherited_handles), nullptr,
+                                         nullptr)) {
+            return std::unexpected(
+                win::system_error("UpdateProcThreadAttribute(handles)", ::GetLastError()));
+        }
+    } else if (file_redirect) {
+        child_input = redirected_input.get();
+        child_output = redirected_output.get();
+    }
+    const bool redirect = handle_redirect || file_redirect;
+
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.lpAttributeList = attributes.value;
@@ -373,9 +427,9 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     // inherited handles and let the console subsystem attach the client to the
     // pseudoconsole, unless the caller explicitly redirects data handles.
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = redirect ? redirected_input.get() : INVALID_HANDLE_VALUE;
-    startup.StartupInfo.hStdOutput = redirect ? redirected_output.get() : INVALID_HANDLE_VALUE;
-    startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
+    startup.StartupInfo.hStdInput = redirect ? child_input : INVALID_HANDLE_VALUE;
+    startup.StartupInfo.hStdOutput = redirect ? child_output : INVALID_HANDLE_VALUE;
+    startup.StartupInfo.hStdError = redirect ? child_error : INVALID_HANDLE_VALUE;
 
     PROCESS_INFORMATION process_info{};
     const wchar_t* working_directory_pointer =
@@ -418,6 +472,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     session->process_ = std::move(process);
     session->job_ = std::move(job);
     session->pseudo_console_ = std::move(pseudo);
+    if (handle_redirect) session->console_output_write_ = std::move(output_write);
 
     HANDLE event = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!event) {
@@ -481,6 +536,7 @@ void Session::exit_loop()
     // becomes false. running_ is owned by read_loop so completion is only
     // reported after the output is drained.
     std::lock_guard lock(pseudo_mutex_);
+    console_output_write_.reset();
     pseudo_console_.reset();
 }
 
@@ -566,11 +622,12 @@ Result<void> Session::terminate()
         }
     }
 
-    if (pseudo_console_) {
+    {
         // The reader keeps draining while this closes, avoiding the
         // synchronous-close deadlock described by the ConPTY contract.
         // reset() invokes ClosePseudoConsole exactly once through the deleter.
         std::lock_guard lock(pseudo_mutex_);
+        console_output_write_.reset();
         pseudo_console_.reset();
     }
 

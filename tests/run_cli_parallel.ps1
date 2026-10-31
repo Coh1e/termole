@@ -9,7 +9,7 @@ param(
 )
 
 function Launch-Termole([string]$Helper, [string]$Cwd, [string]$Report, [string]$Value) {
-  $line = "--cwd `"$Cwd`" --env `"TERMOLE_PROBE_REPORT=$Report`" --env `"TERMOLE_PROBE_VALUE=$Value`" -- `"$Helper`" `"$Value`" `"a b`""
+  $line = "--cwd `"$Cwd`" --env `"TERMOLE_PROBE_REPORT=$Report`" --env `"TERMOLE_PROBE_VALUE=$Value`" -e `"$Helper`" `"$Value`" `"a b`""
   Start-Process -FilePath $Exe -ArgumentList $line -PassThru -WindowStyle Hidden
 }
 

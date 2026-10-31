@@ -80,14 +80,43 @@ int wmain(int argc, wchar_t** argv)
     ::SetConsoleOutputCP(CP_UTF8);
     ::SetConsoleCP(CP_UTF8);
     int forced_exit_code = 0;
-    if (argc >= 2) {
-        const std::wstring mode = argv[1];
-        if (mode == L"--lines" && argc >= 3) {
-            const int count = _wtoi(argv[2]);
-            for (int index = 0; index < count; ++index) {
-                char line[32]{};
-                std::snprintf(line, sizeof(line), "line-%04d\r\n", index);
-                if (!write_stdout(line)) return 3;
+    bool copy_stdin = false;
+    bool sleep_mode = false;
+    DWORD sleep_ms = 0;
+    DWORD linger_ms = 0;
+    for (int index = 1; index < argc; ++index) {
+        const std::wstring mode = argv[index];
+        if (mode == L"--exit-code" && index + 1 < argc) {
+            forced_exit_code = _wtoi(argv[++index]);
+            continue;
+        }
+        if (mode == L"--copy-stdin") {
+            copy_stdin = true;
+            continue;
+        }
+        if (mode == L"--read-one") {
+            // A consumer that closes the pipeline after one buffer, used to
+            // verify --stdio ends cleanly when the caller stops reading.
+            char buffer[4096];
+            DWORD read = 0;
+            ::ReadFile(::GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &read, nullptr);
+            return 0;
+        }
+        if (mode == L"--linger-ms" && index + 1 < argc) {
+            linger_ms = static_cast<DWORD>(_wtoi(argv[++index]));
+            continue;
+        }
+        if (mode == L"--sleep-ms" && index + 1 < argc) {
+            sleep_mode = true;
+            sleep_ms = static_cast<DWORD>(_wtoi(argv[++index]));
+            continue;
+        }
+        if (mode == L"--lines" && index + 1 < argc) {
+            const int count = _wtoi(argv[++index]);
+            for (int line = 0; line < count; ++line) {
+                char text[32]{};
+                std::snprintf(text, sizeof(text), "line-%04d\r\n", line);
+                if (!write_stdout(text)) return 3;
             }
             return 0;
         }
@@ -117,16 +146,36 @@ int wmain(int argc, wchar_t** argv)
             const std::string script = "\x1b]0;Event Title\a\a" "event-tail\r\n";
             return write_stdout(script) ? 7 : 3;
         }
-        if (mode == L"--flood" && argc >= 3) {
-            const int count = _wtoi(argv[2]);
-            for (int index = 0; index < count; ++index) {
-                const std::string script = "\x1b]0;Flood " + std::to_string(index) + "\x07\x07";
+        if (mode == L"--flood" && index + 1 < argc) {
+            const int count = _wtoi(argv[++index]);
+            for (int item = 0; item < count; ++item) {
+                const std::string script = "\x1b]0;Flood " + std::to_string(item) + "\x07\x07";
                 if (!write_stdout(script)) return 3;
             }
             return 0;
         }
-        if (mode == L"--exit-code" && argc >= 3) forced_exit_code = _wtoi(argv[2]);
     }
+
+    if (sleep_mode) ::Sleep(sleep_ms);
+
+    if (copy_stdin) {
+        // The --stdio data channel must carry bytes unchanged; this mode makes
+        // that observable from a real pipeline.
+        const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
+        char chunk[8192];
+        for (;;) {
+            DWORD read = 0;
+            if (!::ReadFile(input, chunk, sizeof(chunk), &read, nullptr)) {
+                if (::GetLastError() == ERROR_BROKEN_PIPE) break;
+                return 3;
+            }
+            if (read == 0) break;
+            if (!write_stdout(std::string(chunk, read))) return 3;
+        }
+        return forced_exit_code;
+    }
+
+    if (sleep_mode) return forced_exit_code;
 
     const std::wstring report_path = environment_value(L"TERMOLE_PROBE_REPORT");
     if (report_path.empty()) return 2;
@@ -176,5 +225,6 @@ int wmain(int argc, wchar_t** argv)
     DWORD marker_written = 0;
     ::WriteFile(::GetStdHandle(STD_OUTPUT_HANDLE), marker,
                 static_cast<DWORD>(sizeof(marker) - 1), &marker_written, nullptr);
+    if (linger_ms != 0) ::Sleep(linger_ms);
     return forced_exit_code;
 }

@@ -16,7 +16,7 @@
 
 T01 的首批实现额外提供 `termole_session_get_screen_text`：返回可见屏幕的 UTF-8 快照，供宿主诊断、无障碍或验收读取；它不是选择查询，也不暴露 VT 引擎内部状态。完整事件与查询契约仍按后续任务冻结。
 
-T02 将 ABI 升级到 2：`termole_session_options` 分别接收 program、逻辑 argv 数组、工作目录和 `KEY=VALUE` 环境数组。参数不经过字符串拼接，空参数与 Unicode 保真；环境数组在调用方环境副本上覆盖，不修改调用方进程。
+T02 将 ABI 升级到 2：`termole_session_options` 分别接收 program、逻辑 argv 数组、工作目录和 `KEY=VALUE` 环境数组。参数不经过字符串拼接，空参数与 Unicode 保真；环境数组在调用方环境副本上覆盖，不修改调用方进程。T26 将 ABI 升级到 3，在选项末尾增加可选的 `stdin_handle` / `stdout_handle`，供独立入口的 `--stdio` 数据通道直接接线；两者与 `stdin_path` / `stdout_path` 互斥。
 
 v0.3 的 `-e` / `--stdio` / pipe 动作属于独立入口和应用层组合：`--stdio` 是 CLI 显式数据通道，pipe 动作把终端文本送到外部命令；两者都不解析选择结果。嵌入宿主使用既有查询（选区、滚屏、退出码）或自己的进程/管道；库不替宿主启动业务命令，也不实现 picker 协议。T22 在冻结 ABI 时明确宿主可用的通道能力与所有权，不与 CLI 的 launcher 角色混为一谈。
 

@@ -15,7 +15,7 @@ execute_process(
     --env "TERMOLE_PROBE_REPORT=${report}"
     --env "TERMOLE_PROBE_VALUE=hello world"
     --env "TERMOLE_PROBE_EXTRA=中文 env"
-    -- "${helper}"
+    -e "${helper}"
     "alpha"
     "a b"
     "\"quoted\""
@@ -23,6 +23,7 @@ execute_process(
     "中文-🐭"
     "back\\slash\"quote"
     "-dash"
+    "a&b|c"
   RESULT_VARIABLE result
   OUTPUT_VARIABLE output
   ERROR_VARIABLE error
@@ -46,7 +47,7 @@ function(expect_line expected)
   endif()
 endfunction()
 
-expect_line("argc=8")
+expect_line("argc=9")
 expect_line("arg1=alpha")
 expect_line("arg2=a b")
 expect_line("arg3=\"quoted\"")
@@ -56,6 +57,7 @@ expect_line("arg5=中文-🐭")
 set(arg6_line "arg6=back\\slash\"quote")
 expect_line("${arg6_line}")
 expect_line("arg7=-dash")
+expect_line("arg8=a&b|c")
 set(cwd_line "cwd=${native_cwd}")
 expect_line("${cwd_line}")
 expect_line("env.TERMOLE_PROBE_VALUE=hello world")

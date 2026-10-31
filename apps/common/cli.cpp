@@ -1,11 +1,15 @@
 #include "common/cli.h"
 
+#include "common/diagnostics.h"
+#include "common/exit_codes.h"
+
 #include <termole/termole.h>
 
 #include <windows.h>
 
 #include <cstdlib>
 #include <cwchar>
+#include <optional>
 #include <string_view>
 
 namespace termole::app {
@@ -51,7 +55,7 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 if (result.options.program->empty()) return error(L"program name is empty");
                 for (++index; index < argc; ++index) result.options.arguments.emplace_back(argv[index]);
             }
-            return result;
+            break;
         }
 
         if (!result.options.program && is_option(token)) {
@@ -88,14 +92,23 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 result.options.no_config = true;
                 continue;
             }
-            if (token == L"--picker" && !result.options.program) {
-                result.options.picker = true;
-                continue;
-            }
-            if (token == L"--picker-arg") {
-                if (index + 1 >= argc) return error(L"--picker-arg requires a value");
-                result.options.picker_arguments.emplace_back(argv[++index]);
-                continue;
+            if (token == L"-e" || token == L"--execute" || token == L"--stdio") {
+                // -e/--stdio are program separators, like --: they set the
+                // mode and everything after them is the target program and its
+                // arguments. Another mode token after this point is therefore
+                // an ordinary program argument, not a second mode.
+                result.options.mode =
+                    token == L"--stdio" ? LaunchMode::Stdio : LaunchMode::Execute;
+                if (index + 1 >= argc) {
+                    return error(token == L"--stdio" ? L"--stdio requires a program"
+                                                     : L"-e requires a program");
+                }
+                result.options.program = argv[++index];
+                if (result.options.program->empty()) return error(L"program name is empty");
+                for (++index; index < argc; ++index) {
+                    result.options.arguments.emplace_back(argv[index]);
+                }
+                break;
             }
             if (token == L"--config" || starts_with(token, L"--config=")) {
                 std::wstring value;
@@ -243,8 +256,19 @@ std::wstring help_text()
            L"\n"
            L"Usage:\n"
            L"  termole [options] [--] [program [arguments...]]\n"
+           L"  termole [options] -e <program> [arguments...]\n"
+           L"  termole [options] --stdio <program> [arguments...]\n"
+           L"\n"
+           L"Normal mode starts the window and returns immediately. -e and --stdio\n"
+           L"wait for the program, forward its exit code and make this launcher wait\n"
+           L"too, so CMD and PowerShell can sequence commands without start /wait.\n"
            L"\n"
            L"Options:\n"
+           L"  -e, --execute        foot-style execute: run the program in the terminal\n"
+           L"                       (its fd 0/1/2 use the ConPTY), wait, return its code\n"
+           L"  --stdio              Forward this launcher's stdin/stdout to the program;\n"
+           L"                       its stderr/UI use the ConPTY. Requires piped or\n"
+           L"                       redirected stdin and stdout on Termole.\n"
            L"  --cwd <directory>    Set the child working directory\n"
            L"  --env <KEY=VALUE>    Add or override a child environment variable (repeatable)\n"
            L"  --font <FAMILY>      Font family (default follows the system)\n"
@@ -262,21 +286,50 @@ std::wstring help_text()
            L"  --config <PATH>      Use a specific TOML configuration file\n"
            L"  --profile <NAME>     Apply a [profiles.NAME] group\n"
            L"  --no-config          Ignore the user configuration file\n"
-           L"  --picker             Read candidates from stdin and show fzf in a Termole window\n"
-           L"  --picker-arg <ARG>   Pass one argument to picker fzf (repeatable)\n"
-           L"  --keep-window        Keep the window open when the child exits\n"
-           L"  --close-on-exit      Close the window even when the child fails\n"
+           L"  --keep-window        Keep the window open when the child exits (normal mode)\n"
+           L"  --close-on-exit      Close the window even when the child fails (normal mode)\n"
            L"  --help, -h           Show this help\n"
            L"  --version            Show version\n"
            L"\n"
            L"Everything after -- is the target program and its arguments. Without --,\n"
            L"the first non-option is the target program and every following token is\n"
-           L"passed to it unchanged. Without a target, the default PowerShell starts.\n";
+           L"passed to it unchanged. -e and --stdio are separators too. Without a\n"
+           L"target, the default PowerShell starts.\n"
+           L"\n"
+           L"Exit status: the program's exit code for -e/--stdio; 2 for usage errors;\n"
+           L"1 when the program cannot start; 125 for a Termole infrastructure failure;\n"
+           L"130 when the window is closed before the program exits.\n";
 }
 
 std::wstring version_text()
 {
     return L"Termole " TERMOLE_VERSION L"\n";
+}
+
+std::optional<int> handle_cli_action(const CliParseResult& parsed)
+{
+    switch (parsed.action) {
+    case CliAction::Help: {
+        const std::wstring text = help_text();
+        if (!write_standard_output(text)) show_message(text, false);
+        return 0;
+    }
+    case CliAction::Version: {
+        const std::wstring text = version_text();
+        if (!write_standard_output(text)) show_message(text, false);
+        return 0;
+    }
+    case CliAction::Error: {
+        const std::wstring text = L"termole: " + parsed.message + L"\n";
+        if (!write_standard_error(text)) {
+            show_message(text + L"\nUse 'termole --help' for usage.\n", true);
+        }
+        return kExitUsage;
+    }
+    case CliAction::Run:
+        break;
+    }
+    return std::nullopt;
 }
 
 } // namespace termole::app

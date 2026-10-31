@@ -70,6 +70,8 @@
 
 **Blocked by:** T02、T03。
 
+**状态：已实现并通过本机验证，见 [T26 验证](t26-validation.md)。** 任务关闭状态以 GitHub 为准。
+
 **What it delivers:** 普通模式不阻塞调用 shell；`-e`/`--stdio` 默认等待程序结束并返回退出码；仍是一个 `termole.exe` + 一个 `termole.dll`。
 
 **Acceptance criteria:**

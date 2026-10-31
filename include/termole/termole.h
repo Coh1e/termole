@@ -59,7 +59,7 @@
 extern "C" {
 #endif
 
-#define TERMOLE_ABI_VERSION 2u
+#define TERMOLE_ABI_VERSION 3u
 typedef struct termole_session termole_session;
 typedef struct termole_view termole_view;
 
@@ -146,11 +146,18 @@ typedef struct termole_session_options {
     /* 0 selects 80 x 24. */
     uint16_t columns;
     uint16_t rows;
+    /* Optional direct child stdin/stdout handles for an application data
+       channel (the standalone --stdio path). Both must be set or both NULL,
+       and they are mutually exclusive with stdin_path/stdout_path. The child
+       reads/writes these handles directly; stderr and the UI still use the
+       ConPTY. The library marks them inheritable for the child process. */
+    HANDLE stdin_handle;
+    HANDLE stdout_handle;
 } termole_session_options;
 
 #define TERMOLE_SESSION_OPTIONS_INIT \
     { sizeof(termole_session_options), TERMOLE_ABI_VERSION, NULL, NULL, 0, NULL, NULL, 0, \
-      NULL, NULL, 0, 0 }
+      NULL, NULL, 0, 0, NULL, NULL }
 
 typedef enum termole_theme {
     TERMOLE_THEME_SYSTEM = 0,

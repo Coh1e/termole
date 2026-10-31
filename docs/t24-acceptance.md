@@ -18,8 +18,8 @@
 - Windows 10 22H2 全量验收。
 - 无开发工具机器运行 Runtime 包；Development 包已拆分并有 DLL，但未在干净 SDK 环境复验。
 - 真实中文 IME 人工/自动混合验收；代码已接入 `WM_IME_*`，但没有实际 IME 证据。
-- 嵌入式 picker 的提前关闭/大结果背压、长时间 soak、帧延迟。
-- T26 launcher / GUI 双角色、`-e`/`--stdio` 默认等待与退出码；T15/T16 `--stdio` 字节/背压；T25 pipe 动作；这些在 v0.3 已同步规格和任务，但尚未实现/验收。
+- T15/T16 `--stdio` 的完整字节/背压/大输入矩阵与 fzf UI 可见性；T25 pipe 动作。这些在 v0.3 已同步规格和任务，但尚未完整验收。
+- T26 launcher / GUI 双角色已实现并通过 [T26 验证](t26-validation.md)；T24 仍需在 Windows 10 和发布环境中复验真实 CMD/PowerShell 等待与退出码。
 - 签名、安装器、发布级许可审计、Windows 10/11 双系统矩阵。
 
 ## 结论

@@ -6,7 +6,7 @@ file(MAKE_DIRECTORY "${ROOT}")
 file(REMOVE "${report}")
 
 execute_process(
-  COMMAND "${APP}" --columns 40 --rows 12 --center --opacity 80 --borderless
+  COMMAND "${APP}" --gui --columns 40 --rows 12 --center --opacity 80 --borderless
     --title "Termole Applet" --env "TERMOLE_PROBE_REPORT=${report}" --
     "${HELPER}" --exit-code 0
   RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 20

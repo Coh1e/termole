@@ -113,6 +113,18 @@ termole_status TERMOLE_CALL termole_session_create(const termole_session_options
             return fail(TERMOLE_STATUS_INVALID_ARGUMENT,
                         "stdin_path and stdout_path must both be set or both be empty");
         }
+        internal.stdin_handle = options->stdin_handle;
+        internal.stdout_handle = options->stdout_handle;
+        if ((internal.stdin_handle == nullptr) != (internal.stdout_handle == nullptr) ||
+            internal.stdin_handle == INVALID_HANDLE_VALUE ||
+            internal.stdout_handle == INVALID_HANDLE_VALUE) {
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT,
+                        "stdin_handle and stdout_handle must both be valid or both be null");
+        }
+        if (internal.stdin_handle && !internal.stdin_path.empty()) {
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT,
+                        "stdin_path/stdout_path and stdin_handle/stdout_handle are exclusive");
+        }
         if (options->environment_count != 0) {
             if (!options->environment) {
                 return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "environment array is null");

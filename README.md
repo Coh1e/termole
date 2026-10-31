@@ -2,7 +2,7 @@
 
 Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
-首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22/T23 的大部分切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及 `termole.exe` + `termole.dll` 的单包交付。外部程序边界正在按 foot 设计迁移到 `-e` / `--stdio` / pipe 动作，并由同一 exe 的 launcher / GUI 双角色提供默认等待；旧 picker 不再是目标。
+首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22/T23 的大部分切片、T26 控制台 launcher / GUI 双角色：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及 `termole.exe` + `termole.dll` 的单包交付。`termole.exe` 现在是控制台 launcher：普通模式启动窗口后立即返回，`-e` / `--stdio` 等待并转交程序退出状态；旧 picker 已移除。
 
 - [已确认设计决定](docs/design-decisions.md)
 - [首版实施规格 v0.3 · GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)
@@ -15,6 +15,7 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 - [SDK 与便携包](docs/sdk.md)
 - [外部程序边界（ADR 0006）](docs/adr/0006-terminal-selector-boundary.md)
 - [控制台 launcher 与默认等待（ADR 0007）](docs/adr/0007-console-launcher-wait.md)
+- [T26 launcher / 默认等待验证](docs/t26-validation.md)
 - [Picker 历史（已取代）](docs/picker.md)
 - [资源有界](docs/t20-resources.md)
 - [性能基线](docs/t21-performance.md)
@@ -55,8 +56,8 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
 | 文件 | 用途 |
 | --- | --- |
-| `termole.exe` | 独立入口。目标形态（T26）：控制台 launcher + 同一 exe 的 GUI 角色，普通模式立即返回，`-e`/`--stdio` 等待并返回退出码；当前仍是 GUI 入口，只支持 `--cwd`、`--env`、`--` |
-| `termole.dll` | C ABI（版本 2）、C++23 包装和可嵌入 View 所在组件 |
+| `termole.exe` | 独立入口。控制台 launcher + 同一 exe 的内部 GUI 角色：普通模式启动窗口后立即返回；`-e` / `--stdio` 等待程序结束并转交退出码 |
+| `termole.dll` | C ABI（版本 3）、C++23 包装和可嵌入 View 所在组件 |
 | `termole-test-helper.exe` | 仅测试构建使用的真实控制台子程序 |
 
 发布包只安装 `termole.exe` 和 `termole.dll` 两个二进制；头文件、导入库和 SDK 示例在同一 ZIP 中，供宿主编译使用。
@@ -74,10 +75,10 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T19 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、launcher 默认等待（T26）、`-e`/`--stdio`/pipe（T15/T16/T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20/T21 初步、T22/T23/T26 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI 与字节/背压矩阵（T15/T16）、pipe 动作（T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 
-产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite；CLI 另用 Shell32 的 `CommandLineToArgvW`）和静态 CRT；`termole.dll`、`termole.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 326,656 B、`termole.exe` 331,776 B；launcher/GUI 双角色改造后需重测。依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md) 与 [T22/T23 报告](docs/t22-t23-validation.md)。
+产品代码只链接 Windows 系统组件（Kernel32、User32、GDI32、Imm32、Direct2D、DirectWrite）和静态 CRT；`termole.dll`、`termole.exe` 不依赖 VC++ 运行库 DLL。Release 构建启用 LTO、`/OPT:REF`、`/OPT:ICF`、`/GR-`、`/Gy`、`/Gw` 与 `/Zc:inline`；产品入口不包含 smoke/`std::filesystem` 代码。当前 Release 体积：DLL 327,168 B、`termole.exe` 344,064 B（launcher/GUI 改造后）。依赖和测试证据见 [T03–T13 验证报告](docs/t03-t13-validation.md)、[T22/T23 报告](docs/t22-t23-validation.md) 与 [T26 验证](docs/t26-validation.md)。
 
 第三方代码来源、许可证与产品/探针边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

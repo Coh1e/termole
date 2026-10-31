@@ -13,6 +13,14 @@ enum class ExitPolicy {
     CloseOnExit,
 };
 
+// How the launcher hands the program to the GUI role. Normal starts the window
+// and returns; Execute and Stdio wait for the program and return its status.
+enum class LaunchMode {
+    Normal,
+    Execute,
+    Stdio,
+};
+
 struct CliOptions {
     std::optional<std::wstring> program;
     std::vector<std::wstring> arguments;
@@ -34,10 +42,7 @@ struct CliOptions {
     std::optional<std::wstring> config_path;
     std::optional<std::wstring> profile;
     bool no_config = false;
-    bool picker = false;
-    std::vector<std::wstring> picker_arguments;
-    std::wstring stdin_path;
-    std::wstring stdout_path;
+    LaunchMode mode = LaunchMode::Normal;
     ExitPolicy exit_policy = ExitPolicy::Auto;
 };
 
@@ -57,5 +62,9 @@ struct CliParseResult {
 CliParseResult parse_cli(int argc, wchar_t** argv);
 std::wstring help_text();
 std::wstring version_text();
+
+// Prints help/version or a usage diagnostic for a parsed action. Returns the
+// process status to use, or nullopt when the caller should keep running.
+std::optional<int> handle_cli_action(const CliParseResult& parsed);
 
 } // namespace termole::app

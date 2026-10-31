@@ -22,7 +22,7 @@ function(run_expect expected result_var stderr_var)
 endfunction()
 
 file(REMOVE "${report}")
-run_expect(0 result error "${APP}" --config "${config}" --profile work)
+run_expect(0 result error "${APP}" --gui --config "${config}" --profile work)
 if(NOT EXISTS "${report}")
   message(FATAL_ERROR "profile did not launch the configured program")
 endif()
@@ -34,7 +34,7 @@ if(profile_cols EQUAL -1 OR profile_rows EQUAL -1)
 endif()
 
 file(REMOVE "${report}")
-run_expect(0 result error "${APP}" --config "${config}" --profile work --columns 50 --rows 10 --
+run_expect(0 result error "${APP}" --gui --config "${config}" --profile work --columns 50 --rows 10 --
   "${HELPER}" --exit-code 0 --env "TERMOLE_PROBE_REPORT=${report}")
 file(READ "${report}" text)
 string(FIND "${text}" "console.cols=50\n" override_cols)
@@ -44,7 +44,7 @@ if(override_cols EQUAL -1 OR override_rows EQUAL -1)
 endif()
 
 file(REMOVE "${report}")
-run_expect(0 result error "${APP}" --config "${bad}" --env "TERMOLE_PROBE_REPORT=${report}" --
+run_expect(0 result error "${APP}" --gui --config "${bad}" --env "TERMOLE_PROBE_REPORT=${report}" --
   "${HELPER}" --exit-code 0)
 if(NOT error MATCHES "bad.toml:1")
   message(FATAL_ERROR "configuration error did not name file and line:\n${error}")
@@ -54,7 +54,7 @@ if(NOT EXISTS "${report}")
 endif()
 
 file(REMOVE "${report}")
-run_expect(0 result error "${APP}" --no-config --config "${bad}" --env "TERMOLE_PROBE_REPORT=${report}" --
+run_expect(0 result error "${APP}" --gui --no-config --config "${bad}" --env "TERMOLE_PROBE_REPORT=${report}" --
   "${HELPER}" --exit-code 0)
 if(error MATCHES "bad.toml")
   message(FATAL_ERROR "--no-config still reported the config error:\n${error}")

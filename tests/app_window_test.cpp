@@ -33,7 +33,7 @@ int wmain(int argc, wchar_t** argv)
     if (argc < 2) return 2;
     STARTUPINFOW startup{ sizeof(startup) };
     PROCESS_INFORMATION process{};
-    std::wstring command = L"\"" + std::wstring(argv[1]) + L"\"";
+    std::wstring command = L"\"" + std::wstring(argv[1]) + L"\" --gui";
     if (!::CreateProcessW(argv[1], command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
                           &startup, &process)) {
         std::cerr << "could not start termole.exe\n";

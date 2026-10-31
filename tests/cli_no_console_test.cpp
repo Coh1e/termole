@@ -100,7 +100,7 @@ int wmain(int argc, wchar_t** argv)
 
     std::wstring command = quote(app) + L" --cwd " + quote(cwd) + L" --env " +
         quote(L"TERMOLE_PROBE_REPORT=" + report) + L" --env " +
-        quote(L"TERMOLE_PROBE_VALUE=no console") + L" -- " + quote(helper) + L" " +
+        quote(L"TERMOLE_PROBE_VALUE=no console") + L" -e " + quote(helper) + L" " +
         quote(L"alpha") + L" " + quote(L"a b");
 
     STARTUPINFOW startup{};

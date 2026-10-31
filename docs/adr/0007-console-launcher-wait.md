@@ -60,3 +60,20 @@ foot 用 `footclient` 解决同一问题：客户端等待终端结束，再把�
 - `--stdio` 的字节、背压、提前关闭和退出码必须在真实 CMD/PowerShell 管道中验证，不能只用 `CreateProcess` 测试代替。
 - 仍需保持一个 `termole.exe` + 一个 `termole.dll`；不新增 helper 可执行文件。
 - 像素/可见性结论仍按 #26/#27 的截图证据规则，不能用 `screen_text` 代替。
+
+## 实现记录（2026-10-31）
+
+按本 ADR 落地的具体形态：
+
+- `termole.exe` 改为控制台子系统，入口为 `wmain`；默认角色是 launcher。GUI 角色由内部 `--gui` 作为首 token 进入，用户参数原样重引用后转交，`--gui` 不出现在公开帮助中。
+- launcher 启动时用 `GetConsoleProcessList` 判断本进程是否是控制台的唯一客户端（这是“控制台为新启动分配”的实用判据）：是则 `ShowWindow(SW_HIDE)` 隐藏，随后 `FreeConsole` 让新控制台立即消失；共享的控制台完全不动。隐藏发生在参数校验之后，因此 `--help` 和用法错误仍可读。
+- GUI 角色在入口先 `FreeConsole`，并始终由 launcher 以 `CREATE_NO_WINDOW` 启动，因此不绑定任何调用方控制台：关闭调用方控制台窗口或按 Ctrl+C 不会结束终端。需要写诊断时临时 `AttachConsole(ATTACH_PARENT_PROCESS)`，写完立即 `FreeConsole`。
+- 普通模式：launcher 在 `CreateProcess` 成功后立即返回 `0`。`-e` / `--stdio`：launcher 用 `STARTF_USESTDHANDLES` 把调用方的**重定向**标准句柄（管道/文件；控制台句柄跳过）交给 GUI，`WaitForSingleObject` 后转交 GUI 退出码。
+- 退出码边界：launcher 无法启动 GUI 角色属于入口启动失败，返回 `1`（与 #29 的普通模式启动失败一致）；GUI 内部的窗口/View 等基础设施失败返回 `125`；子程序启动失败返回 `1`。
+- `--stdio`：GUI 把继承来的 stdin/stdout 句柄原样交给子进程；子进程 stderr 接到 ConPTY 的输出管道，UI 仍在 Termole 窗口中。Termole 自身诊断仍写调用方 stderr。数据通道不经过 Termole 缓冲。
+- 会话退出码约定：程序退出码原样转交；用户先关闭窗口为 `130`；程序启动失败 `1`；用法错误 `2`；GUI/基础设施失败 `125`。`-e` / `--stdio` 忽略保留窗口策略，程序排空输出后关窗退出。
+- 为把调用方标准句柄直接接到子进程，`termole_session_options` 在末尾增加可选的 `stdin_handle` / `stdout_handle`，`TERMOLE_ABI_VERSION` 提升到 3；两者与原有的 `stdin_path` / `stdout_path` 互斥。
+- 移除了 `--picker` / `--picker-arg` 及 picker 专用代码和测试，不保留 picker 错误码。
+- 顺带修正了子进程参数引用：只有含空格、制表符、引号或为空的参数才加引号，避免 `cmd /c ...` 这类自行解析命令行的程序因多余引号改变语义。
+
+验证与证据见 [T26 验证](t26-validation.md)：`t26_launcher` 覆盖普通模式立即返回、`-e`/`--stdio` 等待与退出码、数据通道字节、取消 `130`、控制台隐藏/保留；`t26_cli_pipelines` 在真实 CMD 和 PowerShell 管道中验证字节与退出状态；另有 `PrintWindow` 像素证据确认窗口不是空面。

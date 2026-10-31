@@ -12,7 +12,7 @@ set(helper "${cwd}/cli-report-helper.exe")
 
 file(WRITE "${script}"
   "@echo off\r\n"
-  "start \"\" /wait \"${APP}\" --cwd \"${cwd}\" --env \"TERMOLE_PROBE_REPORT=${report}\" --env \"TERMOLE_PROBE_VALUE=cmd value\" -- \"${helper}\" \"alpha\" \"a b\"\r\n"
+  "\"${APP}\" --cwd \"${cwd}\" --env \"TERMOLE_PROBE_REPORT=${report}\" --env \"TERMOLE_PROBE_VALUE=cmd value\" -e \"${helper}\" \"alpha\" \"a b\"\r\n"
 )
 
 execute_process(COMMAND cmd.exe /d /c "${script}" RESULT_VARIABLE result

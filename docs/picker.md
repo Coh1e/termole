@@ -11,12 +11,14 @@
 ## 取代方向
 
 ```text
-candidates | termole -e fzf [fzf args...]
+candidates | termole --stdio fzf [fzf args...]
 ```
 
 - 调用方 stdin/stdout 直接交给 fzf；
 - fzf 的 UI 走 ConPTY；
 - Termole 不解析候选/结果，不提供 `--picker`/`--picker-arg`；
 - 选择器是外部 GUI 程序，不由 Termole 内嵌。
+
+T26 已从 `termole.exe` 移除 `--picker`/`--picker-arg` 及其专用代码、错误码和测试；调用方数据通道改由 `--stdio` 提供。
 
 具体契约以替代 spec / ADR 0006 为准。

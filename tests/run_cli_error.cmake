@@ -34,7 +34,16 @@ if(NOT theme_result EQUAL 2)
   message(FATAL_ERROR "invalid --theme exited with '${theme_result}', expected 2. stderr:\n${theme_error}")
 endif()
 
-execute_process(COMMAND "${APP}" --cwd "${ROOT}/missing-cwd" -- "cmd.exe" /c exit
+foreach(bad_invocation "-e" "--stdio")
+  separate_arguments(parts WINDOWS_COMMAND "${bad_invocation}")
+  execute_process(COMMAND "${APP}" ${parts} RESULT_VARIABLE mode_result
+                  OUTPUT_VARIABLE mode_output ERROR_VARIABLE mode_error TIMEOUT 10)
+  if(NOT mode_result EQUAL 2)
+    message(FATAL_ERROR "'${bad_invocation}' exited with '${mode_result}', expected 2. stderr:\n${mode_error}")
+  endif()
+endforeach()
+
+execute_process(COMMAND "${APP}" --cwd "${ROOT}/missing-cwd" -e "cmd.exe" /c exit
                 RESULT_VARIABLE cwd_result OUTPUT_VARIABLE cwd_output
                 ERROR_VARIABLE cwd_error TIMEOUT 20)
 if(NOT cwd_result EQUAL 1)
@@ -45,7 +54,7 @@ if(cwd_diagnostic EQUAL -1)
   message(FATAL_ERROR "bad --cwd did not print a diagnostic. stderr:\n${cwd_error}")
 endif()
 
-execute_process(COMMAND "${APP}" -- "termole-no-such-program-12345.exe" RESULT_VARIABLE missing_result
+execute_process(COMMAND "${APP}" -e "termole-no-such-program-12345.exe" RESULT_VARIABLE missing_result
                 OUTPUT_VARIABLE missing_output ERROR_VARIABLE missing_error TIMEOUT 20)
 if(NOT missing_result EQUAL 1)
   message(FATAL_ERROR "missing program exited with '${missing_result}', expected 1. stdout:\n${missing_output}\nstderr:\n${missing_error}")
