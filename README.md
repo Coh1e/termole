@@ -40,6 +40,14 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
 `build.cmd` 仅在子进程内载入 MSVC 环境；不同安装位置通过 `TERMOLE_VCVARS` 指定 `vcvars64.bat`。默认构建产品、测试和一个入口，并运行 CTest。`package.cmd` 额外安装并生成单包 ZIP。
 
+编辑内循环用 `scripts\test-one.cmd <target> <ctest-regex>`，例如 `scripts\test-one.cmd termole_wrap_test t17_wrap`。提交前再跑全量 `build.cmd`。一次性安装空白/冲突标记钩子：
+
+```powershell
+.\scripts\install-hooks.cmd
+```
+
+验证与视觉证据规则见 [docs/agents/testing.md](docs/agents/testing.md)。
+
 产物位于 `.local/build/windows/bin`：
 
 | 文件 | 用途 |

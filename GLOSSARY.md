@@ -24,9 +24,14 @@ _Avoid_: 仅启动外部终端窗口
 一组可复用的终端启动设置。
 _Avoid_: 插件、应用包
 
-**弹窗选择器（Picker）**：
-在独立终端弹窗中运行选择程序，并将用户选择的结果返回调用者的组合能力。
-_Avoid_: 仅显示交互程序的 Applet 窗口
+**选择器（Selector）**：
+外部程序（如 fzf、rofi）自己读取候选、绘制选择界面并返回选择。
+Termole 只提供终端与数据通道，不实现选择结果协议。
+_Avoid_: 把选择器称为 Termole 的 picker 模式
+
+**执行模式（Execute）**：
+Termole 运行一个外部程序，把调用方 stdin/stdout 交给它，程序 UI 走 ConPTY；Termole 不解析结果。
+_Avoid_: picker、选择器内置模式
 
 **Pip**：
 Termole 的鼹鼠品牌角色。

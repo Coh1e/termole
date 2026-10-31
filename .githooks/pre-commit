@@ -1,0 +1,3 @@
+#!/bin/sh
+# Cheap mechanical guardrail: reject staged whitespace/conflict-marker errors.
+git diff --cached --check
