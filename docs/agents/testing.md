@@ -35,5 +35,6 @@ For changes involving View, renderer, window placement or selector UI:
 ## Selectors
 
 - `fzf` and `rofi` are external selectors: they own candidate input, their UI, and result output.
-- `termole -e <program>` is the generic execute seam; Termole does not parse selector results.
-- See ADR 0006 once the spec rewrite lands; until then, read the existing picker ADR as **superseded**, not as current direction.
+- `termole -e <program>` is foot-style execute: the program gets the ConPTY, not the caller pipes.
+- `termole --stdio <program>` is the explicit Termole extension that forwards caller stdin/stdout; Termole does not parse selector results.
+- See [ADR 0006](../adr/0006-terminal-selector-boundary.md).

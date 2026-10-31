@@ -2,7 +2,7 @@
 
 Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
-首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22/T23 的大部分切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、内置 fzf picker、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及单包交付的 `termole.exe` + `termole.dll`。
+首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22/T23 的大部分切片：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及单包交付的 `termole.exe` + `termole.dll`。外部程序边界正在按 foot 设计迁移到 `-e` / `--stdio` / pipe 动作；旧 picker 不再是目标。
 
 - [已确认设计决定](docs/design-decisions.md)
 - [首版实施规格 v0.2 · GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)
@@ -12,7 +12,8 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 - [TOML 配置与 Profile](docs/config.md)
 - [T14 配置验证](docs/t14-validation.md)
 - [SDK 与便携包](docs/sdk.md)
-- [Picker 基础实现](docs/picker.md)
+- [外部程序边界（ADR 0006）](docs/adr/0006-terminal-selector-boundary.md)
+- [Picker 历史（已取代）](docs/picker.md)
 - [资源有界](docs/t20-resources.md)
 - [性能基线](docs/t21-performance.md)
 - [CMD/WSL 基础验证](docs/t17-validation.md)
@@ -52,7 +53,7 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
 | 文件 | 用途 |
 | --- | --- |
-| `termole.exe` | 独立终端窗口；支持 `--cwd`、`--env`、`--` 目标程序，以及内置 fzf `--picker` |
+| `termole.exe` | 独立终端窗口；支持 `--cwd`、`--env`、`--` 目标程序；外部程序边界目标为 `-e`/`--stdio`（实现中） |
 | `termole.dll` | C ABI（版本 2）、C++23 包装和可嵌入 View 所在组件 |
 | `termole-test-helper.exe` | 仅测试构建使用的真实控制台子程序 |
 
@@ -71,7 +72,7 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T19 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、picker 提前关闭/完整背压（T15/T16）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20/T21 初步、T22/T23 只承诺已列出的切片，不宣称完整终端兼容性。尚未完成：中文 IME 实机验收（T09）、外部程序/stdio/pipe（T15/T16/T25）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 

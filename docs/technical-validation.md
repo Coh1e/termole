@@ -7,7 +7,7 @@
 - [T02 任意目标程序启动](t02-validation.md)：CLI 与公开宿主接口按逻辑 argv、cwd 和每会话环境启动目标；真实控制台子程序逐项核对空格、引号、空参数、Unicode、带路径程序、环境隔离，并覆盖 CMake/CMD/PowerShell/并行实例/无控制台启动。CTest 11/11 通过并连续复跑 5 次。
 - [T01 双入口最小终端](t01-validation.md)：同一 DLL 的 Session/View 在独立窗口和最小宿主中运行真实 Windows PowerShell；公开 C ABI/C++23 包装、子 HWND、输入、尺寸同步、VT 子集和进程树收尾均有实际测试证据。测试 3/3 通过并连续复跑 5 次；Windows PowerShell 回退路径已验证，PowerShell 7 优先路径未在本机端到端验证。
 - [核心验证](core-validation.md)：Contour 的 headless 核心在 MSVC/C++23/CMake/Ninja 下构建并通过文字、VT、alternate screen、字符输入和 CJK 宽度用例；仍牵连四个库，不自动采用为产品依赖。T01 按 [ADR 0005](adr/0005-minimal-vt-core.md) 使用项目内最小 VT 子集，而不是消费 Contour/libghostty-vt。
-- [选择器验证](picker-validation.md)：未修改 Windows fzf 通过八类真实 ConPTY/独立数据管道场景，结果字节和退出码可独立捕获。
+- [选择器验证（历史）](picker-validation.md)：未修改 Windows fzf 通过八类真实 ConPTY/独立数据管道场景；该 picker 方向已被 ADR 0006 取代，只保留证据。
 - [宿主接口草案](host-api.md)：已细化操作、查询、事件、所有权和未来脚本绑定边界；T01 已实现首批 C ABI 子集，完整 ABI 尚未冻结。
 - [原生界面基础验证](native-validation.md)：原生子 HWND、DirectWrite/Direct2D render target、离屏文字输出已实测；外部快照寿命与子窗口分离。T01 已把该基础扩展为真实 Session/View。
 - 尚未执行完整 terminal 兼容性、真实 IME/DPI、选择/剪贴板、便携包与全部 Windows 10/11 验收；不得把 T01 切片标为 MVP 完成。
@@ -18,7 +18,7 @@
 
 - [T03–T13 中间切片](t03-t13-validation.md)：退出码/保留窗口、事件队列、回滚与 View 重附加、备用屏幕/滚屏区、Unicode 宽度/组合、字体主题 DPI、选择/复制/粘贴/滚动、鼠标模式/bracketed paste、Applet 窗口，并以真实 fzf 验证输入与退出。CTest 16/16 通过。
 - [T14 配置](t14-validation.md)：TOML 根/Profile/CLI 优先级、错误文件与行号、默认配置回退。`t14_cli_config` 通过。
-- [Picker](picker.md)：内嵌 `termole.exe --picker`，无独立 picker exe；ASCII 单选、NUL/Unicode、`--multi`、12k 行、提前关闭、慢读背压。
+- [外部程序边界](adr/0006-terminal-selector-boundary.md)：`-e` 对齐 foot 的 PTY-only execute；`--stdio` 是 Termole 显式 stdin/stdout 扩展；pipe-visible/selected/scrollback 为单向动作。旧 picker 文档仅保留历史。
 - [T22/T23 SDK 与单包](t22-t23-validation.md)：单 ZIP、只有一个 DLL/EXE、外部 `find_package` 宿主编译、CPack 许可/文档/示例检查；未在无开发工具机器验收。更早的独立验证曾默认构建 picker 与 native 两个探针，CTest 2/2 通过；另在 `.local/build/all-spikes` 显式开启核心比较探针并复用固定源码，77 步构建完成，CTest 3/3 通过（picker 八场景、原生基础、VT 核心）。实际执行了对应目录的 `cmake --build` 和 `ctest --test-dir`；不是仅配置成功。
 - [T17 CMD/WSL](t17-validation.md)：CMD 既有用例；`t17_wsl` 通过已安装 WSL 执行 `sh -c`。IME/粘贴/尺寸/失败诊断仍不完整。
 - [T20 资源](t20-resources.md)：1000 行历史、256 事件、5 并发 Session、View 重附加；soak/背压未完成。

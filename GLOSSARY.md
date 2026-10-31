@@ -25,13 +25,21 @@ _Avoid_: 仅启动外部终端窗口
 _Avoid_: 插件、应用包
 
 **选择器（Selector）**：
-外部程序（如 fzf、rofi）自己读取候选、绘制选择界面并返回选择。
+外部程序（如 fzf）自己读取候选、绘制选择界面并返回选择。
 Termole 只提供终端与数据通道，不实现选择结果协议。
 _Avoid_: 把选择器称为 Termole 的 picker 模式
 
-**执行模式（Execute）**：
-Termole 运行一个外部程序，把调用方 stdin/stdout 交给它，程序 UI 走 ConPTY；Termole 不解析结果。
+**执行模式（Execute，`-e`）**：
+Termole 在 ConPTY 中运行外部程序，程序 fd 0/1/2 都接终端；不转发调用方 stdin/stdout。
+_Avoid_: 把 `-e` 当成调用方数据通道
+
+**标准流模式（Stdio，`--stdio`）**：
+Termole 显式把调用方 stdin/stdout 接到外部程序，程序 UI 走 ConPTY；Termole 不解析结果。
 _Avoid_: picker、选择器内置模式
+
+**管道动作（Pipe action）**：
+把当前视图、选区或回滚文本送到外部命令 stdin 的单向动作；命令 stdout/stderr 丢弃，结果不返回调用方。
+_Avoid_: 把 pipe 动作称为 picker
 
 **Pip**：
 Termole 的鼹鼠品牌角色。

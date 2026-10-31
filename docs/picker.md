@@ -1,8 +1,8 @@
 # Picker（历史；已被通用 execute 取代）
 
-> **状态：superseded（2026-10-31）**。用户要求 `pass ls | foot -e fzf` 式语义：
-> fzf/rofi 是外部选择器，Termole 只提供通用 execute 和终端/ConPTY。
-> 本文只保留历史；替代 spec/ADR 待确认后落盘，勿据此新增实现。
+> **状态：superseded（2026-10-31）**。用户要求 foot 设计对齐：
+> fzf/rofi 是外部选择器，Termole 只提供通用 execute、显式 `--stdio` 和终端/ConPTY。
+> 本文只保留历史；当前决策见 [ADR 0006](adr/0006-terminal-selector-boundary.md)。
 
 ## 旧设计（不要实现）
 
