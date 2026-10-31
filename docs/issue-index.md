@@ -1,6 +1,6 @@
 # Termole 首版任务索引
 
-规格：[GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)（v0.3，foot 设计对齐 + launcher 默认等待）。T01–T26 已发布；另有视觉 bug #26、像素护栏 #27。任务详细内容和最新状态以 GitHub 为准。
+规格：[GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)（v0.3，foot 设计对齐 + launcher 默认等待）。T01–T27 已发布；另有视觉 bug #26、像素护栏 #27。任务详细内容和最新状态以 GitHub 为准，用 `scripts/issue-status.ps1` 查询前沿；本表只维护阻塞边。
 
 T 编号是已确认拆分中的编号；本地验收草稿见 [任务拆分 v0.3](ticket-plan-v0.3.md)，未变化的任务沿用 [v0.2 计划](ticket-plan-v0.2.md)。
 
