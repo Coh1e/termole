@@ -11,16 +11,19 @@ statistics that a test can assert on:
   captured     1 when PrintWindow reported success
   width        captured bitmap width in pixels
   height       captured bitmap height in pixels
-  colors       number of distinct RGB values
-  background   most frequent RGB value (the window background)
-  inkPixels    pixels whose strongest channel differs from the background
-  inkRatio     inkPixels / (width * height)
+  colors          number of distinct RGB values
+  background      most frequent RGB value (the window background)
+  inkPixels       pixels whose strongest channel differs from the background
+  inkRatio        inkPixels / (width * height)
+  strongPixels    pixels whose strongest channel differs by >= 96
+  bandStrongPixels strong pixels inside the optional row band
 
 "ink" deliberately tolerates font antialiasing, theme colours and DPI: it
 counts a pixel as text/foreground when its strongest channel differs from the
-most frequent background by at least 24. The script never asserts what the
-pixels mean; callers decide the threshold. A blank window has one colour and
-zero ink.
+most frequent background by at least 24. "strong" uses 96 so a filled selection
+highlight is distinguishable from glyph antialiasing; both are reported, not
+asserted. The script never asserts what the pixels mean; callers decide the
+threshold. A blank window has one colour and zero ink.
 
 The window size is taken from GetWindowRect unless -Width/-Height are given.
 Passing the size explicitly is more reliable from a DPI-unaware caller.
@@ -47,10 +50,24 @@ param(
     [string]$StatsPath,
     [int]$BandTop = -1,
     [int]$BandBottom = -1,
+    [string]$TempPath,
     [switch]$Quiet
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Add-Type compiles its helper in $env:TEMP. Sandboxed test processes can be
+# barred from the user temp directory while still being able to write next to
+# their artifacts, so keep the compiler scratch directory beside the PNG by
+# default. Callers can override it with -TempPath.
+if (-not $TempPath) {
+    $absoluteOutput = [System.IO.Path]::GetFullPath($OutputPath)
+    $outputDirectory = [System.IO.Path]::GetDirectoryName($absoluteOutput)
+    $TempPath = [System.IO.Path]::Combine($outputDirectory, 'capture-temp')
+}
+New-Item -ItemType Directory -Force -Path $TempPath | Out-Null
+$env:TEMP = $TempPath
+$env:TMP = $TempPath
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
@@ -75,6 +92,8 @@ public static class TermoleWindowCapture
         public int Background;
         public long Ink;
         public long BandInk;
+        public long Strong;
+        public long BandStrong;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -128,9 +147,12 @@ public static class TermoleWindowCapture
 
         long ink = 0;
         long bandInk = 0;
+        long strong = 0;
+        long bandStrong = 0;
         for (int y = 0; y < height; y++)
         {
             int row = y * stride;
+            bool inBand = bandTop >= 0 && y >= bandTop && y <= bandBottom;
             for (int x = 0; x < width; x++)
             {
                 int index = row + x * 4;
@@ -141,7 +163,12 @@ public static class TermoleWindowCapture
                 if (difference >= 24)
                 {
                     ink++;
-                    if (bandTop >= 0 && y >= bandTop && y <= bandBottom) bandInk++;
+                    if (inBand) bandInk++;
+                }
+                if (difference >= 96)
+                {
+                    strong++;
+                    if (inBand) bandStrong++;
                 }
             }
         }
@@ -151,7 +178,9 @@ public static class TermoleWindowCapture
             Colors = counts.Count,
             Background = background,
             Ink = ink,
-            BandInk = bandInk
+            BandInk = bandInk,
+            Strong = strong,
+            BandStrong = bandStrong
         };
     }
 }
@@ -250,6 +279,8 @@ $stats = [ordered]@{
     bandTop       = $BandTop
     bandBottom    = $BandBottom
     bandInkPixels = $analysis.BandInk
+    strongPixels  = $analysis.Strong
+    bandStrongPixels = $analysis.BandStrong
 }
 
 if ($StatsPath) {
@@ -264,6 +295,7 @@ if ($StatsPath) {
 if (-not $Quiet) {
     Write-Output "captured=$($stats.captured) size=${Width}x${Height} colors=$($analysis.Colors) " +
         "background=$background inkPixels=$($analysis.Ink) inkRatio=$inkRatio " +
-        "band=${BandTop}..${BandBottom} bandInkPixels=$($analysis.BandInk)"
+        "band=${BandTop}..${BandBottom} bandInkPixels=$($analysis.BandInk) " +
+        "strongPixels=$($analysis.Strong) bandStrongPixels=$($analysis.BandStrong)"
     Write-Output "png=$OutputPath"
 }

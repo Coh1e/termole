@@ -187,6 +187,40 @@ if(TERMOLE_POWERSHELL)
       SKIP_RETURN_CODE 77
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
+
+    # T06 interaction: drives real fzf through the View's WM_KEYDOWN/WM_CHAR
+    # path (arrow, typing, Enter, Escape) and captures pixels after each step.
+    # No --filter/--no-color and no alt-screen bypass: this is fzf's own UI.
+    add_test(NAME visual_fzf_interaction COMMAND termole_visual_test
+      --mode fzf-interaction
+      --fzf "${TERMOLE_FZF}"
+      --powershell "${TERMOLE_POWERSHELL}"
+      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-interaction")
+    set_tests_properties(visual_fzf_interaction PROPERTIES
+      TIMEOUT 180
+      LABELS "visual"
+      SKIP_RETURN_CODE 77
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    # Same interactions through the public standalone entry (`termole -e`).
+    # Keys are posted to the app's TermoleViewWindow child; the app has no
+    # screen-text API, so the captures are the evidence.
+    add_dependencies(termole_visual_test termole_app)
+    add_test(NAME visual_fzf_standalone COMMAND termole_visual_test
+      --mode fzf-standalone
+      --app "$<TARGET_FILE:termole_app>"
+      --fzf "${TERMOLE_FZF}"
+      --powershell "${TERMOLE_POWERSHELL}"
+      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-standalone")
+    set_tests_properties(visual_fzf_standalone PROPERTIES
+      TIMEOUT 240
+      LABELS "visual"
+      SKIP_RETURN_CODE 77
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
   endif()
 endif()
 

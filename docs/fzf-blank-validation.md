@@ -95,7 +95,8 @@ ctest --preset windows-visual
 ## 未覆盖
 
 - #26 只关闭“可见性/空白”根因。方向键、输入筛选、Enter/Escape、退出后恢复主屏等交互
-  仍由 [T06 #7](https://github.com/Coh1e/termole/issues/7) 验收。
+  已由 [T06 #7](https://github.com/Coh1e/termole/issues/7) 在
+  [t06-validation.md](t06-validation.md) 以像素证据验收。
 - 本机只验证了 150%（144 DPI）缩放和单显示器；100%/200% 缩放与多显示器未单独跑像素用例。
 - fzf 0.74.5；升级 fzf 后需重跑 `windows-visual`。像素阈值与限制见
   [visual-harness-validation.md](visual-harness-validation.md)。

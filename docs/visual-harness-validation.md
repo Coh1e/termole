@@ -21,6 +21,8 @@
 | `inkPixels` | 任一通道与背景差 `>= 24` 的像素数 |
 | `inkRatio` | `inkPixels / (width * height)` |
 | `bandInkPixels` | 仅 `-BandTop..-BandBottom` 行内的 ink 像素数 |
+| `strongPixels` | 任一通道与背景差 `>= 96` 的像素数（区分整块反显与字形抗锯齿） |
+| `bandStrongPixels` | 仅行带内的 strong 像素数 |
 
 `-StatsPath` 写 `key=value` 便于测试读取，`-Quiet` 抑制人工摘要输出。
 脚本只负责截图和统计，阈值由调用方决定；不断言精确颜色、不做整图 hash。
@@ -38,6 +40,10 @@
   - `--mode fzf`：`cmd.exe` 执行 `type candidates | fzf`，等 `screen_text()` 含 `banana`（辅助信号），
     先做同样的整窗 ink 断言，再把候选行和 `▌` 指针字形行映射到像素行带，分别断言行带内有非背景像素
     （候选 `>= 50`，指针 `>= 10`）。fzf 不存在时打印 SKIP 并返回 77。
+  - `--mode fzf-interaction` / `--mode fzf-standalone`：T06 的真实 fzf 交互用例，
+    按键走 View 的 `WM_KEYDOWN`/`WM_CHAR`，逐步截图并断言方向键移动、输入筛选、
+    Enter、Escape、退出后恢复主屏与光标。证据见 [t06-validation.md](t06-validation.md)。
+    行带用实测 `View::cell_height()`，不用 `height / rows` 的近似值。
 - 截图跨进程完成，`PrintWindow` 会向目标窗口发送消息；测试等待截图进程时必须继续 pump 消息
   （`MsgWaitForMultipleObjectsEx`），否则捕获与 UI 线程互相等待。
 - 每次运行都把 PNG 和统计写到 `${CMAKE_CURRENT_BINARY_DIR}/visual/<scenario>/`；
@@ -50,11 +56,13 @@
 - `visual_fzf`：仅在 `TERMOLE_FZF` 找到时注册（与 `t06_fzf` 相同的探测条件），
   标签 `visual`，`SKIP_RETURN_CODE 77`。fzf 缺失时与 `t06_fzf` 一样不注册；
   直接运行 `termole_visual_test --mode fzf` 会打印 SKIP 并返回 77。
-- #26 修复后删除了 `known-red` 标签，两个视觉用例都进入默认套件，断言未改动；
+- `visual_fzf_interaction` / `visual_fzf_standalone`：T06 的两个交互用例，注册条件与
+  `visual_fzf` 相同，标签 `visual`；独立入口用例还依赖 `termole_app`。
+- #26 修复后删除了 `known-red` 标签，视觉用例都进入默认套件，既有断言未改动；
   默认 preset `windows` 的排除规则保留（已没有测试带该标签）。
 
 ```bat
-:: 默认套件（build.cmd 使用），包含两个视觉用例
+:: 默认套件（build.cmd 使用），包含全部视觉用例
 ctest --preset windows
 
 :: 只跑视觉标签
