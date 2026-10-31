@@ -34,14 +34,14 @@
 - 独立版正常退出默认关窗，非零退出保留画面并显示退出码，可显式覆盖；嵌入模式由宿主决定。
 - 无配置文件可正常启动；已有配置出错时显示文件及错误位置，提供使用默认配置启动的选择。CLI 参数错误直接报错退出。
 - 首版交付解压可运行的便携包，包含必要运行库和许可声明；另提供嵌入开发包、最小宿主示例及接口文档。开发工具不要求最终用户安装。
-- 终端不内置选择器：fzf/rofi 等程序拥有自己的候选、UI 和结果；Termole 不解析选择结果。选择器结果返回不属于终端 API。
+- 终端不内置选择器：fzf 等程序拥有自己的候选、UI 和结果；Termole 不解析选择结果。选择器结果返回不属于终端 API。
 - 嵌入开发包首版提供 DLL、C ABI 和 C++23 包装；库释放自身分配资源，校验接口版本；静态库后续按需增加。
 - 独立版首版单窗口单会话，不增加标签页、分屏、全局快捷键呼出或后台常驻；宿主可自行组合多个控件。
 - 默认允许用户主动复制粘贴，禁止终端输出通过控制序列直接写入系统剪贴板；用户或宿主可显式开启。本地与远端输出规则一致。
 - `-e <program>` 对齐 foot execute：子进程 fd 0/1/2 接 ConPTY，不转发调用方 stdin/stdout；现有 `--` 目标分隔符保留。
 - `--stdio <program>` 是 Termole 显式扩展：调用方 stdin/stdout 接程序，stderr/UI 走 ConPTY；对任意程序成立，不要求 fzf，不解析结果。
 - `pipe-visible` / `pipe-selected` / `pipe-scrollback` 对齐 foot 单向 pipe：终端文本送到外部命令 stdin，命令 stdout/stderr 丢弃；命令内部可运行 fzf 等选择器并执行动作。
-- `pipe-command-output` 依赖 shell OSC 133，单独立项。rofi 不进入规范、ticket 或验收；fzf 仅作为外部程序示例。
+- `pipe-command-output` 依赖 shell OSC 133，单独立项。fzf 仅作为外部程序示例。
 - 正常转交 `-e`/`--stdio` 子进程退出码；不额外定义 picker 专用取消码。Termole 启动失败提供独立错误说明。
 - 首版切片采用项目内最小 VT 子集，不引入 Contour/libghostty-vt；见 [ADR 0005](adr/0005-minimal-vt-core.md) 与 [VT 核心范围](vt-core.md)。这是对 T01 的实现决定，不改变后续按证据评估成熟实现的约束。
 

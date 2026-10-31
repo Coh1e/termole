@@ -6,7 +6,7 @@
 
 ## 背景
 
-原始 picker 设计把“候选 stdin、结果 stdout、fzf UI”做成 Termole 的 `--picker` 模式。用户随后明确：fzf/rofi 只是外部候选选择器；Termole 不应理解选择语义，也不应把 fzf 内置成产品能力。
+原始 picker 设计把“候选 stdin、结果 stdout、fzf UI”做成 Termole 的 `--picker` 模式。用户随后明确：fzf 只是外部候选选择器；Termole 不应理解选择语义，也不应把 fzf 内置成产品能力。
 
 对 foot 1.28.0 的源码核查（见 [foot-stdio-research](../foot-stdio-research.md)）表明：
 
@@ -38,7 +38,7 @@ Termole 采用“终端与外部程序分离”的三层边界：
    - 命令内部可使用 fzf/fuzzel 等选择器并执行动作；
    - 不提供调用方结果返回协议。
 
-不提供 `--picker` / `--picker-arg`，不内置 fzf/rofi，不实现任意 TUI 的自动结果返回。`pipe-command-output` 依赖 shell OSC 133，单独立项。
+不提供 `--picker` / `--picker-arg`，不内置 fzf，不实现任意 TUI 的自动结果返回。`pipe-command-output` 依赖 shell OSC 133，单独立项。
 
 交付仍是一个 `termole.exe` + 一个 `termole.dll`。
 
@@ -47,7 +47,6 @@ Termole 采用“终端与外部程序分离”的三层边界：
 - **保留 `--picker`**：拒绝。它把 fzf 语义写进终端，证据和测试都会围绕 fzf 而不是通用终端；用户明确反对。
 - **只做严格 foot 语义**：拒绝。`-e` 无法满足“调用方管道 → UI → 调用方结果”的需求；因此保留一个显式的 `--stdio` 扩展，并清楚标注差异。
 - **只靠 shell 临时文件/FD 包装**：拒绝为唯一方案。它可用，但 Windows 没有 fd 3/4 的直接对应；Termole 提供通用 `--stdio`，shell 包装仍可作为外部组合。
-- **把 rofi 纳入验收**：拒绝。rofi 是独立 GUI 选择器，且不是 Windows 原生；它只是人类对话中的类比，不进入规范、ticket 或测试。
 
 ## 后果
 
