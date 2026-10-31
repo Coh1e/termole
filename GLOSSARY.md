@@ -12,9 +12,13 @@ _Avoid_: 窗口、页面
 呈现一个会话并接收用户终端交互的界面。销毁视图本身不等于终止会话。
 _Avoid_: 会话、顶层窗口
 
-**宿主（Host）**：
-嵌入 Termole 的应用，负责其界面布局、会话寿命及向扩展开放的能力。
-_Avoid_: 终端子进程
+**嵌入宿主（Embedding Host）**：
+使用 Termole SDK 在自己的界面内嵌入终端的应用，负责其界面布局、会话寿命及向扩展开放的能力。旧文中的“宿主”指此角色。
+_Avoid_: 终端子进程、交互宿主
+
+**交互宿主（Interaction Host）**：
+Termole 独立入口为外部程序提供窗口、显示和键盘交互的角色；它不承担程序的数据处理或结果解释。
+_Avoid_: 把交互宿主与嵌入宿主混用
 
 **嵌入（Embedding）**：
 其他应用在自己的界面内使用 Termole 终端的能力，是首版必须交付的产品能力。
@@ -34,8 +38,12 @@ Termole 在 ConPTY 中运行外部程序，程序 fd 0/1/2 都接终端；不转
 _Avoid_: 把 `-e` 当成调用方数据通道
 
 **标准流模式（Stdio，`--stdio`）**：
-Termole 显式把调用方 stdin/stdout 接到外部程序，程序 UI 走 ConPTY；Termole 不解析结果。
+Termole 显式把调用方 stdin/stdout 接到外部程序，程序 UI 与 stderr 走 ConPTY；Termole 不解析结果。
 _Avoid_: picker、选择器内置模式
+
+**数据通道（Data Channel）**：
+与终端显示分离、连接调用方与程序的字节路径。`--stdio` 是双向标准流通道；pipe 动作是终端到外部命令的单向文本通道。
+_Avoid_: 把数据通道等同于终端画面或 picker 结果协议
 
 **管道动作（Pipe action）**：
 把当前视图、选区或回滚文本送到外部命令 stdin 的单向动作；命令 stdout/stderr 丢弃，结果不返回调用方。

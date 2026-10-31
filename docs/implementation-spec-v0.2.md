@@ -1,5 +1,7 @@
 # Termole 首版实施规格 v0.2
 
+> 历史规格：picker-first 方向已被 [v0.3 规格](implementation-spec-v0.3.md)、[ADR 0006](adr/0006-terminal-selector-boundary.md) 和 [ADR 0007](adr/0007-console-launcher-wait.md) 取代；本文件只保留原始设计记录。
+
 状态：产品与架构决定及测试边界已获用户确认，已发布为 [GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)，标签 ready-for-agent。后续任务和规格状态以该 Issue 为准。
 
 ## Problem Statement

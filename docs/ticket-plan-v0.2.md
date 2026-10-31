@@ -1,5 +1,7 @@
 # Termole 首版任务拆分
 
+> 历史计划：外部程序/入口切片 T15、T16、T25、T26 已被 [v0.3 计划](ticket-plan-v0.3.md) 和 [规格 #1](https://github.com/Coh1e/termole/issues/1) 取代；其余任务仍可参考本文件，但以 GitHub Issue 和 v0.3 计划为准。
+
 来源：[实施规格 #1](https://github.com/Coh1e/termole/issues/1)。状态：已确认并发布为 GitHub 子任务 #2–#25；24 项标签、原生子任务层级及 46 条阻塞关系已逐项核对。对应链接见 [任务索引](issue-index.md)。T 编号为本地讨论编号，不是 GitHub Issue 编号。
 
 每项完成应可单独演示或通过公开宿主/真实 CLI 边界验收。首项已有 CMake 与探针基础，无需先做纯内部层重构；产品实现必须与比较探针分离。后续任务沿用规格 #1 的平台、语言、许可、复用约束和非目标。

@@ -1,22 +1,30 @@
 # CLI
 
-T02 起，独立入口支持从 CMD、PowerShell 或任何进程启动指定目标程序。Termole 只负责启动目标，不实现 Shell 管道或命令语言；管道仍由调用方 Shell 组合。
+`termole.exe` 是独立入口的控制台 launcher；同一个 exe 以内部 GUI 角色承载窗口、Session 和 View。普通模式启动窗口后立即返回；`-e` / `--stdio` 默认等待程序结束并返回退出码。Termole 只负责终端与数据通道，不实现 Shell 管道、选择器或结果协议。
+
+> 状态：launcher / 默认等待由 T26（[#29](https://github.com/Coh1e/termole/issues/29)）落地，`-e` / `--stdio` 由 T15（[#16](https://github.com/Coh1e/termole/issues/16)）落地。当前二进制仍是 GUI 入口，只有 `--cwd`、`--env` 和 `--`；需要等待时用 `start /wait`。
 
 ## 用法
 
 ```text
 termole [options] [--] [program [arguments...]]
+termole [options] -e <program> [arguments...]
+termole [options] --stdio <program> [arguments...]
 ```
 
+- 普通模式：程序在 ConPTY 中运行，fd 0/1/2 都接终端；launcher 启动 GUI 后返回 `0`。
+- `-e`：foot 语义的 execute，程序仍在 ConPTY 中运行；不转发调用方 stdin/stdout；launcher 等待程序结束并返回退出码。
+- `--stdio`：Termole 显式扩展；调用方 stdin/stdout 接到程序，程序 stderr/UI 走 ConPTY；Termole 自身诊断走调用方 stderr；launcher 等待并返回退出码。
 - 没有 `program` 时启动默认 Shell：优先 PowerShell 7，否则 Windows PowerShell。
-- `--` 之后的所有 token 都作为目标程序及参数，不再解释 Termole 选项。只写 `--` 而不提供目标时仍启动默认 Shell。
-- 没有 `--` 时，首个非选项 token 是目标程序，之后的 token 全部原样传给目标；因此目标参数以 `-` 开头也不需要额外转义。
+- `--` 之后的所有 token 都作为目标程序及参数，不再解释 Termole 选项。`-e` / `--stdio` 自身就是程序分隔符，后面直接写程序；两者不能同时使用，也不能重复。
 - 目标参数保留空格、引号、空参数和 Unicode；空参数会作为一个空 argv 元素传递。
 
-选项：
+## 选项
 
 | 选项 | 含义 |
 | --- | --- |
+| `-e`, `--execute` | foot 语义 execute：PTY 运行程序，不转发调用方 stdin/stdout，等待并返回退出码 |
+| `--stdio` | 显式数据通道：调用方 stdin/stdout 接程序，UI/stderr 走 ConPTY，等待并返回退出码 |
 | `--cwd <directory>` | 子进程工作目录；不存在或不是目录时启动失败 |
 | `--env <KEY=VALUE>` | 在继承的调用方环境上覆盖/新增变量，可重复；不修改调用方环境 |
 | `--font <FAMILY>` | 字体族 |
@@ -33,48 +41,58 @@ termole [options] [--] [program [arguments...]]
 | `--config <PATH>` | 指定 TOML 配置 |
 | `--profile <NAME>` | 应用 `[profiles.NAME]` |
 | `--no-config` | 忽略用户配置 |
-| `--keep-window` | 目标退出后保留窗口 |
-| `--close-on-exit` | 目标失败也关闭窗口 |
+| `--keep-window` | 目标退出后保留窗口（普通模式） |
+| `--close-on-exit` | 目标失败也关闭窗口（普通模式） |
 | `--help`, `-h` | 打印用法并退出 0 |
 | `--version` | 打印版本并退出 0 |
 
 ## 示例
 
 ```powershell
-# 默认 PowerShell
+# 默认 PowerShell；launcher 启动窗口后立即返回
 termole.exe
 
-# 指定目标程序
+# 普通模式运行程序
 termole.exe -- pwsh -NoProfile
-
-# 工作目录与环境
 termole.exe --cwd C:\repo --env TERM=1 -- git status
 
-# 目标参数以 - 开头
-termole.exe -- git --version
+# foot 语义 execute：等待程序结束并返回退出码
+termole.exe -e lazygit
 
-# 调用方组合管道
-Get-Content names.txt | termole.exe -- some-tui
+# 显式数据通道：候选 stdin，结果 stdout，等待并返回退出码
+Get-Content names.txt | termole.exe --stdio fzf --multi
+
+# 结果进入下一条命令；管道会等待 termole 退出
+Get-Content names.txt | termole.exe --stdio fzf | ForEach-Object { "picked: $_" }
 ```
 
-## 诊断与退出码
+## 等待与退出码
 
-- 用法错误（未知选项、缺少选项值）：stderr 诊断，退出码 `2`。
-- 目标程序/工作目录/环境变量启动失败：stderr 诊断，退出码 `1`；无控制台时以 MessageBox 呈现。
-- 目标自然退出：成功默认关窗并返回 0；非零默认保留画面、显示退出码，用户关闭后返回该退出码。`--keep-window`/`--close-on-exit` 覆盖默认策略。
-- `--help`/`--version`：stdout，退出码 `0`。
+`termole.exe` 是控制台 launcher，因此 CMD/PowerShell 会等待 launcher 本身：
 
-`termole.exe` 是 Windows GUI 子系统程序。正常启动是异步的；需要等待时使用：
+- 普通模式：launcher 成功启动 GUI 后返回 `0`，不等待窗口关闭。需要等待 GUI 退出时使用 `start /wait` 或 `Start-Process -Wait`。
+- `-e` / `--stdio`：launcher 等待 GUI/程序结束。程序正常或失败退出时转交程序退出码；用户在程序退出前关闭窗口返回 `130`；程序启动失败返回 `1`；用法错误返回 `2`；Termole 基础设施失败返回 `125`。
+- 不定义 picker 专用错误码，也不承诺 `130` 与任意程序自身退出码不冲突。
+- `--stdio` 要求调用方 stdin/stdout 是管道或文件重定向；两者是控制台时返回用法错误 `2`，避免把键盘输入当成候选。
 
-```cmd
-start "" /wait termole.exe -- pwsh -NoProfile
-```
+普通模式的 GUI 退出码不会反向传给已经返回的 shell；需要退出码时使用 `-e` 或 `--stdio`。
 
-```powershell
-Start-Process -FilePath .\termole.exe -ArgumentList '--','pwsh','-NoProfile' -Wait
-```
+## 数据通道语义
 
-目标进程退出后 Termole 会先让 reader 排空 ConPTY 尾部输出，再关闭窗口，等待调用因此返回。非零退出码默认保留窗口；`--close-on-exit` 可让脚本直接取得目标退出码。在 CMD/PowerShell 的 `start /wait` / `Start-Process -Wait` 调用下，已有测试验证等待、启动错误退出码和目标进程获得真实 ConPTY 标准输出。
+- `-e`：子进程 fd 0/1/2 都接 ConPTY；调用方管道不会被偷偷转发给子进程。适合 foot 风格的“终端里运行一个交互程序”。
+- `--stdio`：只把调用方 stdin/stdout 接到子进程；子进程 stderr/UI 仍在 ConPTY。适合 `candidates | termole --stdio fzf | consumer` 这类选择器组合。
+- `--stdio` 不读候选、不解析结果、不追加换行、不转码、不排序；字节、背压和退出状态直接传递。
+- fzf 只是外部程序示例，不是 Termole 的依赖；未安装 fzf 时按普通程序启动失败处理。
+- 视觉结论必须用截图/像素证据；`screen_text`/`viewport_text`/`paint_count` 不能替代用户可见性验收。fzf 窗口空白问题见 #26，像素护栏见 #27。
+
+## Pipe 动作
+
+T25 提供 `pipe-visible` / `pipe-selected` / `pipe-scrollback`：把当前可见文本、选区或回滚以 UTF-8 送到配置的外部命令 stdin。命令 stdout/stderr 丢弃；命令内部可以运行 fzf/fuzzel 等选择器并执行动作。
+
+- 首版不注册默认热键；需要用户在配置中显式绑定按键和命令。
+- 命令由 Windows shell 执行，Termole 不实现自己的命令语言。
+- 命令自己的临时文件和业务清理由命令负责；若命令通过 `termole -e` 打开新的交互窗口，launcher 的默认等待使命令可以在窗口关闭后再清理。
+- `pipe-command-output` 依赖 shell 的 OSC 133 命令边界，不在首版范围。
 
 ## 环境变量语义
 

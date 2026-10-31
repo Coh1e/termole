@@ -18,6 +18,8 @@ T01 的首批实现额外提供 `termole_session_get_screen_text`：返回可见
 
 T02 将 ABI 升级到 2：`termole_session_options` 分别接收 program、逻辑 argv 数组、工作目录和 `KEY=VALUE` 环境数组。参数不经过字符串拼接，空参数与 Unicode 保真；环境数组在调用方环境副本上覆盖，不修改调用方进程。
 
+v0.3 的 `-e` / `--stdio` / pipe 动作属于独立入口和应用层组合：`--stdio` 是 CLI 显式数据通道，pipe 动作把终端文本送到外部命令；两者都不解析选择结果。嵌入宿主使用既有查询（选区、滚屏、退出码）或自己的进程/管道；库不替宿主启动业务命令，也不实现 picker 协议。T22 在冻结 ABI 时明确宿主可用的通道能力与所有权，不与 CLI 的 launcher 角色混为一谈。
+
 CreateView 附加既有会话；同一会话已有 View 时返回明确错误。T01 已用每 Session 的 attach 标志强制该约束，重复附加返回 `TERMOLE_STATUS_INVALID_STATE`。DestroyView 不结束会话；会话本身仍消费输出并保留有界历史。关闭独立窗口是应用层先终止会话再销毁视图，不在基础 View 析构中隐藏进程终止策略。
 
 ## C ABI 与数据所有权

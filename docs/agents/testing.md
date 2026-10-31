@@ -37,4 +37,5 @@ For changes involving View, renderer, window placement or selector UI:
 - `fzf` is an external selector: it owns candidate input, its UI, and result output.
 - `termole -e <program>` is foot-style execute: the program gets the ConPTY, not the caller pipes.
 - `termole --stdio <program>` is the explicit Termole extension that forwards caller stdin/stdout; Termole does not parse selector results.
-- See [ADR 0006](../adr/0006-terminal-selector-boundary.md).
+- `termole` is a console launcher: normal mode returns immediately; `-e`/`--stdio` wait and return the program exit code. `--stdio` requires piped/file stdin/stdout.
+- See [ADR 0006](../adr/0006-terminal-selector-boundary.md) and [ADR 0007](../adr/0007-console-launcher-wait.md).

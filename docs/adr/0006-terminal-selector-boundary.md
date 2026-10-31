@@ -40,7 +40,7 @@ Termole 采用“终端与外部程序分离”的三层边界：
 
 不提供 `--picker` / `--picker-arg`，不内置 fzf，不实现任意 TUI 的自动结果返回。`pipe-command-output` 依赖 shell OSC 133，单独立项。
 
-交付仍是一个 `termole.exe` + 一个 `termole.dll`。
+交付仍是一个 `termole.exe` + 一个 `termole.dll`。`termole.exe` 的控制台 launcher / GUI 双角色及默认等待见 [ADR 0007](0007-console-launcher-wait.md)。
 
 ## 备选方案
 
