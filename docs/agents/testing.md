@@ -27,6 +27,7 @@ build.cmd
 
 - End-to-end CLI contracts go through the public entry (`termole`, `-e`, `--stdio`). `--gui` is the internal GUI role, used only by tests about window policy or geometry.
 - `t26_launcher` (launcher, waiting, stdio bytes, console hiding, pixel capture) and `t26_cli_pipelines` (real CMD/PowerShell bytes, order, exit codes, early close) are the launcher test home; extend them instead of adding a parallel harness.
+- To make a program fail to start, hold a real copy open exclusively; renaming a text file to `.exe` pops the loader's "unsupported application" dialog and the test hangs until someone clicks OK (see `docs/t15-validation.md`).
 - A failed pixel check writes `window-capture.bmp` into the test artifact directory.
 
 ## UI evidence

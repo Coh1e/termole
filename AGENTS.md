@@ -7,7 +7,7 @@
 
 ## Triage labels
 
-使用五个标准任务标签，映射见 docs/agents/triage-labels.md。
+使用标准任务标签（含 `verify`），映射见 docs/agents/triage-labels.md。
 
 ## Domain docs
 
