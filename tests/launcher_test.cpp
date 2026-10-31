@@ -652,6 +652,60 @@ void closed_output_pipe_ends_cleanly(const Scenario& scenario)
     check(code != 0, "--stdio early close: the program's broken-pipe status is forwarded");
 }
 
+void start_failure_is_distinguishable(const Scenario& scenario)
+{
+    // T15: a program that exists but cannot start must name the failing call, so
+    // it is distinguishable from a missing tool; both keep the program-start
+    // failure status (1) and neither gets a picker-specific code. The program is
+    // held open exclusively so CreateProcessW fails without the loader's
+    // "unsupported application" dialog, which would block the test.
+    const auto locked = scenario.root / L"locked-program.exe";
+    std::error_code copy_error;
+    std::filesystem::copy_file(scenario.helper, locked,
+                               std::filesystem::copy_options::overwrite_existing, copy_error);
+    check(!copy_error, "start failure: the program copy exists");
+    const HANDLE exclusive = ::CreateFileW(locked.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+                                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    check(exclusive != INVALID_HANDLE_VALUE, "start failure: the program is opened exclusively");
+    if (exclusive == INVALID_HANDLE_VALUE) return;
+
+    const auto capture = scenario.root / L"start-failure-stderr.txt";
+    std::error_code ignored;
+    std::filesystem::remove(capture, ignored);
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    const HANDLE stderr_file = ::CreateFileW(capture.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                                             &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                                             nullptr);
+    check(stderr_file != INVALID_HANDLE_VALUE, "start failure: stderr capture opens");
+    if (stderr_file == INVALID_HANDLE_VALUE) {
+        ::CloseHandle(exclusive);
+        return;
+    }
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = INVALID_HANDLE_VALUE;
+    startup.hStdOutput = INVALID_HANDLE_VALUE;
+    startup.hStdError = stderr_file;
+    Process launcher = spawn(scenario.app, L"-e " + quote(locked.wstring()), TRUE, 0, &startup);
+    ::CloseHandle(stderr_file);
+    check(launcher.started, "start failure: launcher starts");
+    if (!launcher.started) {
+        ::CloseHandle(exclusive);
+        return;
+    }
+    const DWORD code = wait_for(launcher, 20000);
+    close(launcher);
+    ::CloseHandle(exclusive);
+    const std::string diagnostics = read_file(capture);
+    check(code == 1, "start failure: launcher returns the start-failure status");
+    check(diagnostics.find("CreateProcessW") != std::string::npos,
+          "start failure: the diagnostic names the failing call");
+    check(diagnostics.find("program not found") == std::string::npos,
+          "start failure: the diagnostic is distinguishable from a missing tool");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -683,6 +737,7 @@ int wmain(int argc, wchar_t** argv)
     shared_console_is_preserved(scenario);
     canceling_the_window_returns_130(scenario);
     closed_output_pipe_ends_cleanly(scenario);
+    start_failure_is_distinguishable(scenario);
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed\n";
