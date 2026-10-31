@@ -150,11 +150,10 @@ if(TERMOLE_FZF)
   )
 endif()
 
-# Pixel harness (#27). The deterministic alt-screen scenario is part of the
-# default suite; the real-fzf scenario registers only when fzf exists (the same
-# condition as t06_fzf) and carries the known-red label while issue #26 makes
-# the fzf View blank. The default test preset excludes known-red; run
-# `ctest --preset windows-visual` to see the reproducible red.
+# Pixel harness (#27). Both scenarios are part of the default suite: the
+# deterministic alt-screen probe and the real-fzf scenario, which registers only
+# when fzf exists (the same condition as t06_fzf). Every run writes PNG and stats
+# under <build>/tests/visual/; failures keep them for review.
 if(TERMOLE_POWERSHELL)
   add_executable(termole_visual_child visual/alt_screen_child.cpp)
   target_link_libraries(termole_visual_child PRIVATE termole_build_options)
@@ -184,7 +183,7 @@ if(TERMOLE_POWERSHELL)
       --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf")
     set_tests_properties(visual_fzf PROPERTIES
       TIMEOUT 120
-      LABELS "visual;known-red"
+      LABELS "visual"
       SKIP_RETURN_CODE 77
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )

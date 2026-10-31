@@ -5,8 +5,7 @@
 //               screen; the View is captured with PrintWindow and must show
 //               non-background pixels.
 //   fzf         real fzf draws its full-screen UI; the View must show the
-//               candidate UI. This scenario is red until issue #26 is fixed
-//               and is labelled known-red in CTest until then.
+//               candidate UI. Part of the default suite since #26 was fixed.
 //
 // screen_text()/viewport_text()/paint_count() are printed only as supporting
 // signals. The pass criterion is the captured pixels.

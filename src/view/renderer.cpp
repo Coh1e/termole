@@ -120,6 +120,9 @@ Result<void> Renderer::initialize()
 
 Result<void> Renderer::create_format()
 {
+    // DirectWrite sizes are DIPs. The render target is pinned to 96 DPI (see
+    // create_target), so one DIP is one device pixel and this value is also the
+    // on-screen font height in pixels.
     const float font_pixels = static_cast<float>(font_size_dip_) * static_cast<float>(dpi_) / 96.0f;
     win::com_ptr<IDWriteTextFormat> format;
     win::com_ptr<IDWriteTextFormat> bold;
@@ -187,9 +190,20 @@ bool Renderer::create_target()
     ::GetClientRect(window_, &client);
     const UINT32 width = static_cast<UINT32>(std::max<LONG>(1, client.right - client.left));
     const UINT32 height = static_cast<UINT32>(std::max<LONG>(1, client.bottom - client.top));
+
+    // The renderer measures the cell size with DirectWrite and uses it as
+    // device pixels for the grid and for every draw coordinate. A D2D render
+    // target otherwise inherits the system DPI and scales those coordinates a
+    // second time: at 150% scaling a 22-row grid spans roughly 927 px inside a
+    // 640 px window, so bottom-anchored TUIs such as fzf are drawn off-screen
+    // and the window looks blank (#26). Pin the target to 96 DPI so one DIP is
+    // exactly one device pixel.
+    D2D1_RENDER_TARGET_PROPERTIES properties = D2D1::RenderTargetProperties();
+    properties.dpiX = 96.0f;
+    properties.dpiY = 96.0f;
     const HRESULT status = graphics_state().d2d->CreateHwndRenderTarget(
-        D2D1::RenderTargetProperties(),
-        D2D1::HwndRenderTargetProperties(window_, D2D1::SizeU(width, height)), target_.put());
+        properties, D2D1::HwndRenderTargetProperties(window_, D2D1::SizeU(width, height)),
+        target_.put());
     if (FAILED(status)) return false;
 
     target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);

@@ -88,7 +88,7 @@ Get-Content names.txt | termole.exe --stdio fzf | ForEach-Object { "picked: $_" 
 - `--stdio`：只把调用方 stdin/stdout 接到子进程；子进程 stderr 合并到 ConPTY 输出流，终端 UI 仍在 Termole 窗口中。适合 `candidates | termole --stdio fzf | consumer` 这类选择器组合。
 - `--stdio` 不读候选、不解析结果、不追加换行、不转码、不排序；字节、背压和退出状态直接传递。Termole 不缓冲数据通道。
 - fzf 只是外部程序示例，不是 Termole 的依赖；未安装 fzf 时按普通程序启动失败处理。
-- 视觉结论必须用截图/像素证据；`screen_text`/`viewport_text`/`paint_count` 不能替代用户可见性验收。fzf 窗口空白问题见 #26，像素护栏见 #27。
+- 视觉结论必须用截图/像素证据；`screen_text`/`viewport_text`/`paint_count` 不能替代用户可见性验收。fzf 窗口空白问题已在 #26 修复（渲染目标 DPI 与设备像素坐标混用），像素护栏见 #27。
 
 ## Pipe 动作
 

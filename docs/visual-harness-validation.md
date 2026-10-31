@@ -2,6 +2,7 @@
 
 - 任务：[#27](https://github.com/Coh1e/termole/issues/27)
 - 关联 bug：[#26](https://github.com/Coh1e/termole/issues/26)
+- 修复：#26 已修复；根因与修复后像素证据见 [fzf-blank-validation.md](fzf-blank-validation.md)
 - 日期：2026-10-31
 - 环境：Windows 11 x64 本机；MSVC 14.51（VS 18 BuildTools）、CMake 4.4.5、Ninja；Release；fzf 0.74.5；Windows PowerShell 5.1
 
@@ -47,70 +48,68 @@
 
 - `visual_alt_screen`：**默认 CTest 的一部分**，标签 `visual`。
 - `visual_fzf`：仅在 `TERMOLE_FZF` 找到时注册（与 `t06_fzf` 相同的探测条件），
-  标签 `visual;known-red`，`SKIP_RETURN_CODE 77`。fzf 缺失时与 `t06_fzf`
-  一样不注册；直接运行 `termole_visual_test --mode fzf` 会打印 SKIP 并返回 77。
-- 默认 test preset `windows` 排除 `known-red` 标签；`windows-visual` preset 只跑 `visual` 标签：
+  标签 `visual`，`SKIP_RETURN_CODE 77`。fzf 缺失时与 `t06_fzf` 一样不注册；
+  直接运行 `termole_visual_test --mode fzf` 会打印 SKIP 并返回 77。
+- #26 修复后删除了 `known-red` 标签，两个视觉用例都进入默认套件，断言未改动；
+  默认 preset `windows` 的排除规则保留（已没有测试带该标签）。
 
 ```bat
-:: 默认套件（build.cmd 使用），#26 修复前也保持绿色
+:: 默认套件（build.cmd 使用），包含两个视觉用例
 ctest --preset windows
 
-:: 复现 #26 的红色：确定性 alt-screen 绿、真实 fzf 视觉红
+:: 只跑视觉标签
 ctest --preset windows-visual
 ```
 
-票面同时要求“#26 修复前 fzf 视觉用例为红”和“build.cmd 全量通过”。这里的表达是：
-
-- 红色是**真实的测试失败**（退出码 1，整窗 ink 与候选/指针行带断言均失败），不是 `WILL_FAIL`、
-  不是 xfail、也不是打印一行“已知失败”后返回 0；用 `ctest --preset windows-visual` 可稳定复现。
-- 默认套件用标签排除已知红色用例，`build.cmd` 不被 #26 变红。
-- #26 修复后，删除 `tests/CMakeLists.txt` 中 `visual_fzf` 的 `known-red` 标签，
-  该用例自动进入默认套件；断言无需改动。`windows` preset 的排除规则可以保留（没有测试再带该标签）。
+历史：#26 修复前 `visual_fzf` 带 `known-red` 标签并被默认套件排除；红色是真实断言失败
+（退出码 1），不是 `WILL_FAIL`、不是 xfail。修复前的空白证据与根因分析见
+[fzf-blank-validation.md](fzf-blank-validation.md) 与
+[docs/evidence/visual-fzf-blank.png](evidence/visual-fzf-blank.png)。
 
 ## 证据
 
 ### 确定性 alt-screen（默认套件，绿）
 
 ```
-window=1000x640 colors=22 background=#fafafa inkPixels=90637 inkRatio=0.14162
+window=1000x640 colors=28 background=#fafafa inkPixels=46324 inkRatio=0.072381
 PASS: the capture script produced window statistics
 PASS: the window contains non-background text pixels (>= 500 px and >= 0.000800 of the window)
-band=0..28 bandInkPixels=2778
+band=0..28 bandInkPixels=1664
 PASS: the known alt-screen line has non-background pixels
 ```
 
 截图：`tests/visual/alt-screen/alt-screen.png`（构建目录），另存为
 [docs/evidence/visual-alt-screen.png](evidence/visual-alt-screen.png)。画面可见
-`ALT-SCREEN PIXEL PROBE`、字符表和 12 行文本。
+`ALT-SCREEN PIXEL PROBE`、字符表和 12 行文本；#26 修复后右侧不再被裁切
+（旧截图是 DIP/像素重复缩放的状态）。
 
-### 真实 fzf（known-red，红）
-
-数据通道正常，窗口像素为空：
+### 真实 fzf（#26 修复后，绿）
 
 ```
 PASS: fzf painted its candidates into the session (supporting signal, not proof)
 PASS: the capture script produced window statistics
-window=1000x640 colors=1 background=#fafafa inkPixels=0 inkRatio=0
-FAIL: the window contains non-background text pixels (>= 500 px and >= 0.000800 of the window)
-band=523..551 bandInkPixels=0
-FAIL: the fzf candidate line has non-background pixels
-band=494..522 bandInkPixels=0
-FAIL: the fzf pointer glyph has non-background pixels
+window=1000x640 colors=45 background=#fafafa inkPixels=5653 inkRatio=0.008833
+PASS: the window contains non-background text pixels (>= 500 px and >= 0.000800 of the window)
+band=523..551 bandInkPixels=1469
+PASS: the fzf candidate line has non-background pixels
+band=494..522 bandInkPixels=707
+PASS: the fzf pointer glyph has non-background pixels
 ```
 
-`screen_text()` 摘录含 `▌ cherry`、`▌ banana`、`▌ apple`、`3/3`、`>`，但截图只有背景色。
-这正是 #26 的空白窗口现象；截图：`tests/visual/fzf/fzf.png`（构建目录），另存为
-[docs/evidence/visual-fzf-blank.png](evidence/visual-fzf-blank.png)。
+截图：`tests/visual/fzf/fzf.png`（构建目录），另存为
+[docs/evidence/visual-fzf-fixed.png](evidence/visual-fzf-fixed.png)；候选行带与指针行带
+另存为 [visual-fzf-fixed-candidate.png](evidence/visual-fzf-fixed-candidate.png) 与
+[visual-fzf-fixed-pointer.png](evidence/visual-fzf-fixed-pointer.png)。修复前的同一用例
+只有背景色（`colors=1` / `inkPixels=0`）。
 
 ## 默认套件结果
 
-- `build.cmd`（configure + 全量构建 + `ctest --preset windows`）：**32/32 通过**，本机最近一次 81.29 s；
-  `visual_alt_screen` 在默认套件中运行并通过，`visual_fzf` 因 `known-red` 标签被默认 preset 排除。
-- `ctest --preset windows-visual`：`visual_alt_screen` 通过，
-  `visual_fzf` 的整窗 ink 与候选/指针行带断言失败（退出码 8；单测退出码 1），复现 #26。
-- `ctest --preset windows -R visual_fzf` 找不到测试：命令行的 `-R` 不会覆盖 preset 的
-  `exclude` 标签，复现红色请用 `windows-visual` preset 或
-  `ctest --test-dir .local/build/windows -L visual`。
+- `build.cmd`（configure + 全量构建 + `ctest --preset windows`）：**33/33 通过**，本机最近一次 84.89 s；
+  `visual_alt_screen` 与 `visual_fzf` 都在默认套件中运行并通过。
+- `ctest --preset windows-visual`：**2/2 通过**（alt-screen 与 fzf）。
+- `ctest --preset windows -R visual_fzf` 现在可以找到并运行该用例；`known-red` 标签
+  删除后不再被 preset 的 `exclude` 命中。也可以继续用
+  `ctest --test-dir .local/build/windows -L visual` 跑视觉标签。
 
 ## 未覆盖/限制
 

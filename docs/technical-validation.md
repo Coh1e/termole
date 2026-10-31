@@ -25,7 +25,7 @@
 - [T21 性能](t21-performance.md)：启动约 1.0 s、空闲 CPU 0 ms/5 s、working set 51.6 MB、50k 行 2.0 s；帧延迟未测。
 - [T18/T19](t18-t19-validation.md)：Neovim 0.12.6、Helix 25.07.1、lazygit 0.66.2 的基础插入/保存/退出与 lazygit 面板绘制通过；IME/鼠标/resize/双入口/完整流程未执行。
 - [T24](t24-acceptance.md)：Windows 11 部分自动验收；Windows 10/IME/无开发工具/双系统未执行，状态未完成。
-- [像素护栏（#27）](visual-harness-validation.md)：`PrintWindow` 截图 + 宽容 ink 统计；默认套件包含确定性 alt-screen 视觉用例，真实 fzf 视觉用例按 fzf 探测注册并以 `known-red` 标签隔离（#26 修复前可复现红色，默认套件保持绿色）。
+- [像素护栏（#27）](visual-harness-validation.md)：`PrintWindow` 截图 + 宽容 ink 统计；默认套件包含确定性 alt-screen 与真实 fzf 两个视觉用例（fzf 按探测注册）。#26 的空白根因是渲染目标 DPI 与设备像素坐标混用，修复与像素证据见 [fzf-blank-validation.md](fzf-blank-validation.md)。
 
 T01 构建在全新的 `.local/build/windows` 目录完成，不依赖探针源码缓存或网络下载。这是本机现有编译工具链的验证，未模拟干净联网机器、旧版 Windows 或无开发工具的发布环境。
 
