@@ -23,6 +23,12 @@ build.cmd
 
 `build.cmd` is configure + full build + full CTest. It is the release/commit check, not the edit loop.
 
+## Launcher tests
+
+- End-to-end CLI contracts go through the public entry (`termole`, `-e`, `--stdio`). `--gui` is the internal GUI role, used only by tests about window policy or geometry.
+- `t26_launcher` (launcher, waiting, stdio bytes, console hiding, pixel capture) and `t26_cli_pipelines` (real CMD/PowerShell bytes, order, exit codes, early close) are the launcher test home; extend them instead of adding a parallel harness.
+- A failed pixel check writes `window-capture.bmp` into the test artifact directory.
+
 ## UI evidence
 
 For changes involving View, renderer, window placement or selector UI:
