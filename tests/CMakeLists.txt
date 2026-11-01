@@ -112,6 +112,32 @@ set_tests_properties(t03_t05_session PROPERTIES
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 
+# T22: install the current build as a development package, build the shipped
+# example and an independent consumer against it, then run the consumer. The
+# consumer uses only the public headers, import library and DLL and records
+# pixel evidence for the embedded View.
+if(TERMOLE_POWERSHELL)
+  add_test(NAME t22_sdk_consumer
+    COMMAND "${TERMOLE_POWERSHELL}"
+      -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/run_sdk_consumer.ps1"
+      -SourceDir "${PROJECT_SOURCE_DIR}"
+      -BuildDir "${CMAKE_BINARY_DIR}"
+      -Root "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer"
+      -Helper "$<TARGET_FILE:termole_cli_report_helper>"
+      -Generator "${CMAKE_GENERATOR}"
+      -Config "${CMAKE_BUILD_TYPE}"
+      -Cxx "${CMAKE_CXX_COMPILER}"
+      -Ninja "${CMAKE_MAKE_PROGRAM}"
+      -Cmake "${CMAKE_COMMAND}"
+  )
+  set_tests_properties(t22_sdk_consumer PROPERTIES
+    TIMEOUT 300
+    SKIP_RETURN_CODE 77
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
+endif()
+
 add_test(NAME t08_unicode_internal COMMAND termole_terminal_unicode_test)
 set_tests_properties(t08_unicode_internal PROPERTIES
   TIMEOUT 30

@@ -30,6 +30,19 @@ build.cmd
 - To make a program fail to start, hold a real copy open exclusively; renaming a text file to `.exe` pops the loader's "unsupported application" dialog and the test hangs until someone clicks OK (see `docs/t15-validation.md`).
 - A failed pixel check writes `window-capture.bmp` into the test artifact directory.
 
+## SDK host tests
+
+`t22_sdk_consumer` is the external-embedding home. It runs `cmake --install` into
+`<build>/tests/sdk-consumer/package`, builds `tests/sdk-consumer` and the shipped
+`share/termole/examples/sdk-host` with `find_package(Termole CONFIG REQUIRED)`
+against that prefix, then runs the consumer with the package DLL on `PATH`. The
+consumer drives a real CMD/ConPTY and View, checks the public ABI/ownership/error
+rules and captures the View and host with `PrintWindow`. Pixel stats and PNGs are
+written under `<build>/tests/sdk-consumer/artifacts/`; the current run's images
+are kept in `docs/evidence/`. Keep this test out-of-tree: linking an in-tree
+target would stop proving that the development package is sufficient. The test
+skips with code 77 only when the MSVC environment is not loaded.
+
 ## UI evidence
 
 For changes involving View, renderer, window placement or selector UI:

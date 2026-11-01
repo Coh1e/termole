@@ -6,7 +6,9 @@
 
 ## 已执行
 
-- Windows 11 x64：`build.cmd` CTest 通过；`package.cmd` 构建、安装、CPack；外部 `find_package(Termole)` SDK 宿主编译链接。
+- Windows 11 x64：`build.cmd` CTest 通过；`package.cmd` 构建、安装、CPack；外部
+  `find_package(Termole)` SDK 宿主编译链接（当前 T22 证据见
+  [t22-validation.md](t22-validation.md)）。
 - 独立/嵌入入口、CMD、Windows PowerShell、WSL `sh`、历史 fzf 通道（旧 picker）、Applet 网格、选择/剪贴板、配置/Profile、无控制台启动。
 - Neovim 0.12.6、Helix 25.07.1、lazygit 0.66.2 的基础插入/保存/退出与面板退出（Session/ConPTY 路径）。
 - Runtime ZIP 解压后 `termole.exe --close-on-exit` 启动；Development ZIP 的外部 SDK 示例配置/编译/链接。

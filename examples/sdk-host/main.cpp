@@ -34,6 +34,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
     case WM_SIZE:
         if (host) layout(*host, window);
         return 0;
+    case WM_SETFOCUS:
+        if (host && host->view) host->view->focus();
+        return 0;
     case WM_CLOSE:
         if (host) {
             host->view.reset();
@@ -45,6 +48,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         ::DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        if (host) {
+            host->view.reset();
+            host->session.reset();
+        }
         ::PostQuitMessage(0);
         return 0;
     default:
