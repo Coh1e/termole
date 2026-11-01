@@ -2,6 +2,8 @@
 // and forward the program status, the stdio data channel carries bytes
 // unchanged, and a console allocated for the launcher is not left behind.
 
+#include "test_process.h"
+
 #include <windows.h>
 
 #include <array>
@@ -18,6 +20,9 @@
 namespace {
 
 int failures = 0;
+
+using termole_test::wait_for_pid;
+using termole_test::wait_process_exit;
 
 void check(bool condition, std::string_view what)
 {
@@ -429,17 +434,22 @@ StartFailureRun run_start_failure(const Scenario& scenario, const std::wstring& 
 
 struct CancelRun {
     std::optional<DWORD> code;
+    std::optional<DWORD> child;
     bool window = false;
+    long long cleanup_ms = 0;
     std::string output;
 };
 
 // Starts a waiting session, closes its window while the program still runs,
-// and returns the launcher status. --stdio also opens caller pipes so the test
-// can prove cancellation adds no bytes to the result.
+// and returns the launcher status and the observed child process. --stdio also
+// opens caller pipes so the test can prove cancellation adds no bytes.
 CancelRun cancel_waiting_window(const Scenario& scenario, const std::wstring& title,
-                                const std::wstring& arguments, bool stdio)
+                                const std::wstring& arguments, bool stdio,
+                                const std::filesystem::path& child_pid_path)
 {
     CancelRun run;
+    std::error_code ignored;
+    std::filesystem::remove(child_pid_path, ignored);
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE stdin_pipe[2]{};
     HANDLE stdout_pipe[2]{};
@@ -457,7 +467,9 @@ CancelRun cancel_waiting_window(const Scenario& scenario, const std::wstring& ti
         startup.hStdOutput = stdout_pipe[1];
         startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
     }
-    Process launcher = spawn(scenario.app, arguments, stdio ? TRUE : FALSE, 0,
+    const std::wstring command =
+        arguments + L" --write-pid " + quote(child_pid_path.wstring());
+    Process launcher = spawn(scenario.app, command, stdio ? TRUE : FALSE, 0,
                              stdio ? &startup : nullptr);
     if (stdio) {
         ::CloseHandle(stdin_pipe[0]);
@@ -468,14 +480,20 @@ CancelRun cancel_waiting_window(const Scenario& scenario, const std::wstring& ti
     }
     if (!launcher.started) {
         if (stdio) ::CloseHandle(stdout_pipe[0]);
+        std::filesystem::remove(child_pid_path, ignored);
         return run;
     }
+    run.child = wait_for_pid(child_pid_path, 5000);
     const HWND window = wait_for_window(title, 15000);
     run.window = window != nullptr;
+    const auto start = std::chrono::steady_clock::now();
     if (window) ::PostMessageW(window, WM_CLOSE, 0, 0);
     run.code = wait_for(launcher, 15000);
+    run.cleanup_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
     close(launcher);
     if (stdio) run.output = drain_pipe(stdout_pipe[0]);
+    std::filesystem::remove(child_pid_path, ignored);
     return run;
 }
 
@@ -737,6 +755,9 @@ void stdio_large_slow_consumer(const Scenario& scenario)
     // backpressure. The consumer sleeps between reads; no byte may be dropped
     // and the launcher must still finish instead of waiting forever.
     const std::string payload = binary_payload(2 * 1024 * 1024);
+    const auto child_pid_path = scenario.root / L"stdio-slow-child.pid";
+    std::error_code ignored;
+    std::filesystem::remove(child_pid_path, ignored);
 
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE stdin_pipe[2]{};
@@ -758,7 +779,8 @@ void stdio_large_slow_consumer(const Scenario& scenario)
     startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
 
     Process launcher = spawn(scenario.app,
-                             L"--stdio " + quote(scenario.helper) +
+                             L"--stdio " + quote(scenario.helper) + L" --write-pid " +
+                                 quote(child_pid_path.wstring()) +
                                  L" --copy-stdin --exit-code 5",
                              TRUE, 0, &startup);
     ::CloseHandle(stdin_pipe[0]);
@@ -767,9 +789,12 @@ void stdio_large_slow_consumer(const Scenario& scenario)
     if (!launcher.started) {
         ::CloseHandle(stdin_pipe[1]);
         ::CloseHandle(stdout_pipe[0]);
+        std::filesystem::remove(child_pid_path, ignored);
         return;
     }
 
+    const std::optional<DWORD> child = wait_for_pid(child_pid_path, 5000);
+    check(child.has_value(), "--stdio slow consumer: the child process id is observable");
     std::thread feeder([handle = stdin_pipe[1], payload]() { feed_pipe(handle, payload); });
     std::string output;
     output.reserve(payload.size());
@@ -788,6 +813,8 @@ void stdio_large_slow_consumer(const Scenario& scenario)
     const DWORD code = wait_for(launcher, 60000);
     close(launcher);
 
+    std::cout << "--stdio slow consumer: bytes=" << output.size() << " elapsed_ms=" << elapsed
+              << '\n';
     if (output != payload) {
         std::cerr << "--stdio slow consumer: received " << output.size() << " of "
                   << payload.size() << " bytes\n";
@@ -797,20 +824,32 @@ void stdio_large_slow_consumer(const Scenario& scenario)
     check(code == 5, "--stdio slow consumer: the program exit code is forwarded");
     check(elapsed >= 200, "--stdio slow consumer: the consumer really read slowly");
     check(elapsed < 60000, "--stdio slow consumer: the pipeline ends without a permanent wait");
+    if (child) {
+        check(wait_process_exit(*child, 5000),
+              "--stdio slow consumer: the child process is gone after the launcher exits");
+    }
+    std::filesystem::remove(child_pid_path, ignored);
 }
 
 void stdio_cancel_returns_130(const Scenario& scenario)
 {
     const std::wstring title = L"T16 stdio cancel " + std::to_wstring(::GetCurrentProcessId());
+    const auto child_pid_path = scenario.root / L"stdio-cancel-child.pid";
     const CancelRun run = cancel_waiting_window(
         scenario, title,
         L"--title " + quote(title) + L" --stdio " + quote(scenario.helper) + L" --sleep-ms 8000",
-        true);
+        true, child_pid_path);
     check(run.code.has_value(), "--stdio cancel: launcher starts");
+    check(run.child.has_value(), "--stdio cancel: the child process id is observable");
     check(run.window, "--stdio cancel: the waiting window exists");
     check(run.code.value_or(0xFFFFFFFFu) == 130,
           "--stdio cancel: closing the window while the program runs returns 130");
+    check(run.cleanup_ms < 15000, "--stdio cancel: cancellation returns within 15 s");
     check(run.output.empty(), "--stdio cancel: cancellation adds no bytes to the caller stream");
+    if (run.child) {
+        check(wait_process_exit(*run.child, 5000),
+              "--stdio cancel: the child process is gone after the launcher exits");
+    }
 }
 
 void stdio_start_failure_is_distinguishable(const Scenario& scenario)
@@ -931,18 +970,29 @@ void shared_console_is_preserved(const Scenario& scenario)
 void canceling_the_window_returns_130(const Scenario& scenario)
 {
     const std::wstring title = L"T26 cancel " + std::to_wstring(::GetCurrentProcessId());
+    const auto child_pid_path = scenario.root / L"cancel-child.pid";
     const CancelRun run = cancel_waiting_window(
         scenario, title,
-        L"--title " + quote(title) + L" -e " + quote(scenario.helper) + L" --sleep-ms 8000", false);
+        L"--title " + quote(title) + L" -e " + quote(scenario.helper) + L" --sleep-ms 8000", false,
+        child_pid_path);
     check(run.code.has_value(), "cancel: launcher starts");
+    check(run.child.has_value(), "cancel: the child process id is observable");
     check(run.window, "cancel: the waiting window exists");
     check(run.code.value_or(0xFFFFFFFFu) == 130,
           "cancel: closing the window before the program exits returns 130");
+    check(run.cleanup_ms < 15000, "cancel: cancellation returns within 15 s");
+    if (run.child) {
+        check(wait_process_exit(*run.child, 5000),
+              "cancel: the child process is gone after the launcher exits");
+    }
 }
 
 void closed_output_pipe_ends_cleanly(const Scenario& scenario)
 {
     const auto input_path = scenario.root / L"closed-output-input.bin";
+    const auto child_pid_path = scenario.root / L"closed-output-child.pid";
+    std::error_code ignored;
+    std::filesystem::remove(child_pid_path, ignored);
     std::string payload(256 * 1024, 'x');
     write_file(input_path, payload);
 
@@ -958,16 +1008,28 @@ void closed_output_pipe_ends_cleanly(const Scenario& scenario)
     startup.hStdInput = input;
     startup.hStdOutput = output_pipe[1];
     startup.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
-    Process launcher = spawn(scenario.app, L"--stdio " + quote(scenario.helper) + L" --copy-stdin",
+    Process launcher = spawn(scenario.app,
+                             L"--stdio " + quote(scenario.helper) + L" --write-pid " +
+                                 quote(child_pid_path.wstring()) + L" --copy-stdin",
                              TRUE, 0, &startup);
     ::CloseHandle(input);
     ::CloseHandle(output_pipe[1]);
     check(launcher.started, "--stdio early close: launcher starts");
-    if (!launcher.started) return;
+    if (!launcher.started) {
+        std::filesystem::remove(child_pid_path, ignored);
+        return;
+    }
     const DWORD code = wait_for(launcher, 15000);
     close(launcher);
     check(code != 0xFFFFFFFFu, "--stdio early close: launcher does not block forever");
     check(code != 0, "--stdio early close: the program's broken-pipe status is forwarded");
+    const std::optional<DWORD> child = wait_for_pid(child_pid_path, 5000);
+    check(child.has_value(), "--stdio early close: the child process id is observable");
+    if (child) {
+        check(wait_process_exit(*child, 5000),
+              "--stdio early close: the child process is gone after the launcher exits");
+    }
+    std::filesystem::remove(child_pid_path, ignored);
 }
 
 void start_failure_is_distinguishable(const Scenario& scenario)

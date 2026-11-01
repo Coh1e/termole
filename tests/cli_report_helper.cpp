@@ -102,6 +102,13 @@ int wmain(int argc, wchar_t** argv)
             ::ReadFile(::GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &read, nullptr);
             return 0;
         }
+        if (mode == L"--write-pid" && index + 1 < argc) {
+            // Lets a host-lifecycle test observe the real child process after
+            // the public destroy path has run.
+            const std::wstring path = argv[++index];
+            if (!write_report(path, std::to_string(::GetCurrentProcessId()))) return 3;
+            continue;
+        }
         if (mode == L"--linger-ms" && index + 1 < argc) {
             linger_ms = static_cast<DWORD>(_wtoi(argv[++index]));
             continue;

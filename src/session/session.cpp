@@ -143,6 +143,24 @@ Result<std::wstring> resolve_program(const std::wstring& requested)
     return std::wstring(buffer.data(), length);
 }
 
+// CreateProcessW leaks Windows-internal handles when the image cannot be
+// opened (for example while another process holds it without sharing). A
+// read-open preflight with the loader's share mode catches that class before
+// the pseudoconsole or pipes exist, so a host retrying a bad launch does not
+// accumulate handles. The diagnostic keeps the CreateProcessW prefix because
+// this is still the program-start failure surface.
+Result<void> check_program_readable(const std::wstring& program)
+{
+    win::unique_handle image(::CreateFileW(program.c_str(), GENERIC_READ,
+                                          FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (image.get() == INVALID_HANDLE_VALUE) {
+        return std::unexpected(
+            win::system_error("CreateProcessW preflight", ::GetLastError()));
+    }
+    return {};
+}
+
 Result<void> validate_working_directory(const std::wstring& directory)
 {
     if (directory.empty()) return {};
@@ -295,6 +313,9 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
 
     auto environment = build_environment_block(options.environment);
     if (!environment) return std::unexpected(environment.error());
+
+    auto readable_program = check_program_readable(program);
+    if (!readable_program) return std::unexpected(readable_program.error());
 
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
     HANDLE input_read_raw = nullptr;

@@ -1,5 +1,7 @@
 #include <termole/termole.hpp>
 
+#include "test_process.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -18,6 +20,11 @@
 namespace {
 
 int failures = 0;
+
+using termole_test::handle_count;
+using termole_test::process_alive;
+using termole_test::wait_for_pid;
+using termole_test::wait_process_exit;
 
 void check(bool condition, std::string_view what)
 {
@@ -165,6 +172,13 @@ std::string file_contents(const std::filesystem::path& path)
 {
     std::ifstream file(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+std::filesystem::path unique_path(const wchar_t* tag, int index)
+{
+    return std::filesystem::temp_directory_path() /
+        (L"termole-t20-" + std::to_wstring(::GetCurrentProcessId()) + L"-" + tag + L"-" +
+         std::to_wstring(index) + L".txt");
 }
 
 } // namespace
@@ -317,8 +331,174 @@ int wmain()
     }
     sessions.clear();
 
+    // T20: destroying the host Session handle while the child still runs must
+    // clean up the process tree inside a deadline. Repeating the cycle checks
+    // that no handles or process objects accumulate.
+    {
+        const size_t handles_before = handle_count();
+        int completed = 0;
+        long long slowest_ms = 0;
+        for (int index = 0; index < 4; ++index) {
+            const auto pid_path = unique_path(L"destroy", index);
+            std::error_code ignored;
+            std::filesystem::remove(pid_path, ignored);
+            termole::Session::Options destroy_options;
+            destroy_options.program = helper.wstring();
+            destroy_options.arguments = { L"--write-pid", pid_path.wstring(), L"--sleep-ms",
+                                          L"30000" };
+            auto destroy_session = termole::Session::create(destroy_options);
+            check(destroy_session.has_value(), "destroy: running session created");
+            if (!destroy_session) break;
+            const auto child = wait_for_pid(pid_path, 5000);
+            check(child.has_value(), "destroy: child reported its process id");
+            if (!child) {
+                destroy_session->reset();
+                break;
+            }
+            check(process_alive(*child), "destroy: child runs before the host destroys the session");
+            const auto start = std::chrono::steady_clock::now();
+            destroy_session->reset();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            slowest_ms = std::max(slowest_ms, elapsed);
+            check(elapsed < 5000, "destroy: host destroy returns within 5 s");
+            check(wait_process_exit(*child, 5000), "destroy: process tree is gone within 5 s");
+            std::filesystem::remove(pid_path, ignored);
+            ++completed;
+        }
+        const size_t handles_after = handle_count();
+        std::cout << "T20 destroy: cycles=" << completed << " slowest_ms=" << slowest_ms
+                  << " handles=" << handles_before << "->" << handles_after << '\n';
+        check(completed == 4, "destroy: every host-destroy cycle completed");
+        check(handles_after <= handles_before + 8, "destroy: host handle count stays bounded");
+    }
+
     const HWND parent = create_parent();
     check(parent != nullptr, "test parent window created");
+
+    // T20: the library keeps a Session alive while a View still holds it, so
+    // destroying the host handle first must not invalidate the View. Destroying
+    // the View then takes the normal cleanup path. The deadline and the handle
+    // trend are the pass criteria.
+    if (parent) {
+        DWORD handles_after_warmup = 0;
+        int completed = 0;
+        long long slowest_ms = 0;
+        for (int index = 0; index < 4; ++index) {
+            const auto pid_path = unique_path(L"destroy-view", index);
+            std::error_code ignored;
+            std::filesystem::remove(pid_path, ignored);
+            termole::Session::Options view_options;
+            view_options.program = helper.wstring();
+            view_options.arguments = { L"--write-pid", pid_path.wstring(), L"--sleep-ms",
+                                       L"30000" };
+            auto view_session = termole::Session::create(view_options);
+            check(view_session.has_value(), "destroy-view: running session created");
+            if (!view_session) break;
+            const auto child = wait_for_pid(pid_path, 5000);
+            check(child.has_value(), "destroy-view: child reported its process id");
+            if (!child) {
+                view_session->reset();
+                break;
+            }
+            auto destroy_view = termole::View::create(*view_session, parent);
+            check(destroy_view.has_value(), "destroy-view: view created");
+            if (!destroy_view) {
+                view_session->reset();
+                break;
+            }
+            const HWND view_window = destroy_view->hwnd();
+            check(view_window != nullptr, "destroy-view: view window exists");
+            pump_messages();
+
+            // Host destroys its session handle while the View keeps the last
+            // library reference. The child must still be running.
+            view_session->reset();
+            pump_messages();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            check(process_alive(*child), "destroy-view: view keeps the session alive");
+
+            const auto start = std::chrono::steady_clock::now();
+            destroy_view->reset();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            slowest_ms = std::max(slowest_ms, elapsed);
+            check(elapsed < 5000, "destroy-view: view destroy returns within 5 s");
+            check(!::IsWindow(view_window), "destroy-view: view window is gone after teardown");
+            check(wait_process_exit(*child, 5000),
+                  "destroy-view: process tree is gone within 5 s");
+            std::filesystem::remove(pid_path, ignored);
+            ++completed;
+            if (index == 0) handles_after_warmup = handle_count();
+        }
+        const size_t handles_after = handle_count();
+        std::cout << "T20 destroy-view: cycles=" << completed << " slowest_ms=" << slowest_ms
+                  << " handles=" << handles_after_warmup << "->" << handles_after << '\n';
+        check(completed == 4, "destroy-view: every host-destroy cycle completed");
+        check(handles_after <= handles_after_warmup + 4,
+              "destroy-view: host handle count stays bounded");
+    }
+
+    // T20: create and destroy Views while the child is still flooding output.
+    // This exercises the View watcher and the session reader during teardown;
+    // an invalidated callback or a leaked handle would show up here.
+    if (parent) {
+        DWORD handles_after_warmup = 0;
+        int completed = 0;
+        long long slowest_ms = 0;
+        for (int index = 0; index < 4; ++index) {
+            const auto pid_path = unique_path(L"view-churn", index);
+            std::error_code ignored;
+            std::filesystem::remove(pid_path, ignored);
+            termole::Session::Options churn_options;
+            churn_options.program = helper.wstring();
+            churn_options.arguments = { L"--write-pid", pid_path.wstring(), L"--flood",
+                                        L"200000" };
+            auto churn_session = termole::Session::create(churn_options);
+            check(churn_session.has_value(), "view-churn: running session created");
+            if (!churn_session) break;
+            const auto child = wait_for_pid(pid_path, 5000);
+            check(child.has_value(), "view-churn: child reported its process id");
+            if (!child) {
+                churn_session->reset();
+                break;
+            }
+            auto churn_view = termole::View::create(*churn_session, parent);
+            check(churn_view.has_value(), "view-churn: view created");
+            if (!churn_view) {
+                churn_session->reset();
+                break;
+            }
+            const HWND view_window = churn_view->hwnd();
+            check(view_window != nullptr, "view-churn: view window exists");
+            const auto deadline =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+            while (std::chrono::steady_clock::now() < deadline) {
+                pump_messages();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            const auto start = std::chrono::steady_clock::now();
+            churn_view->reset();
+            churn_session->reset();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            slowest_ms = std::max(slowest_ms, elapsed);
+            check(elapsed < 5000, "view-churn: teardown returns within 5 s");
+            check(!::IsWindow(view_window), "view-churn: view window is gone after teardown");
+            check(wait_process_exit(*child, 5000),
+                  "view-churn: process tree is gone within 5 s");
+            std::filesystem::remove(pid_path, ignored);
+            ++completed;
+            if (index == 0) handles_after_warmup = handle_count();
+            pump_messages();
+        }
+        const size_t handles_after = handle_count();
+        std::cout << "T20 view-churn: cycles=" << completed << " slowest_ms=" << slowest_ms
+                  << " handles=" << handles_after_warmup << "->" << handles_after << '\n';
+        check(completed == 4, "view-churn: every cycle completed");
+        check(handles_after <= handles_after_warmup + 4,
+              "view-churn: host handle count stays bounded");
+    }
 
     termole::Session::Options scroll_options;
     scroll_options.program = helper.wstring();
