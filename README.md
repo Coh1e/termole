@@ -2,7 +2,7 @@
 
 Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
-首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20/T21 初步、T22 外部开发包嵌入、T23 的部分切片、T26 控制台 launcher / GUI 双角色：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及 `termole.exe` + `termole.dll` 的单包交付。`termole.exe` 现在是控制台 launcher：普通模式启动窗口后立即返回，`-e` / `--stdio` 等待并转交程序退出状态；旧 picker 已移除。
+首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20 资源验证、T21 性能基线、T22 外部开发包嵌入、T23 的部分切片、T26 控制台 launcher / GUI 双角色：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及 `termole.exe` + `termole.dll` 的单包交付。`termole.exe` 现在是控制台 launcher：普通模式启动窗口后立即返回，`-e` / `--stdio` 等待并转交程序退出状态；旧 picker 已移除。
 
 - [已确认设计决定](docs/design-decisions.md)
 - [首版实施规格 v0.3 · GitHub Issue #1](https://github.com/Coh1e/termole/issues/1)
@@ -76,7 +76,7 @@ $env:TERMOLE_PRESET = 'windows-spikes'
 
 ## 当前边界
 
-T01–T19 基础、T20/T21 初步、T22 外部开发包嵌入、T25 pipe 动作和 T26 launcher 只承诺已列出的切片，不宣称完整终端兼容性。T22 的证据见 [T22 验证](docs/t22-validation.md)；T23 的干净构建、单包和 Windows 10/11 交付验收仍未完成。pipe 动作（T25）已实现，证据见 [T25 验证](docs/t25-validation.md)。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI（字节/退出码/背压矩阵已由 [T16 验证](docs/t16-validation.md) 覆盖）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、资源/性能 soak（T20/T21）和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
+T01–T19 基础、T20 资源验证、T21 性能基线、T22 外部开发包嵌入、T25 pipe 动作和 T26 launcher 只承诺已列出的切片，不宣称完整终端兼容性。T22 的证据见 [T22 验证](docs/t22-validation.md)；T23 的干净构建、单包和 Windows 10/11 交付验收仍未完成。pipe 动作（T25）已实现，证据见 [T25 验证](docs/t25-validation.md)。尚未完成：中文 IME 实机验收（T09）、`-e`/`--stdio` 的完整 fzf UI（字节/退出码/背压矩阵已由 [T16 验证](docs/t16-validation.md) 覆盖）、编辑器/lazygit 的 IME/鼠标/resize/双入口完整流程（T18/T19）、长期资源/性能复测和 Windows 10/11 发布验收（T24）。对应任务见 [任务索引](docs/issue-index.md)。
 
 ## 依赖与体积
 

@@ -1,0 +1,9 @@
+{
+  "measured_at": "2026-11-02T10:51:39.1536740+08:00",
+  "os": "Microsoft Windows NT 10.0.26300.0",
+  "processor": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "logical_processors": 16,
+  "cache_policy": "First launch and subsequent fresh processes; OS file cache uncontrolled",
+  "app_sha256": "4CBDAF1927D9BBD4E757E1C2C6A6E2F2EE40EC7874EEE47506765BE654CF421F",
+  "dll_sha256": "AB889B8B1E486DDE6CC2BC3B9355B84FF8C9B63CAEAC7C6583ABC8FD91329920"
+}

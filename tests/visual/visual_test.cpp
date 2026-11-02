@@ -13,6 +13,7 @@
 #include <termole/termole.hpp>
 
 #include <windows.h>
+#include <psapi.h>
 
 #include <algorithm>
 #include <chrono>
@@ -23,11 +24,13 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -166,7 +169,7 @@ std::optional<Options> parse_arguments(int argc, wchar_t** argv)
         options.capture.empty()) {
         std::cerr << "usage: termole_visual_test "
                      "--mode <alt-screen|fzf|fzf-interaction|fzf-standalone|input-interaction|"
-                     "input-standalone> "
+                     "input-standalone|latency|latency-standalone> "
                      "--artifacts <dir> --powershell <powershell.exe> "
                      "--capture <capture-window.ps1> "
                      "[--child <alt_screen_child.exe>] [--input-child <t12_input_child.exe>] "
@@ -1300,18 +1303,18 @@ int run_fzf_standalone(const Options& options)
     if (window && view) {
         RECT client{};
         ::GetClientRect(window, &client);
-        const int width = client.right - client.left;
-        const int height = client.bottom - client.top;
+        int width = client.right - client.left;
+        int height = client.bottom - client.top;
         const float row_height = probed_metrics ? probed_metrics->height
                                                 : static_cast<float>(height) / 25.0f;
-        const int grid_rows = std::clamp(static_cast<int>(height / row_height), 1, 1000);
+        int grid_rows = std::clamp(static_cast<int>(height / row_height), 1, 1000);
         // fzf's bottom-up layout: prompt on the last row, footer above it, then
         // the candidate rows. Both captured windows use the same default font,
         // so the row positions follow the measured cell height.
-        const int apple_row = grid_rows - 3;
-        const int banana_row = grid_rows - 4;
-        const int cherry_row = grid_rows - 5;
-        const int footer_row = grid_rows - 2;
+        int apple_row = grid_rows - 3;
+        int banana_row = grid_rows - 4;
+        int cherry_row = grid_rows - 5;
+        int footer_row = grid_rows - 2;
         std::cout << "app window=" << width << "x" << height << " gridRows=" << grid_rows
                   << " rowHeight=" << row_height << " cellHeightProbe="
                   << (probed_metrics ? probed_metrics->height : 0.0f) << '\n';
@@ -1345,6 +1348,21 @@ int run_fzf_standalone(const Options& options)
             print_stats(main_stats);
             check_pixels(main_stats);
         }
+
+        // The title is installed before the app applies --columns/--rows.
+        // Finding that title can therefore observe the initial default size.
+        // The first capture pumps the app through startup; map bottom-up rows
+        // from the resulting client size instead of caching the earlier grid.
+        ::GetClientRect(window, &client);
+        width = client.right - client.left;
+        height = client.bottom - client.top;
+        grid_rows = std::clamp(static_cast<int>(height / row_height), 1, 1000);
+        apple_row = grid_rows - 3;
+        banana_row = grid_rows - 4;
+        cherry_row = grid_rows - 5;
+        footer_row = grid_rows - 2;
+        std::cout << "settled app window=" << width << "x" << height
+                  << " gridRows=" << grid_rows << '\n';
 
         // fzf's bottom-up layout in a 24-row grid: cherry 19, banana 20,
         // apple 21, footer 22, prompt 23.
@@ -2466,6 +2484,149 @@ int run_input_interaction(const Options& options)
     return result;
 }
 
+// Samples the displayed client surface, without PrintWindow/UpdateWindow forcing
+// a paint. This is an input-to-observed-frame proxy, including child/ConPTY/DWM
+// and polling overhead; it is not a GPU presentation timestamp.
+bool frame_color(HWND view, int channel)
+{
+    HDC dc = ::GetDC(view);
+    if (!dc) return false;
+    bool matches = true;
+    for (int x : { 80, 160, 240 }) {
+        const COLORREF pixel = ::GetPixel(dc, x, 80);
+        const int rgb[]{ GetRValue(pixel), GetGValue(pixel), GetBValue(pixel) };
+        matches = matches && pixel != CLR_INVALID && rgb[channel] > 90 &&
+            rgb[channel] > rgb[(channel + 1) % 3] + 40 &&
+            rgb[channel] > rgb[(channel + 2) % 3] + 40;
+    }
+    ::ReleaseDC(view, dc);
+    return matches;
+}
+
+bool wait_frame(HWND view, int channel)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    do {
+        pump_messages();
+        if (frame_color(view, channel)) return true;
+        ::Sleep(2);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+}
+
+int run_latency(const Options& options, bool standalone)
+{
+    const auto started = std::chrono::steady_clock::now();
+    std::optional<termole::Session> session;
+    std::optional<termole::View> embedded_view;
+    PROCESS_INFORMATION process{};
+    // Own the entire test-created tree, including a GUI whose launcher has
+    // already returned. Closing the job also cleans up failed/timed-out probes.
+    std::unique_ptr<void, decltype(&::CloseHandle)> job(nullptr, ::CloseHandle);
+    HWND window = nullptr;
+    HWND view = nullptr;
+    if (standalone) {
+        job.reset(::CreateJobObjectW(nullptr, nullptr));
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!job || !::SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation,
+                                              &limits, sizeof(limits))) return 1;
+        const std::wstring title = L"T21 latency " + std::to_wstring(::GetCurrentProcessId());
+        std::wstring command = quote(options.app) + L" --no-config --borderless --title " +
+            quote(title) + L" -e " + quote(options.child) + L" --latency";
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        if (!::CreateProcessW(options.app.c_str(), command.data(), nullptr, nullptr, FALSE,
+                              CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
+                              &startup, &process)) return 1;
+        if (!::AssignProcessToJobObject(job.get(), process.hProcess)) {
+            ::TerminateProcess(process.hProcess, 1);
+            ::CloseHandle(process.hThread);
+            ::CloseHandle(process.hProcess);
+            return 1;
+        }
+        ::ResumeThread(process.hThread);
+        ::CloseHandle(process.hThread);
+        window = wait_for_app_window(title, 15000);
+        if (window) ::EnumChildWindows(window, find_view_child, reinterpret_cast<LPARAM>(&view));
+    } else {
+        if (!register_probe_class()) return 1;
+        termole::Session::Options target;
+        target.program = options.child;
+        target.arguments = { L"--latency" };
+        auto created = termole::Session::create(target);
+        if (!created) return 1;
+        session.emplace(std::move(*created));
+        window = create_probe_window(L"T21 embedded latency");
+        if (window) {
+            auto created_view = termole::View::create(*session, window);
+            if (created_view) {
+                embedded_view.emplace(std::move(*created_view));
+                view = embedded_view->hwnd();
+                ::MoveWindow(view, 0, 0, kWindowWidth, kWindowHeight, TRUE);
+            }
+        }
+    }
+    check(window && view, "T21 real window and View created");
+    if (window && view) {
+        ::SetWindowPos(window, HWND_TOPMOST, 40, 40, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+        ::SetForegroundWindow(window);
+        ::SetFocus(view);
+        const bool ready = wait_frame(view, 2);
+        check(ready, "T21 initial blue frame is visible on the client surface");
+        std::cout << "startup_to_observed_frame_ms=" << std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count() << '\n';
+        std::vector<double> samples;
+        if (ready) {
+            for (int i = 0; i < 20; ++i) {
+                const auto begin = std::chrono::steady_clock::now();
+                const bool posted = ::PostMessageW(view, WM_CHAR, i % 2 ? 'b' : 'a', 1) != FALSE;
+                const bool observed = posted && wait_frame(view, i % 2 ? 1 : 0);
+                const double ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - begin).count();
+                check(observed, "T21 input produces the expected new frame color");
+                if (!observed) break;
+                samples.push_back(ms);
+                std::cout << "frame_sample=" << i << " input_to_observed_frame_ms=" << ms << '\n';
+            }
+        }
+        check(samples.size() == 20, "T21 collected 20 alternating visible frames");
+        if (samples.size() == 20) {
+            std::sort(samples.begin(), samples.end());
+            std::cout << "frame_min_ms=" << samples.front() << " frame_median_ms=" << samples[10]
+                      << " frame_p95_ms=" << samples[18] << " frame_max_ms=" << samples.back() << '\n';
+        }
+        // Capture only after timing, including failure cases for diagnosis.
+        CaptureStats stats;
+        check(run_capture_script(options, view, L"t21-frame", options.artifacts, stats),
+              "T21 frame screenshot saved");
+        DWORD gui_pid = 0;
+        ::GetWindowThreadProcessId(window, &gui_pid);
+        HANDLE gui = ::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, gui_pid);
+        PROCESS_MEMORY_COUNTERS memory{};
+        memory.cb = sizeof(memory);
+        if (gui && ::GetProcessMemoryInfo(gui, &memory, sizeof(memory))) {
+            std::cout << "gui_or_host_pid=" << gui_pid << " working_set_bytes=" << memory.WorkingSetSize
+                      << " peak_working_set_bytes=" << memory.PeakWorkingSetSize << '\n';
+        } else {
+            check(false, "T21 read real GUI/host memory counters");
+        }
+        if (gui) ::CloseHandle(gui);
+    }
+    embedded_view.reset();
+    if (standalone) {
+        if (window) ::PostMessageW(window, WM_CLOSE, 0, 0);
+        if (::WaitForSingleObject(process.hProcess, 15000) != WAIT_OBJECT_0) {
+            check(false, "T21 standalone launcher finished after window close");
+        }
+        ::CloseHandle(process.hProcess);
+    } else {
+        if (window) ::DestroyWindow(window);
+        if (session) (void)session->terminate();
+    }
+    return failures ? 1 : 0;
+}
+
 int run_input_standalone(const Options& options)
 {
     if (!std::filesystem::is_regular_file(options.input_child)) {
@@ -2554,6 +2715,8 @@ int wmain(int argc, wchar_t** argv)
     if (options->mode == L"fzf-standalone") return run_fzf_standalone(*options);
     if (options->mode == L"input-interaction") return run_input_interaction(*options);
     if (options->mode == L"input-standalone") return run_input_standalone(*options);
+    if (options->mode == L"latency") return run_latency(*options, false);
+    if (options->mode == L"latency-standalone") return run_latency(*options, true);
 
     std::cerr << "FAIL: unknown mode\n";
     return 2;

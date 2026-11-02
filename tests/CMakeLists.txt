@@ -218,8 +218,20 @@ if(TERMOLE_POWERSHELL)
   target_link_libraries(termole_input_child PRIVATE termole_build_options)
 
   add_executable(termole_visual_test visual/visual_test.cpp)
-  target_link_libraries(termole_visual_test PRIVATE termole termole_build_options)
+  target_link_libraries(termole_visual_test PRIVATE termole termole_build_options psapi)
   add_dependencies(termole_visual_test termole_visual_child termole_input_child termole_app)
+
+  foreach(mode latency latency-standalone)
+    add_test(NAME visual_t21_${mode} COMMAND termole_visual_test
+      --mode ${mode}
+      --child "$<TARGET_FILE:termole_visual_child>"
+      --app "$<TARGET_FILE:termole_app>"
+      --powershell "${TERMOLE_POWERSHELL}"
+      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/t21-${mode}")
+    set_tests_properties(visual_t21_${mode} PROPERTIES TIMEOUT 120 LABELS "visual" RUN_SERIAL TRUE
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+  endforeach()
 
   add_test(NAME visual_alt_screen COMMAND termole_visual_test
     --mode alt-screen
@@ -271,6 +283,7 @@ if(TERMOLE_POWERSHELL)
       --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
       --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf")
     set_tests_properties(visual_fzf PROPERTIES
+      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
       TIMEOUT 120
       LABELS "visual"
       SKIP_RETURN_CODE 77
@@ -287,6 +300,7 @@ if(TERMOLE_POWERSHELL)
       --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
       --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-interaction")
     set_tests_properties(visual_fzf_interaction PROPERTIES
+      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
       TIMEOUT 180
       LABELS "visual"
       SKIP_RETURN_CODE 77
@@ -304,6 +318,7 @@ if(TERMOLE_POWERSHELL)
       --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
       --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-standalone")
     set_tests_properties(visual_fzf_standalone PROPERTIES
+      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
       TIMEOUT 240
       LABELS "visual"
       SKIP_RETURN_CODE 77
@@ -338,9 +353,9 @@ set_tests_properties(t20_soak PROPERTIES TIMEOUT 180
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 add_executable(termole_idle_paint_test idle_paint_test.cpp)
-target_link_libraries(termole_idle_paint_test PRIVATE termole termole_build_options)
+target_link_libraries(termole_idle_paint_test PRIVATE termole termole_build_options psapi)
 add_test(NAME t21_idle_paint COMMAND termole_idle_paint_test)
-set_tests_properties(t21_idle_paint PROPERTIES TIMEOUT 30
+set_tests_properties(t21_idle_paint PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 add_test(NAME t02_cli_args

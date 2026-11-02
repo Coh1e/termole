@@ -30,9 +30,26 @@ bool write_stdout(std::string_view text)
 
 } // namespace
 
-int wmain(int, wchar_t**)
+int wmain(int argc, wchar_t** argv)
 {
     ::SetConsoleOutputCP(CP_UTF8);
+
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--latency") {
+        // No echo or line buffering: one View WM_CHAR produces one new frame.
+        const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
+        if (!::SetConsoleMode(input, ENABLE_PROCESSED_INPUT)) return 3;
+        if (!write_stdout("\x1b[?25l\x1b[44m\x1b[2J\x1b[HT21 READY")) return 3;
+        for (;;) {
+            char key{};
+            DWORD read = 0;
+            if (!::ReadFile(input, &key, 1, &read, nullptr) || read != 1) return 3;
+            if (key == 'q') return 0;
+            if (key != 'a' && key != 'b') continue;
+            const std::string frame = std::string("\x1b[") + (key == 'a' ? "41" : "42") +
+                "m\x1b[2J\x1b[HT21 FRAME " + key;
+            if (!write_stdout(frame)) return 3;
+        }
+    }
 
     std::string screen = "\x1b[?1049h\x1b[2J\x1b[H";
     screen += "ALT-SCREEN PIXEL PROBE\r\n";

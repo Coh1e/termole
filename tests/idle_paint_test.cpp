@@ -1,9 +1,11 @@
 #include <termole/termole.hpp>
 
 #include <windows.h>
+#include <psapi.h>
 
 #include <chrono>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -30,6 +32,41 @@ bool wait_for_text(termole::Session& session, std::string_view marker, int timeo
     return false;
 }
 
+void pump_for(int milliseconds)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds);
+    while (std::chrono::steady_clock::now() < deadline) {
+        pump();
+        ::MsgWaitForMultipleObjectsEx(0, nullptr, 20, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+}
+
+uint64_t cpu_time()
+{
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (!::GetProcessTimes(::GetCurrentProcess(), &created, &exited, &kernel, &user)) {
+        throw std::runtime_error("GetProcessTimes failed");
+    }
+    ULARGE_INTEGER k{}, u{};
+    k.LowPart = kernel.dwLowDateTime;
+    k.HighPart = kernel.dwHighDateTime;
+    u.LowPart = user.dwLowDateTime;
+    u.HighPart = user.dwHighDateTime;
+    return k.QuadPart + u.QuadPart;
+}
+
+void print_memory(const char* phase)
+{
+    PROCESS_MEMORY_COUNTERS memory{};
+    memory.cb = sizeof(memory);
+    if (::GetProcessMemoryInfo(::GetCurrentProcess(), &memory, sizeof(memory))) {
+        std::cout << phase << " working_set_bytes=" << memory.WorkingSetSize
+                  << " peak_working_set_bytes=" << memory.PeakWorkingSetSize << '\n';
+    } else {
+        throw std::runtime_error("GetProcessMemoryInfo failed");
+    }
+}
+
 HWND parent_window()
 {
     WNDCLASSW window_class{};
@@ -37,7 +74,8 @@ HWND parent_window()
     window_class.hInstance = ::GetModuleHandleW(nullptr);
     window_class.lpszClassName = L"TermoleT21Parent";
     ::RegisterClassW(&window_class);
-    const HWND parent = ::CreateWindowExW(WS_EX_TOOLWINDOW, L"TermoleT21Parent", L"t21",
+    const HWND parent = ::CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                                          L"TermoleT21Parent", L"t21",
                                           WS_OVERLAPPEDWINDOW, 0, 0, 900, 600, nullptr,
                                           nullptr, ::GetModuleHandleW(nullptr), nullptr);
     ::ShowWindow(parent, SW_SHOWNOACTIVATE);
@@ -48,6 +86,7 @@ HWND parent_window()
 
 int wmain()
 {
+    print_memory("before_session");
     const HWND parent = parent_window();
     if (!parent) return 1;
     termole::Session::Options options;
@@ -58,21 +97,32 @@ int wmain()
         std::cerr << "session failed: " << session.error().message() << '\n';
         return 1;
     }
+    print_memory("session_without_view");
     auto view = termole::View::create(*session, parent);
     if (!view) {
         std::cerr << "view failed: " << view.error().message() << '\n';
         return 1;
     }
     ::MoveWindow(view->hwnd(), 0, 0, 900, 600, TRUE);
-    view->focus();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-    pump();
+    // Focus changes intentionally invalidate a View. Keep this idle sample
+    // inactive so foreground restoration from preceding UI tests isn't counted
+    // as an unsolicited repaint. Input-to-visible-frame has its own pixel test.
+    pump_for(1500);
+    print_memory("view_ready");
     const uint64_t idle_start = view->paint_count();
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-    pump();
+    const auto cpu_start = cpu_time();
+    const auto idle_clock = std::chrono::steady_clock::now();
+    pump_for(5000);
+    const auto idle_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - idle_clock).count();
+    std::cout << "idle_wall_ms=" << idle_ms
+              << " idle_cpu_ms=" << (cpu_time() - cpu_start) / 10000.0 << '\n';
+    print_memory("idle");
     const uint64_t idle_end = view->paint_count();
     if (idle_end != idle_start) {
         std::cerr << "idle view repainted: " << idle_start << " -> " << idle_end << '\n';
+        const auto screen = session->screen_text();
+        if (screen) std::cerr << "idle screen:\n" << *screen << '\n';
         return 1;
     }
 
@@ -93,6 +143,7 @@ int wmain()
     (void)session->send_key(termole::Key::Enter);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     (void)session->terminate();
+    view->reset();
     if (parent) ::DestroyWindow(parent);
     std::cout << "PASS: idle paint count stable, output triggers paint\n";
     return 0;

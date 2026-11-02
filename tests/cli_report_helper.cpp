@@ -120,11 +120,13 @@ int wmain(int argc, wchar_t** argv)
         }
         if (mode == L"--lines" && index + 1 < argc) {
             const int count = _wtoi(argv[++index]);
+            if (sleep_mode) ::Sleep(sleep_ms);
             for (int line = 0; line < count; ++line) {
                 char text[32]{};
                 std::snprintf(text, sizeof(text), "line-%04d\r\n", line);
                 if (!write_stdout(text)) return 3;
             }
+            if (linger_ms != 0) ::Sleep(linger_ms);
             return 0;
         }
         if (mode == L"--delayed-lines") {
