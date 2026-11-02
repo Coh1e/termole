@@ -629,8 +629,12 @@ int run_fzf(const Options& options)
         std::cerr << "FAIL: could not write " << candidates.string() << '\n';
         return 1;
     }
-    const std::string command = "@echo off\r\ntype \"" + candidates.string() + "\" | \"" +
-        std::filesystem::path(options.fzf).string() + "\"\r\n";
+    // The View resizes the freshly created session to its grid. Let that
+    // resize land before fzf takes its terminal size, otherwise fzf lays the
+    // list out for the 20-row initial size and the row bands are wrong.
+    const std::string command = "@echo off\r\nping -n 3 127.0.0.1 >nul\r\ntype \"" +
+        candidates.string() + "\" | \"" + std::filesystem::path(options.fzf).string() +
+        "\"\r\n";
     if (!write_file(script, command)) {
         std::cerr << "FAIL: could not write " << script.string() << '\n';
         return 1;
@@ -986,6 +990,11 @@ int run_fzf_interaction(const Options& options)
                 capture_band(L"03-after-escape-cancel", *cancel, band_stats);
             check(band_captured && band_stats.band_ink > 0,
                   "the Escape cancel result is visible on the restored main screen");
+            // The renderer draws the terminal cursor only while the View has
+            // focus. The background probe may have lost it, so restore the
+            // focused state a user would have before capturing the cursor.
+            view.focus();
+            pump_for(50);
             CaptureStats cursor_stats;
             const bool cursor_captured =
                 capture_band(L"03-after-escape-cursor", *cancel + 1, cursor_stats);
@@ -1410,6 +1419,10 @@ int run_fzf_standalone(const Options& options)
                       "standalone: the pre-fzf main screen is visible again after Escape");
                 check(cancel_captured && cancel_stats.band_ink > 0,
                       "standalone: the Escape cancel result is visible");
+                // The app owns the View in the standalone case; send the same
+                // focus message a user click would deliver before capturing.
+                ::SendMessageW(view, WM_SETFOCUS, 0, 0);
+                pump_for(50);
                 CaptureStats cursor_stats;
                 const bool cursor_captured = band_stats(L"03-after-escape-cursor", 2, cursor_stats);
                 check(cursor_captured && cursor_stats.band_strong > 50,
