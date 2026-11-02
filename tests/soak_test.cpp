@@ -10,6 +10,7 @@
 #include <psapi.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -57,17 +58,6 @@ size_t line_count(const std::string& text)
     return static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) + 1;
 }
 
-std::vector<termole::Event> collect_events(termole::Session& session)
-{
-    std::vector<termole::Event> events;
-    for (;;) {
-        auto event = session.poll_event();
-        if (!event || !event->has_value()) break;
-        events.push_back(std::move(**event));
-    }
-    return events;
-}
-
 termole::Event* find_event(std::vector<termole::Event>& events, termole::EventType type)
 {
     const auto found = std::find_if(events.begin(), events.end(),
@@ -75,6 +65,26 @@ termole::Event* find_event(std::vector<termole::Event>& events, termole::EventTy
                                         return event.type == type;
                                     });
     return found == events.end() ? nullptr : &*found;
+}
+
+// running() becomes false before the reader queues the terminal event, so a
+// host must keep polling for a short bounded window instead of treating the
+// first empty poll as "no exit event".
+std::vector<termole::Event> collect_events_until_exited(termole::Session& session,
+                                                        int timeout_ms)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    std::vector<termole::Event> events;
+    for (;;) {
+        for (;;) {
+            auto event = session.poll_event();
+            if (!event || !event->has_value()) break;
+            events.push_back(std::move(**event));
+        }
+        if (find_event(events, termole::EventType::Exited) != nullptr) return events;
+        if (std::chrono::steady_clock::now() >= deadline) return events;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 }
 
 termole::Session::Options options_for(const std::wstring& helper,
@@ -134,7 +144,7 @@ void alternating_title_bell_flood(const std::wstring& helper)
     check(wait_stopped(*session, 30000), "flood: session stops");
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start).count();
-    auto events = collect_events(*session);
+    auto events = collect_events_until_exited(*session, 2000);
     const size_t after = working_set();
     const size_t growth = after > before ? after - before : 0;
 
@@ -267,10 +277,15 @@ void repeated_start_failures(const std::wstring& helper)
     const DWORD handles_before = handle_count();
 
     // A missing program is rejected before any pipe or pseudo console exists.
+    const auto missing = std::filesystem::temp_directory_path() /
+        (L"termole-t20-missing-" + std::to_wstring(::GetCurrentProcessId()) + L".exe");
+    std::error_code missing_error;
+    std::filesystem::remove(missing, missing_error);
+    const bool missing_absent = !std::filesystem::exists(missing, missing_error);
+    check(!missing_error && missing_absent, "start-failure: missing-program path is absent");
     int missing_failures = 0;
     for (int index = 0; index < 20; ++index) {
-        auto session = termole::Session::create(
-            options_for(L"Z:\\termole-t20-missing-program.exe", {}));
+        auto session = termole::Session::create(options_for(missing.wstring(), {}));
         if (!session) ++missing_failures;
     }
     const DWORD handles_after_missing = handle_count();
@@ -315,6 +330,46 @@ void repeated_start_failures(const std::wstring& helper)
           "start-failure: failed creations do not leak handles after warm-up");
 }
 
+void app_execution_alias_starts()
+{
+    std::array<wchar_t, 32768> local_app_data{};
+    const DWORD length = ::GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data.data(),
+                                                    static_cast<DWORD>(local_app_data.size()));
+    if (length == 0 || length >= local_app_data.size()) {
+        std::cout << "SKIP: LOCALAPPDATA is unavailable; App Execution Alias test skipped\n";
+        return;
+    }
+    const auto alias = std::filesystem::path(std::wstring(local_app_data.data(), length)) /
+        L"Microsoft" / L"WindowsApps" / L"winget.exe";
+    const DWORD attributes = ::GetFileAttributesW(alias.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+        std::cout << "SKIP: winget.exe App Execution Alias is unavailable\n";
+        return;
+    }
+
+    // The fallback only applies when CreateFileW cannot read-open the alias.
+    // If this host allows the read, the ordinary preflight path is exercised
+    // instead and there is nothing new to prove here.
+    const HANDLE probe = ::CreateFileW(alias.c_str(), GENERIC_READ,
+                                       FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (probe != INVALID_HANDLE_VALUE) {
+        ::CloseHandle(probe);
+        std::cout << "SKIP: winget.exe alias is readable; fallback not exercised\n";
+        return;
+    }
+    // The fallback accepts any refused read-open on an alias, not one specific
+    // error code, so report the code instead of asserting it.
+    std::cout << "alias: read-open error=" << ::GetLastError() << '\n';
+
+    auto session = termole::Session::create(options_for(alias.wstring(), { L"--version" }));
+    check(session.has_value(), "alias: App Execution Alias passes the program-image preflight");
+    if (!session) return;
+    check(wait_stopped(*session, 15000), "alias: winget --version stops");
+    const auto code = session->exit_code();
+    check(code && *code == 0, "alias: winget --version exits 0");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -327,6 +382,7 @@ int wmain(int argc, wchar_t** argv)
     repeated_session_lifetimes(helper);
     concurrent_session_burst(helper);
     repeated_start_failures(helper);
+    app_execution_alias_starts();
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed\n";

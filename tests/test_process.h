@@ -51,7 +51,12 @@ inline bool wait_process_exit(DWORD pid, int timeout_ms)
 {
     const HANDLE process =
         ::OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!process) return true;
+    if (!process) {
+        // A disappeared PID is the success case. Any other failure (for
+        // example access denied) cannot prove termination, so do not turn it
+        // into a silent pass.
+        return ::GetLastError() == ERROR_INVALID_PARAMETER;
+    }
     const DWORD wait = ::WaitForSingleObject(process, static_cast<DWORD>(timeout_ms));
     ::CloseHandle(process);
     return wait == WAIT_OBJECT_0;

@@ -149,16 +149,32 @@ Result<std::wstring> resolve_program(const std::wstring& requested)
 // the pseudoconsole or pipes exist, so a host retrying a bad launch does not
 // accumulate handles. The diagnostic keeps the CreateProcessW prefix because
 // this is still the program-start failure surface.
-Result<void> check_program_readable(const std::wstring& program)
+//
+// An App Execution Alias (for example wt.exe or winget.exe) is a reparse
+// point that cannot be opened for read at all, yet CreateProcessW resolves
+// and launches it. Those aliases carry IO_REPARSE_TAG_APPEXECLINK. Every
+// other image, including a symlink to a locked file, keeps the preflight
+// guard, so the failed-launch leak class stays covered.
+bool is_app_execution_alias(const std::wstring& program)
+{
+    WIN32_FIND_DATAW data{};
+    const HANDLE find = ::FindFirstFileW(program.c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return false;
+    ::FindClose(find);
+    return (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 &&
+        data.dwReserved0 == IO_REPARSE_TAG_APPEXECLINK;
+}
+
+Result<void> preflight_program_image(const std::wstring& program)
 {
     win::unique_handle image(::CreateFileW(program.c_str(), GENERIC_READ,
                                           FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
                                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-    if (image.get() == INVALID_HANDLE_VALUE) {
-        return std::unexpected(
-            win::system_error("CreateProcessW preflight", ::GetLastError()));
-    }
-    return {};
+    if (image.get() != INVALID_HANDLE_VALUE) return {};
+
+    const DWORD error = ::GetLastError();
+    if (is_app_execution_alias(program)) return {};
+    return std::unexpected(win::system_error("CreateProcessW preflight", error));
 }
 
 Result<void> validate_working_directory(const std::wstring& directory)
@@ -314,7 +330,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     auto environment = build_environment_block(options.environment);
     if (!environment) return std::unexpected(environment.error());
 
-    auto readable_program = check_program_readable(program);
+    auto readable_program = preflight_program_image(program);
     if (!readable_program) return std::unexpected(readable_program.error());
 
     SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
@@ -555,7 +571,8 @@ void Session::exit_loop()
     // The client has exited. Closing the pseudoconsole forces the output pipe to
     // EOF and lets the reader flush the child's final bytes before running()
     // becomes false. running_ is owned by read_loop so completion is only
-    // reported after the output is drained.
+    // reported after the output is drained; terminate() also forces it false
+    // when the host tears the session down.
     std::lock_guard lock(pseudo_mutex_);
     console_output_write_.reset();
     pseudo_console_.reset();

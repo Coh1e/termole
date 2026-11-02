@@ -82,21 +82,29 @@ size_t line_count(const std::string& text)
     return static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) + 1;
 }
 
-std::vector<termole::Event> collect_events(termole::Session& session)
-{
-    std::vector<termole::Event> events;
-    for (;;) {
-        auto event = session.poll_event();
-        if (!event || !event->has_value()) break;
-        events.push_back(std::move(**event));
-    }
-    return events;
-}
-
 bool has_event(const std::vector<termole::Event>& events, termole::EventType type)
 {
     return std::any_of(events.begin(), events.end(),
                        [type](const termole::Event& event) { return event.type == type; });
+}
+
+// running() becomes false before the reader queues the terminal event, so keep
+// polling for a short bounded window before declaring the event missing.
+std::vector<termole::Event> collect_events_until_exited(termole::Session& session,
+                                                        int timeout_ms)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    std::vector<termole::Event> events;
+    for (;;) {
+        for (;;) {
+            auto event = session.poll_event();
+            if (!event || !event->has_value()) break;
+            events.push_back(std::move(**event));
+        }
+        if (has_event(events, termole::EventType::Exited)) return events;
+        if (std::chrono::steady_clock::now() >= deadline) return events;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 }
 
 termole::Event* find_event(std::vector<termole::Event>& events, termole::EventType type)
@@ -213,7 +221,7 @@ int wmain()
     check(event_session.has_value(), "event session created");
     if (event_session) {
         check(wait_for_stopped(*event_session, 5000), "event session stops");
-        auto events = collect_events(*event_session);
+        auto events = collect_events_until_exited(*event_session, 2000);
         check(has_event(events, termole::EventType::TitleChanged), "title event is queued");
         check(has_event(events, termole::EventType::Bell), "bell event is queued");
         auto* exited = find_event(events, termole::EventType::Exited);
@@ -240,7 +248,7 @@ int wmain()
     check(flood_session.has_value(), "flood session created");
     if (flood_session) {
         check(wait_for_stopped(*flood_session, 5000), "flood session stops");
-        auto events = collect_events(*flood_session);
+        auto events = collect_events_until_exited(*flood_session, 2000);
         check(events.size() <= 256, "event queue is bounded");
         check(has_event(events, termole::EventType::Exited), "exit event survives event flooding");
     }
