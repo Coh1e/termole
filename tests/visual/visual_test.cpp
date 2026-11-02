@@ -2593,7 +2593,8 @@ int run_latency(const Options& options, bool standalone)
         check(samples.size() == 20, "T21 collected 20 alternating visible frames");
         if (samples.size() == 20) {
             std::sort(samples.begin(), samples.end());
-            std::cout << "frame_min_ms=" << samples.front() << " frame_median_ms=" << samples[10]
+            const double median = (samples[9] + samples[10]) / 2.0;
+            std::cout << "frame_min_ms=" << samples.front() << " frame_median_ms=" << median
                       << " frame_p95_ms=" << samples[18] << " frame_max_ms=" << samples.back() << '\n';
         }
         // Capture only after timing, including failure cases for diagnosis.

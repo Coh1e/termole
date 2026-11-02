@@ -1,105 +1,105 @@
 visual_t21_latency
 PASS: T21 real window and View created
 PASS: T21 initial blue frame is visible on the client surface
-startup_to_observed_frame_ms=152.631
+startup_to_observed_frame_ms=156.892
 PASS: T21 input produces the expected new frame color
-frame_sample=0 input_to_observed_frame_ms=13.9124
+frame_sample=0 input_to_observed_frame_ms=30.0535
 PASS: T21 input produces the expected new frame color
-frame_sample=1 input_to_observed_frame_ms=14.1245
+frame_sample=1 input_to_observed_frame_ms=13.7954
 PASS: T21 input produces the expected new frame color
-frame_sample=2 input_to_observed_frame_ms=14.125
+frame_sample=2 input_to_observed_frame_ms=22.3284
 PASS: T21 input produces the expected new frame color
-frame_sample=3 input_to_observed_frame_ms=14.4518
+frame_sample=3 input_to_observed_frame_ms=13.0609
 PASS: T21 input produces the expected new frame color
-frame_sample=4 input_to_observed_frame_ms=20.8754
+frame_sample=4 input_to_observed_frame_ms=14.4118
 PASS: T21 input produces the expected new frame color
-frame_sample=5 input_to_observed_frame_ms=6.4228
+frame_sample=5 input_to_observed_frame_ms=13.1954
 PASS: T21 input produces the expected new frame color
-frame_sample=6 input_to_observed_frame_ms=20.3463
+frame_sample=6 input_to_observed_frame_ms=21.7276
 PASS: T21 input produces the expected new frame color
-frame_sample=7 input_to_observed_frame_ms=13.856
+frame_sample=7 input_to_observed_frame_ms=13.9777
 PASS: T21 input produces the expected new frame color
-frame_sample=8 input_to_observed_frame_ms=15.0121
+frame_sample=8 input_to_observed_frame_ms=13.7008
 PASS: T21 input produces the expected new frame color
-frame_sample=9 input_to_observed_frame_ms=19.7466
+frame_sample=9 input_to_observed_frame_ms=14.0523
 PASS: T21 input produces the expected new frame color
-frame_sample=10 input_to_observed_frame_ms=14.6399
+frame_sample=10 input_to_observed_frame_ms=19.8174
 PASS: T21 input produces the expected new frame color
-frame_sample=11 input_to_observed_frame_ms=15.0113
+frame_sample=11 input_to_observed_frame_ms=15.7031
 PASS: T21 input produces the expected new frame color
-frame_sample=12 input_to_observed_frame_ms=12.3451
+frame_sample=12 input_to_observed_frame_ms=12.8365
 PASS: T21 input produces the expected new frame color
-frame_sample=13 input_to_observed_frame_ms=13.8378
+frame_sample=13 input_to_observed_frame_ms=14.4501
 PASS: T21 input produces the expected new frame color
-frame_sample=14 input_to_observed_frame_ms=20.6613
+frame_sample=14 input_to_observed_frame_ms=13.1992
 PASS: T21 input produces the expected new frame color
-frame_sample=15 input_to_observed_frame_ms=14.5023
+frame_sample=15 input_to_observed_frame_ms=20.8614
 PASS: T21 input produces the expected new frame color
-frame_sample=16 input_to_observed_frame_ms=13.8522
+frame_sample=16 input_to_observed_frame_ms=12.9347
 PASS: T21 input produces the expected new frame color
-frame_sample=17 input_to_observed_frame_ms=12.9644
+frame_sample=17 input_to_observed_frame_ms=14.5275
 PASS: T21 input produces the expected new frame color
-frame_sample=18 input_to_observed_frame_ms=14.0891
+frame_sample=18 input_to_observed_frame_ms=13.0384
 PASS: T21 input produces the expected new frame color
-frame_sample=19 input_to_observed_frame_ms=21.3091
+frame_sample=19 input_to_observed_frame_ms=21.5528
 PASS: T21 collected 20 alternating visible frames
-frame_min_ms=6.4228 frame_median_ms=14.4518 frame_p95_ms=20.8754 frame_max_ms=21.3091
+frame_min_ms=12.8365 frame_median_ms=14.2321 frame_p95_ms=22.3284 frame_max_ms=30.0535
 PASS: T21 frame screenshot saved
-gui_or_host_pid=22180 working_set_bytes=50372608 peak_working_set_bytes=50696192
+gui_or_host_pid=26972 working_set_bytes=48189440 peak_working_set_bytes=48558080
 
 visual_t21_latency-standalone
 PASS: T21 real window and View created
 PASS: T21 initial blue frame is visible on the client surface
-startup_to_observed_frame_ms=262.994
+startup_to_observed_frame_ms=220.661
 PASS: T21 input produces the expected new frame color
-frame_sample=0 input_to_observed_frame_ms=13.6684
+frame_sample=0 input_to_observed_frame_ms=18.6653
 PASS: T21 input produces the expected new frame color
-frame_sample=1 input_to_observed_frame_ms=30.364
+frame_sample=1 input_to_observed_frame_ms=15.141
 PASS: T21 input produces the expected new frame color
-frame_sample=2 input_to_observed_frame_ms=15.5269
+frame_sample=2 input_to_observed_frame_ms=30.8019
 PASS: T21 input produces the expected new frame color
-frame_sample=3 input_to_observed_frame_ms=30.697
+frame_sample=3 input_to_observed_frame_ms=15.8802
 PASS: T21 input produces the expected new frame color
-frame_sample=4 input_to_observed_frame_ms=16.3198
+frame_sample=4 input_to_observed_frame_ms=30.7855
 PASS: T21 input produces the expected new frame color
-frame_sample=5 input_to_observed_frame_ms=29.7428
+frame_sample=5 input_to_observed_frame_ms=14.8945
 PASS: T21 input produces the expected new frame color
-frame_sample=6 input_to_observed_frame_ms=14.9108
+frame_sample=6 input_to_observed_frame_ms=29.2142
 PASS: T21 input produces the expected new frame color
-frame_sample=7 input_to_observed_frame_ms=30.7117
+frame_sample=7 input_to_observed_frame_ms=15.0258
 PASS: T21 input produces the expected new frame color
-frame_sample=8 input_to_observed_frame_ms=14.9824
+frame_sample=8 input_to_observed_frame_ms=30.6606
 PASS: T21 input produces the expected new frame color
-frame_sample=9 input_to_observed_frame_ms=30.7266
+frame_sample=9 input_to_observed_frame_ms=15.0924
 PASS: T21 input produces the expected new frame color
-frame_sample=10 input_to_observed_frame_ms=14.1871
+frame_sample=10 input_to_observed_frame_ms=31.4719
 PASS: T21 input produces the expected new frame color
-frame_sample=11 input_to_observed_frame_ms=29.8748
+frame_sample=11 input_to_observed_frame_ms=14.3785
 PASS: T21 input produces the expected new frame color
-frame_sample=12 input_to_observed_frame_ms=15.9449
+frame_sample=12 input_to_observed_frame_ms=30.7724
 PASS: T21 input produces the expected new frame color
-frame_sample=13 input_to_observed_frame_ms=30.9317
+frame_sample=13 input_to_observed_frame_ms=15.8477
 PASS: T21 input produces the expected new frame color
-frame_sample=14 input_to_observed_frame_ms=14.7226
+frame_sample=14 input_to_observed_frame_ms=30.4027
 PASS: T21 input produces the expected new frame color
-frame_sample=15 input_to_observed_frame_ms=31.2014
+frame_sample=15 input_to_observed_frame_ms=15.421
 PASS: T21 input produces the expected new frame color
-frame_sample=16 input_to_observed_frame_ms=14.981
+frame_sample=16 input_to_observed_frame_ms=30.7302
 PASS: T21 input produces the expected new frame color
-frame_sample=17 input_to_observed_frame_ms=31.58
+frame_sample=17 input_to_observed_frame_ms=15.2817
 PASS: T21 input produces the expected new frame color
-frame_sample=18 input_to_observed_frame_ms=16.1562
+frame_sample=18 input_to_observed_frame_ms=14.9276
 PASS: T21 input produces the expected new frame color
-frame_sample=19 input_to_observed_frame_ms=29.2167
+frame_sample=19 input_to_observed_frame_ms=31.7837
 PASS: T21 collected 20 alternating visible frames
-frame_min_ms=13.6684 frame_median_ms=29.2167 frame_p95_ms=31.2014 frame_max_ms=31.58
+frame_min_ms=14.3785 frame_median_ms=17.2727 frame_p95_ms=31.4719 frame_max_ms=31.7837
 PASS: T21 frame screenshot saved
-gui_or_host_pid=24128 working_set_bytes=56590336 peak_working_set_bytes=56975360
+gui_or_host_pid=436 working_set_bytes=54460416 peak_working_set_bytes=54845440
 
 t21_idle_paint
-before_session working_set_bytes=6909952 peak_working_set_bytes=6909952
-session_without_view working_set_bytes=9125888 peak_working_set_bytes=9125888
-view_ready working_set_bytes=42352640 peak_working_set_bytes=43151360
-idle_wall_ms=5027.57 idle_cpu_ms=0
-idle working_set_bytes=42508288 peak_working_set_bytes=43151360
+before_session working_set_bytes=6897664 peak_working_set_bytes=6897664
+session_without_view working_set_bytes=9109504 peak_working_set_bytes=9109504
+view_ready working_set_bytes=47898624 peak_working_set_bytes=48566272
+idle_wall_ms=5003.85 idle_cpu_ms=0
+idle working_set_bytes=47972352 peak_working_set_bytes=48566272
 PASS: idle paint count stable, output triggers paint

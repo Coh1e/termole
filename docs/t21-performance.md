@@ -13,11 +13,11 @@
 - **空闲**：受控子程序等待 8 秒；目标就绪后预热 1 秒，采样 GUI 约 5 秒的内核+用户 CPU 时间。CPU 毫秒不是 CPU 百分比，也不含子进程、ConHost 或 GPU。嵌入入口的空闲用例持续处理窗口消息，避免暂停消息循环掩盖重绘。
 - **内存**：真正 GUI/嵌入宿主的 working set，及 OS PeakWorkingSet 高水位；不以二进制体积代替运行内存，不把 launcher、GUI、ConHost、目标程序合成一个数。独立脚本每 10 ms 采样一次；输出负载前后各保留 1 秒以观察输出期高水位，最后一次采样之后的退出期峰值可能遗漏。
 - **吞吐**：同一 helper 输出 50,000 行 `line-%04d\r\n`，每行独立 WriteFile；前后各等待 1 秒。记录启动到 GUI 退出总耗时；扣除固定 2 秒后仍包括启动、VT/网格更新、绘制及清理，是端到端吞吐代理，不是纯解析器速度。
-- **帧延迟**：通过真实 View 的 WM_CHAR 输入，子程序无 echo/行缓冲地读取一个字节，交替绘制红/绿整屏。2 ms 请求轮询三个固定 client 像素，观察预期颜色后结束计时；包括输入排队、子程序、ConPTY、解析、绘制、GDI 可观察表面和轮询开销。它不是单次 renderer 调用时间、GPU present 时间或屏幕光子延迟。计时期间不调用 PrintWindow、UpdateWindow 或强制重绘；截图只在计时之后生成。两个新视觉用例 RUN_SERIAL，避免与其他 CTest 窗口互相遮挡。
+- **帧延迟**：通过真实 View 的 WM_CHAR 输入，子程序无 echo/行缓冲地读取一个字节，交替绘制红/绿整屏。2 ms 请求轮询三个固定 client 像素，观察预期颜色后结束计时；包括输入排队、子程序、ConPTY、解析、绘制、GDI 可观察表面和轮询开销。20 个样本的中位数取排序后第 10、11 项的平均，P95 采用 nearest-rank 第 19 项。它不是单次 renderer 调用时间、GPU present 时间或屏幕光子延迟。计时期间不调用 PrintWindow、UpdateWindow 或强制重绘；截图只在计时之后生成。两个新视觉用例 RUN_SERIAL，避免与其他 CTest 窗口互相遮挡。
 
 ## 独立入口结果
 
-最终全量通过后，在相同正常桌面权限下顺序完成 15 次测量：[measurements](evidence/t21-measurements.json)；环境和产品 SHA-256：[environment](evidence/t21-environment.json)。工作目录与缓存均在项目内，测量时未修改用户配置，也未与视觉测试并行。
+在一轮 42/42 全量通过后，用相同正常桌面权限顺序完成 15 次测量：[measurements](evidence/t21-measurements.json)；环境和产品 SHA-256：[environment](evidence/t21-environment.json)。其后只修正了测试的中位数汇总公式，并重新运行全量；产品和负载 helper 未变，因此不重复采集资源基线。工作目录与缓存均在项目内，测量时未修改用户配置，也未与视觉测试并行。
 
 | 场景 | 结果 |
 | --- | --- |
@@ -38,7 +38,7 @@
 
 `t21_idle_paint` 记录创建 Session 前、无 View 的 Session、首次 View 和空闲阶段 working set / peak working set。持续处理消息的 5 秒采样要求 paint_count 不增长，随后输出必须触发 paint；计数只证明按需调度，可见性由下述像素测试负责。采样窗口保持未激活，避免前台恢复时合法的焦点重绘混入空闲统计；不是对焦点切换时“永不绘制”的承诺。
 
-最终全量运行：创建 Session 前 6,909,952 B，无 View 时 9,125,888 B；View 就绪 42,352,640 B，空闲 42,508,288 B，观察到的 peak 43,151,360 B；5,027.57 ms 空闲中 CPU 增量为 0 ms，paint_count 保持不变。另有单次和连续五次空闲检查通过。
+最终全量运行：创建 Session 前 6,897,664 B，无 View 时 9,109,504 B；View 就绪 47,898,624 B，空闲 47,972,352 B，观察到的 peak 48,566,272 B；5,003.85 ms 空闲中 CPU 增量为 0 ms，paint_count 保持不变。另有单次和连续五次空闲检查通过。
 
 未使用图形能力的初始化以结构检查补充：`Session::create` 不创建 Renderer；`View::initialize` 才调用 `Renderer::create`，后者经 `ensure_graphics` 延迟创建 D2D/DWrite factory（`src/view/view.cpp`、`src/view/renderer.cpp`）。这不等于“系统没有加载图形 DLL”，也没有用私有计数器替代公开边界。
 
@@ -46,12 +46,12 @@
 
 | 入口 | 首次观察到蓝色帧 | 最小 / 中位 / P95 / 最大输入到帧（20 次） |
 | --- | --- | --- |
-| 嵌入 Session/View | 152.63 ms | 6.42 / 14.45 / 20.88 / 21.31 ms |
-| 公开 `termole -e` | 262.99 ms | 13.67 / 29.22 / 31.20 / 31.58 ms |
+| 嵌入 Session/View | 156.89 ms | 12.84 / 14.23 / 22.33 / 30.05 ms |
+| 公开 `termole -e` | 220.66 ms | 14.38 / 17.27 / 31.47 / 31.78 ms |
 
 ## 回归与测试条件修正
 
-最终 `build.cmd`（configure、全量构建、CTest）：**42/42 通过，228.71 s**，日志 `.local/t21-verified-build.log`。覆盖现有 Session/View、外部 SDK、CMD/WSL、编辑器/lazygit、双入口 fzf 像素交互、鼠标/粘贴、资源压力及 launcher/真实管道。PowerShell 脚本语法检查与 `git diff --check` 通过；仓库没有单独配置的 formatter 检查。
+评审修正后的最终 `build.cmd`（configure、全量构建、CTest）：**42/42 通过，228.34 s**，日志 `.local/t21-reviewed-build.log`。覆盖现有 Session/View、外部 SDK、CMD/WSL、编辑器/lazygit、双入口 fzf 像素交互、鼠标/粘贴、资源压力及 launcher/真实管道。PowerShell 脚本语法检查与 `git diff --check` 通过；仓库没有单独配置的 formatter 检查。
 
 此前的失败与对应处理保留如下，不把重跑结果冒充首轮通过：
 
@@ -59,6 +59,7 @@
 - 首次正常桌面全量为 41/42：空闲计数 1→2；单独重跑通过。View 本来就会在获得/失去焦点时失效重绘，旧用例主动聚焦却没有控制前台。改为未激活的空闲窗口并保持消息处理，单次及连续五次通过，最终全量也通过；没有放宽绘制计数断言。
 - 下一轮 41/42：独立 fzf 的首个尺寸读到 984×601，而实际捕获是 712×468，旧底部行号失配。现在首次主屏截图后重读实际 client 尺寸，再映射 fzf 行；像素阈值不变。[失败时实际可见的候选](evidence/t21-fzf-stale-grid.png) 已保留。
 - 单项复核同时确认 `NO_COLOR=1` 会使选中行 strong pixels 为 775，低于既有 800 阈值；有颜色的既有成功样本为 931。三项 fzf 视觉用例通过 CTest `ENVIRONMENT_MODIFICATION` 明确 unset 该变量，仅作用于各测试子进程。带该变量的环境中单项通过，随后全量通过；没有加入 `--no-color` 或降低阈值。
+- 两轴评审发现旧汇总把 20 个排序样本的第 11 项误标为中位数。现取第 10、11 项的平均，并重新运行全量、替换本报告的逐帧证据与统计；没有把两轮样本之间的变化当作性能优化收益。
 
 这些修正属于测量/回归夹具，不改变终端行为。
 
