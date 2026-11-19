@@ -26,6 +26,11 @@ int wmain(int argc, wchar_t** argv)
     }
     const auto screen = session->screen_text();
     (void)session->terminate();
+    if (screen && (screen->find("E_ACCESSDENIED") != std::string::npos ||
+                   screen->find("拒绝访问") != std::string::npos)) {
+        std::cerr << "SKIP: WSL is present but access is denied by the host policy.\n";
+        return 77;
+    }
     if (!screen || screen->find("WSL-OK") == std::string::npos) {
         std::cerr << "WSL did not produce expected output. screen:\n"
                   << (screen ? *screen : std::string("<none>")) << '\n';

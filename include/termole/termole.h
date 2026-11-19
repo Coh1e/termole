@@ -41,6 +41,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <termole/core.h>
 
 #if defined(_WIN32)
 #if defined(TERMOLE_BUILDING_DLL)
@@ -226,6 +227,30 @@ termole_session_send_key(termole_session* session, termole_key key);
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_get_size(termole_session* session, uint16_t* out_columns, uint16_t* out_rows);
 
+/* Terminal modes mirrored from the VT core. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_modes(termole_session* session, termole_modes* out_modes);
+/* Copies the viewport snapshot in full-screen coordinates (0 = oldest
+   scrollback row). Call with cells = NULL to query out_required, then retry
+   with capacity >= out_required. Returns INVALID_ARGUMENT when the buffer is
+   too small; out_required is always set. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_snapshot(termole_session* session, int32_t scroll_offset, termole_cell* out_cells,
+                         size_t capacity, size_t* out_required);
+/* Cursor position in viewport cell coordinates and visibility. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_cursor(termole_session* session, uint16_t* out_column, uint16_t* out_row,
+                           int* out_visible);
+
+/* Copies selected text in full-screen document coordinates (0 = oldest
+   scrollback row). Library allocated; free with termole_free(). */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_selection_text(termole_session* session, int32_t start_row,
+                                   int32_t start_column, int32_t end_row, int32_t end_column,
+                                   char** out_text, size_t* out_size);
+/* Number of scrollback rows before the live viewport. */
+TERMOLE_API termole_status TERMOLE_CALL
+termole_session_get_scrollback_line_count(termole_session* session, size_t* out_count);
 /* 1 while the child process is alive or its ConPTY output is still being
    drained; 0 after the child exits and buffered output has been consumed. */
 TERMOLE_API termole_status TERMOLE_CALL

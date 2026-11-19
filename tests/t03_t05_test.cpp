@@ -163,7 +163,7 @@ std::wstring get_clipboard()
 
 std::string file_contents(const std::filesystem::path& path)
 {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 

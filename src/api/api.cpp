@@ -55,12 +55,12 @@ termole_status copy_string(const std::string& text, char** out_text, size_t* out
 } // namespace
 
 struct termole_session {
-    std::shared_ptr<termole::Session> implementation;
+    std::shared_ptr<termole::NativeSession> implementation;
 };
 
 struct termole_view {
-    std::shared_ptr<termole::Session> session;
-    std::unique_ptr<termole::View> implementation;
+    std::shared_ptr<termole::NativeSession> session;
+    std::unique_ptr<termole::NativeView> implementation;
 };
 
 extern "C" {
@@ -140,7 +140,7 @@ termole_status TERMOLE_CALL termole_session_create(const termole_session_options
         internal.columns = options->columns;
         internal.rows = options->rows;
 
-        auto created = termole::Session::create(internal);
+        auto created = termole::NativeSession::create(internal);
         if (!created) return fail(created.error().status, created.error().message);
 
         try {
@@ -226,6 +226,109 @@ termole_status TERMOLE_CALL termole_session_get_size(termole_session* session, u
     });
 }
 
+termole_status TERMOLE_CALL termole_session_get_modes(termole_session* session,
+                                                      termole_modes* out_modes)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_modes) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_modes is null");
+        out_modes->mouse_tracking = session->implementation->mouse_mode();
+        out_modes->mouse_sgr = session->implementation->sgr_mouse() ? 1 : 0;
+        out_modes->bracketed_paste = session->implementation->bracketed_paste() ? 1 : 0;
+        out_modes->application_cursor = session->implementation->application_cursor() ? 1 : 0;
+        out_modes->alternate_screen = 0;
+        return TERMOLE_STATUS_OK;
+    });
+}
+termole_status TERMOLE_CALL termole_session_get_cursor(termole_session* session, uint16_t* out_column,
+                                                       uint16_t* out_row, int* out_visible)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_column || !out_row || !out_visible)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "cursor outputs are null");
+        const termole::Snapshot snapshot = session->implementation->snapshot(0);
+        *out_column = snapshot.cursor_column;
+        *out_row = snapshot.cursor_row;
+        *out_visible = snapshot.cursor_visible ? 1 : 0;
+        return TERMOLE_STATUS_OK;
+    });
+}
+
+termole_status TERMOLE_CALL termole_session_get_scrollback_line_count(termole_session* session,
+                                                                      size_t* out_count)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_count) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_count is null");
+        *out_count = session->implementation->scrollback_line_count();
+        return TERMOLE_STATUS_OK;
+    });
+}
+termole_status TERMOLE_CALL termole_session_get_selection_text(
+    termole_session* session, int32_t start_row, int32_t start_column, int32_t end_row,
+    int32_t end_column, char** out_text, size_t* out_size)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_text || !out_size)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "selection outputs are null");
+        return copy_string(
+            session->implementation->selection_text(start_row, start_column, end_row, end_column),
+            out_text, out_size);
+    });
+}
+termole_status TERMOLE_CALL termole_session_snapshot(termole_session* session, int32_t scroll_offset,
+                                                     termole_cell* out_cells, size_t capacity,
+                                                     size_t* out_required)
+{
+    return guard([&]() -> termole_status {
+        if (!session || !session->implementation)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
+        if (!out_required)
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_required is null");
+        const termole::Snapshot snapshot = session->implementation->snapshot(scroll_offset);
+        const size_t needed = snapshot.cells.size();
+        *out_required = needed;
+        if (!out_cells) return TERMOLE_STATUS_OK;
+        if (capacity < needed) {
+            return fail(TERMOLE_STATUS_INVALID_ARGUMENT,
+                        "snapshot buffer is too small; use out_required");
+        }
+        for (size_t index = 0; index < needed; ++index) {
+            const termole::Cell& cell = snapshot.cells[index];
+            termole_cell& out = out_cells[index];
+            memset(&out, 0, sizeof(out));
+            out.width = cell.width == 0 ? 1 : cell.width;
+            out.continuation = cell.continuation ? 1 : 0;
+            out.attributes = cell.attributes;
+            if (!cell.continuation) {
+                out.codepoints[0] = static_cast<uint32_t>(
+                    cell.character == 0 ? U' ' : cell.character);
+                out.codepoint_count = 1;
+                for (const char32_t combining : cell.combining) {
+                    if (out.codepoint_count >= TERMOLE_CELL_MAX_CODEPOINTS) break;
+                    out.codepoints[out.codepoint_count++] = static_cast<uint32_t>(combining);
+                }
+            }
+            if (cell.foreground == termole::kColorDefault) {
+                out.foreground_is_default = 1;
+            } else {
+                out.foreground = cell.foreground & 0x00FFFFFFu;
+            }
+            if (cell.background == termole::kColorDefault) {
+                out.background_is_default = 1;
+            } else {
+                out.background = cell.background & 0x00FFFFFFu;
+            }
+        }
+        return TERMOLE_STATUS_OK;
+    });
+}
 termole_status TERMOLE_CALL termole_session_is_running(termole_session* session, int* out_running)
 {
     return guard([&]() -> termole_status {
@@ -274,7 +377,7 @@ termole_status TERMOLE_CALL termole_session_poll_event(termole_session* session,
         if (out_event->size < sizeof(termole_event))
             return fail(TERMOLE_STATUS_ABI_MISMATCH, "termole_event is too small");
 
-        termole::Session::EventRecord event;
+        termole::NativeSession::EventRecord event;
         if (!session->implementation->poll_event(event)) {
             out_event->type = TERMOLE_EVENT_NONE;
             out_event->exit_code = 0;
@@ -343,11 +446,11 @@ termole_status TERMOLE_CALL termole_view_create(termole_session* session, HWND p
         if (options->abi_version != TERMOLE_ABI_VERSION)
             return fail(TERMOLE_STATUS_ABI_MISMATCH, "ABI version mismatch");
 
-        termole::View::Options view_options;
+        termole::NativeView::Options view_options;
         if (options->font_family) view_options.font_family = options->font_family;
         view_options.font_size_dip = options->font_size_dip;
         view_options.theme = options->theme;
-        auto created = termole::View::create(session->implementation, parent, view_options);
+        auto created = termole::NativeView::create(session->implementation, parent, view_options);
         if (!created) return fail(created.error().status, created.error().message);
 
         try {
@@ -396,7 +499,7 @@ termole_status TERMOLE_CALL termole_view_set_appearance(termole_view* view,
         if (appearance->abi_version != TERMOLE_ABI_VERSION)
             return fail(TERMOLE_STATUS_ABI_MISMATCH, "ABI version mismatch");
 
-        termole::View::Options options;
+        termole::NativeView::Options options;
         if (appearance->font_family) options.font_family = appearance->font_family;
         options.font_size_dip = appearance->font_size_dip;
         options.theme = appearance->theme;

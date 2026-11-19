@@ -1,6 +1,7 @@
 #include "view/view.h"
 
 #include "core/utf8.h"
+#include <cstdio>
 
 #include <windowsx.h>
 #include <imm.h>
@@ -124,7 +125,7 @@ HMODULE module_instance()
     HMODULE module = nullptr;
     if (::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                             reinterpret_cast<LPCWSTR>(&View::window_proc), &module)) {
+                             reinterpret_cast<LPCWSTR>(&NativeView::window_proc), &module)) {
         return module;
     }
     return ::GetModuleHandleW(nullptr);
@@ -138,7 +139,7 @@ bool register_view_class()
         WNDCLASSEXW window_class{};
         window_class.cbSize = sizeof(window_class);
         window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-        window_class.lpfnWndProc = &View::window_proc;
+        window_class.lpfnWndProc = &NativeView::window_proc;
         window_class.hInstance = module_instance();
         window_class.hCursor = ::LoadCursorW(nullptr, IDC_IBEAM);
         window_class.lpszClassName = kViewClassName;
@@ -150,12 +151,12 @@ bool register_view_class()
 
 } // namespace
 
-View::View(std::shared_ptr<Session> session, HWND parent)
+NativeView::NativeView(std::shared_ptr<NativeSession> session, HWND parent)
     : session_(std::move(session)), parent_(parent), attached_(session_ && session_->attach_view())
 {
 }
 
-View::~View()
+NativeView::~NativeView()
 {
     stop_watcher();
     HWND window = window_.exchange(nullptr, std::memory_order_acq_rel);
@@ -164,7 +165,12 @@ View::~View()
     if (attached_) session_->detach_view();
 }
 
-Result<std::unique_ptr<View>> View::create(std::shared_ptr<Session> session, HWND parent,
+Result<std::unique_ptr<NativeView>> NativeView::create(std::shared_ptr<NativeSession> session, HWND parent)
+{
+    return create(std::move(session), parent, Options{});
+}
+
+Result<std::unique_ptr<NativeView>> NativeView::create(std::shared_ptr<NativeSession> session, HWND parent,
                                           const Options& options)
 {
     if (!session) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null"));
@@ -178,7 +184,7 @@ Result<std::unique_ptr<View>> View::create(std::shared_ptr<Session> session, HWN
         return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "unknown theme"));
     }
 
-    auto view = std::unique_ptr<View>(new View(std::move(session), parent));
+    auto view = std::unique_ptr<NativeView>(new NativeView(std::move(session), parent));
     if (!view->attached_) {
         return std::unexpected(
             make_error(TERMOLE_STATUS_INVALID_STATE, "session already has an attached view"));
@@ -188,7 +194,7 @@ Result<std::unique_ptr<View>> View::create(std::shared_ptr<Session> session, HWN
     return view;
 }
 
-Result<void> View::set_appearance(const Options& options)
+Result<void> NativeView::set_appearance(const Options& options)
 {
     if (!renderer_) {
         return std::unexpected(make_error(TERMOLE_STATUS_INVALID_STATE, "view is not initialized"));
@@ -215,7 +221,7 @@ Result<void> View::set_appearance(const Options& options)
     return {};
 }
 
-Result<void> View::initialize(const Options& options)
+Result<void> NativeView::initialize(const Options& options)
 {
     if (!register_view_class()) {
         return std::unexpected(win::system_error("RegisterClassExW", ::GetLastError()));
@@ -253,18 +259,18 @@ Result<void> View::initialize(const Options& options)
     return {};
 }
 
-LRESULT CALLBACK View::window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+LRESULT CALLBACK NativeView::window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     if (message == WM_NCCREATE) {
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
-        auto* self = static_cast<View*>(create->lpCreateParams);
+        auto* self = static_cast<NativeView*>(create->lpCreateParams);
         if (self) {
             self->window_.store(window, std::memory_order_release);
             ::SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
     }
 
-    auto* self = reinterpret_cast<View*>(::GetWindowLongPtrW(window, GWLP_USERDATA));
+    auto* self = reinterpret_cast<NativeView*>(::GetWindowLongPtrW(window, GWLP_USERDATA));
     LRESULT result = self ? self->handle_message(window, message, wparam, lparam)
                           : ::DefWindowProcW(window, message, wparam, lparam);
 
@@ -275,7 +281,7 @@ LRESULT CALLBACK View::window_proc(HWND window, UINT message, WPARAM wparam, LPA
     return result;
 }
 
-LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     switch (message) {
     case WM_PAINT:
@@ -360,7 +366,7 @@ LRESULT View::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lp
     }
 }
 
-void View::on_size()
+void NativeView::on_size()
 {
     const HWND window = window_.load(std::memory_order_acquire);
     if (!window || !renderer_) return;
@@ -389,7 +395,7 @@ void View::on_size()
     ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::on_paint()
+void NativeView::on_paint()
 {
     const HWND window = window_.load(std::memory_order_acquire);
     if (!window) return;
@@ -399,8 +405,7 @@ void View::on_paint()
     paint_count_.fetch_add(1, std::memory_order_relaxed);
     bool painted = false;
     if (renderer_) {
-        Snapshot snapshot = session_->snapshot(scroll_offset_);
-        if (has_selection_) {
+        Snapshot snapshot = session_->snapshot(scroll_offset_);        if (has_selection_) {
             const int history = static_cast<int>(session_->scrollback_line_count());
             const int first = history - scroll_offset_;
             snapshot.has_selection = true;
@@ -409,8 +414,7 @@ void View::on_paint()
             snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
             snapshot.selection_end_column = static_cast<int16_t>(selection_focus_column_);
         }
-        painted = renderer_->paint(snapshot, focused_);
-    }
+        painted = renderer_->paint(snapshot, focused_);    }
     if (!painted) {
         RECT client{};
         ::GetClientRect(window, &client);
@@ -419,7 +423,7 @@ void View::on_paint()
     ::EndPaint(window, &paint);
 }
 
-void View::scroll(int lines)
+void NativeView::scroll(int lines)
 {
     if (!session_) return;
     const int history = static_cast<int>(session_->scrollback_line_count());
@@ -430,7 +434,7 @@ void View::scroll(int lines)
         ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::set_selection(int start_row, int start_column, int end_row, int end_column)
+void NativeView::set_selection(int start_row, int start_column, int end_row, int end_column)
 {
     if (!session_) return;
     const int history = static_cast<int>(session_->scrollback_line_count());
@@ -445,7 +449,7 @@ void View::set_selection(int start_row, int start_column, int end_row, int end_c
         ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::clear_selection()
+void NativeView::clear_selection()
 {
     has_selection_ = false;
     selecting_ = false;
@@ -453,14 +457,14 @@ void View::clear_selection()
         ::InvalidateRect(window, nullptr, FALSE);
 }
 
-std::string View::selection_text() const
+std::string NativeView::selection_text() const
 {
     if (!has_selection_ || !session_) return {};
     return session_->selection_text(selection_anchor_row_, selection_anchor_column_,
                                     selection_focus_row_, selection_focus_column_);
 }
 
-std::string View::viewport_text() const
+std::string NativeView::viewport_text() const
 {
     if (!session_) return {};
     const Snapshot snapshot = session_->snapshot(scroll_offset_);
@@ -486,7 +490,7 @@ std::string View::viewport_text() const
     return text;
 }
 
-Result<void> View::copy_selection()
+Result<void> NativeView::copy_selection()
 {
     const std::string text = selection_text();
     if (text.empty()) return {};
@@ -496,7 +500,7 @@ Result<void> View::copy_selection()
     return {};
 }
 
-Result<void> View::paste()
+Result<void> NativeView::paste()
 {
     const std::wstring text = read_clipboard();
     if (text.empty()) return {};
@@ -510,7 +514,7 @@ Result<void> View::paste()
     return send_text(bytes);
 }
 
-bool View::selected_cell(int row, int column) const
+bool NativeView::selected_cell(int row, int column) const
 {
     if (!has_selection_) return false;
     int first_row = selection_anchor_row_;
@@ -527,7 +531,7 @@ bool View::selected_cell(int row, int column) const
     return true;
 }
 
-bool View::mouse_coordinates(int x, int y, int& row, int& column) const
+bool NativeView::mouse_coordinates(int x, int y, int& row, int& column) const
 {
     if (!session_ || !renderer_ || renderer_->cell_width() <= 0.0f ||
         renderer_->cell_height() <= 0.0f) {
@@ -544,7 +548,7 @@ bool View::mouse_coordinates(int x, int y, int& row, int& column) const
     return true;
 }
 
-bool View::mouse_screen_coordinates(int x, int y, int& row, int& column) const
+bool NativeView::mouse_screen_coordinates(int x, int y, int& row, int& column) const
 {
     if (!session_ || !renderer_ || renderer_->cell_width() <= 0.0f ||
         renderer_->cell_height() <= 0.0f) {
@@ -558,7 +562,7 @@ bool View::mouse_screen_coordinates(int x, int y, int& row, int& column) const
     return true;
 }
 
-void View::report_mouse(int button, int x, int y, bool press)
+void NativeView::report_mouse(int button, int x, int y, bool press)
 {
     int row = 0;
     int column = 0;
@@ -567,7 +571,7 @@ void View::report_mouse(int button, int x, int y, bool press)
     (void)session_->write(mouse_sequence(encoded, column + 1, row + 1, press, session_->sgr_mouse()));
 }
 
-void View::on_left_button_down(int x, int y, bool shift)
+void NativeView::on_left_button_down(int x, int y, bool shift)
 {
     ::SetFocus(window_.load(std::memory_order_acquire));
     if (session_->mouse_mode() != 0 && !shift) {
@@ -590,7 +594,7 @@ void View::on_left_button_down(int x, int y, bool shift)
         ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::on_left_button_up(int x, int y)
+void NativeView::on_left_button_up(int x, int y)
 {
     if (mouse_reporting_) {
         report_mouse(mouse_button_, x, y, false);
@@ -602,7 +606,7 @@ void View::on_left_button_up(int x, int y)
     ::ReleaseCapture();
 }
 
-void View::on_mouse_move(int x, int y)
+void NativeView::on_mouse_move(int x, int y)
 {
     if (selecting_) {
         int row = 0;
@@ -627,7 +631,7 @@ void View::on_mouse_move(int x, int y)
     }
 }
 
-void View::on_mouse_wheel(int delta, bool shift, int x, int y)
+void NativeView::on_mouse_wheel(int delta, bool shift, int x, int y)
 {
     if (session_->mouse_mode() != 0 && !shift) {
         report_mouse(delta > 0 ? 64 : 65, x, y, true);
@@ -636,7 +640,7 @@ void View::on_mouse_wheel(int delta, bool shift, int x, int y)
     scroll(delta > 0 ? 3 : -3);
 }
 
-void View::position_ime()
+void NativeView::position_ime()
 {
     const HWND window = window_.load(std::memory_order_acquire);
     if (!window || !session_ || !renderer_) return;
@@ -658,7 +662,7 @@ void View::position_ime()
     ::ImmReleaseContext(window, context);
 }
 
-void View::on_ime_composition(LPARAM flags)
+void NativeView::on_ime_composition(LPARAM flags)
 {
     if ((flags & GCS_RESULTSTR) == 0) return;
     const HWND window = window_.load(std::memory_order_acquire);
@@ -675,7 +679,7 @@ void View::on_ime_composition(LPARAM flags)
     ::InvalidateRect(window, nullptr, FALSE);
 }
 
-void View::on_character(wchar_t character)
+void NativeView::on_character(wchar_t character)
 {
     char32_t codepoint = 0;
     if (character >= 0xD800 && character <= 0xDBFF) {
@@ -725,7 +729,7 @@ void View::on_character(wchar_t character)
     }
 }
 
-void View::on_key_down(WPARAM key)
+void NativeView::on_key_down(WPARAM key)
 {
     termole_key translated = TERMOLE_KEY_ENTER;
     switch (key) {
@@ -773,13 +777,13 @@ void View::on_key_down(WPARAM key)
     (void)session_->send_key(translated);
 }
 
-Result<void> View::send_text(std::string_view bytes)
+Result<void> NativeView::send_text(std::string_view bytes)
 {
     if (!session_) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_STATE, "view has no session"));
     return session_->write(bytes);
 }
 
-Result<void> View::start_watcher()
+Result<void> NativeView::start_watcher()
 {
     stop_event_ = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!stop_event_) return std::unexpected(win::system_error("CreateEventW", ::GetLastError()));
@@ -818,7 +822,7 @@ Result<void> View::start_watcher()
     return {};
 }
 
-void View::stop_watcher()
+void NativeView::stop_watcher()
 {
     if (stop_event_) {
         ::SetEvent(stop_event_);
@@ -830,7 +834,7 @@ void View::stop_watcher()
     }
 }
 
-void View::focus()
+void NativeView::focus()
 {
     if (const HWND window = window_.load(std::memory_order_acquire)) ::SetFocus(window);
 }

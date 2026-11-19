@@ -1,3 +1,5 @@
+> 状态：已被 [ADR 0008](0008-libghostty-vt-mingw-c-core.md) 取代（2026-11-19）。
+
 # 首版切片使用项目内最小 VT 核心
 
 T01 需要一个能真实运行 PowerShell、通过 ConPTY 接收输出、向宿主公开画面快照并驱动原生子窗口的最小终端核心。Contour 的 headless 核心虽已通过探针，但会带入 GSL、boxed-cpp、reflection-cpp、libunicode 四项依赖和一层上游构建适配；libghostty-vt 依赖 Zig 构建；Windows Terminal TerminalCore 仍牵连 XAML/MSBuild 与内部渲染依赖。按 [ADR 0004](0004-reuse-without-dependency-expansion.md) 的约束，这些都不应因首个小切片自动成为产品依赖。

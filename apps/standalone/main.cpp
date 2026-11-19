@@ -1,8 +1,12 @@
 #include "common/cli.h"
+#include "common/config.h"
 #include "common/console.h"
 #include "common/diagnostics.h"
 #include "common/exit_codes.h"
 #include "standalone/gui.h"
+#ifdef TERMOLE_C_GUI_ENABLED
+#include "cgui/main.h"
+#endif
 
 #include <windows.h>
 
@@ -160,6 +164,44 @@ int run_launcher(int argc, wchar_t** argv)
 
 int wmain(int argc, wchar_t** argv)
 {
+#ifdef TERMOLE_C_GUI_ENABLED
+    if (argc > 1 && std::wstring_view(argv[1]) == L"--c-gui") {
+        std::wstring config_path = termole::app::default_config_path();
+        bool use_config = true;
+        for (int index = 2; index < argc; ++index) {
+            const std::wstring_view argument = argv[index];
+            if (argument == L"--no-config") {
+                use_config = false;
+            } else if (argument.rfind(L"--config=", 0) == 0) {
+                config_path = std::wstring(argument.substr(9));
+            } else if (argument == L"--config" && index + 1 < argc) {
+                config_path = argv[++index];
+            }
+        }
+        if (use_config && !config_path.empty()) {
+            const auto loaded = termole::app::load_config(config_path, std::nullopt);
+            if (loaded.ok) {
+                termole::app::CliOptions options;
+                termole::app::apply_config(options, loaded.config, std::nullopt);
+                const auto set_env = [](const wchar_t* name, const std::wstring& value) {
+                    ::SetEnvironmentVariableW(name, value.empty() ? nullptr : value.c_str());
+                };
+                if (options.window_title) set_env(L"TERMOLE_CGUI_TITLE", *options.window_title);
+                if (options.window_width)
+                    set_env(L"TERMOLE_CGUI_WIDTH", std::to_wstring(*options.window_width));
+                if (options.window_height)
+                    set_env(L"TERMOLE_CGUI_HEIGHT", std::to_wstring(*options.window_height));
+                if (options.font_family) set_env(L"TERMOLE_CGUI_FONT", *options.font_family);
+                if (options.font_size_dip)
+                    set_env(L"TERMOLE_CGUI_FONT_SIZE", std::to_wstring(options.font_size_dip));
+                if (options.theme)
+                    set_env(L"TERMOLE_CGUI_THEME",
+                            options.theme == TERMOLE_THEME_LIGHT ? L"light" : L"dark");
+            }
+        }
+        return termole_cgui_run(::GetModuleHandleW(nullptr), ::GetCommandLineW(), SW_SHOW);
+    }
+#endif
     if (argc > 1 && std::wstring_view(argv[1]) == L"--gui") {
         return termole::app::run_gui(argc - 1, argv + 1);
     }

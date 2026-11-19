@@ -10,7 +10,12 @@ param(
 
 function Launch-Termole([string]$Helper, [string]$Cwd, [string]$Report, [string]$Value) {
   $line = "--cwd `"$Cwd`" --env `"TERMOLE_PROBE_REPORT=$Report`" --env `"TERMOLE_PROBE_VALUE=$Value`" -e `"$Helper`" `"$Value`" `"a b`""
-  Start-Process -FilePath $Exe -ArgumentList $line -PassThru -WindowStyle Hidden
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $Exe
+  $psi.Arguments = $line
+  $psi.UseShellExecute = $false
+  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+  [System.Diagnostics.Process]::Start($psi)
 }
 
 $first = Launch-Termole $HelperA $CwdA $ReportA 'parallel A'

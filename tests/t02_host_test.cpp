@@ -54,7 +54,7 @@ std::string utf8(std::wstring_view text)
 
 std::optional<std::string> read_if_ready(const std::filesystem::path& path)
 {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(std::filesystem::path(path), std::ios::binary);
     if (!input) return std::nullopt;
     std::string text{ std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
     if (text.find("stdout.console=") == std::string::npos) return std::nullopt;

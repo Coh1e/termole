@@ -5,7 +5,11 @@ param(
 )
 
 $line = "--gui --env `"TERMOLE_PROBE_REPORT=$Report`" -- `"$Helper`" --exit-code 7"
-$process = Start-Process -FilePath $Exe -ArgumentList $line -PassThru
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $Exe
+$psi.Arguments = $line
+$psi.UseShellExecute = $false
+$process = [System.Diagnostics.Process]::Start($psi)
 $deadline = (Get-Date).AddSeconds(10)
 while (-not (Test-Path $Report) -and (Get-Date) -lt $deadline) {
   Start-Sleep -Milliseconds 100

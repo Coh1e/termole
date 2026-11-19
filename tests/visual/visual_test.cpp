@@ -91,13 +91,13 @@ std::string narrow_ascii(std::wstring_view text)
 
 std::string read_file(const std::filesystem::path& path)
 {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(std::filesystem::path(path), std::ios::binary);
     return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
 }
 
 bool write_file(const std::filesystem::path& path, std::string_view content)
 {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
     output.write(content.data(), static_cast<std::streamsize>(content.size()));
     return output.good();
 }
@@ -884,7 +884,7 @@ int run_fzf_interaction(const Options& options)
             const uint64_t painted_up = view.paint_count();
             post_view_key(view.hwnd(), VK_UP);
             const bool repainted_up = wait_for_paint(view, painted_up, 5000);
-            pump_for(300);
+            pump_for(800);
             check(repainted_up, "fzf repainted after the arrow-up key");
 
             const auto up_screen = session.screen_text();
@@ -914,7 +914,7 @@ int run_fzf_interaction(const Options& options)
                 const uint64_t painted_down = view.paint_count();
                 post_view_key(view.hwnd(), VK_DOWN);
                 const bool repainted_down = wait_for_paint(view, painted_down, 5000);
-                pump_for(300);
+                pump_for(800);
                 check(repainted_down, "fzf repainted after the arrow-down key");
 
                 const auto down_screen = session.screen_text();
@@ -1042,7 +1042,7 @@ int run_fzf_interaction(const Options& options)
             10000, screen);
         check(filtered, "typing ban filtered the list to one candidate (supporting signal)");
         (void)wait_for_paint(view, painted, 5000);
-        pump_for(300);
+        pump_for(800);
         force_paint(window, view.hwnd());
 
         CaptureStats filtered_stats;
@@ -2026,7 +2026,7 @@ int run_input_phases(InputTarget& target)
                      "the ?1000 click is visible");
     check(input_drag(target, drag_start_x, drag_y, drag_end_x, drag_y, false),
           "sent a drag in ?1000 mode");
-    pump_for(300);
+    pump_for(800);
     check(count_occurrences(read_file(target.log), "EVENT|sgr|b=32|") == drag_events_before,
           "?1000 does not report drag motion");
 

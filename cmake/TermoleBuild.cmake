@@ -29,4 +29,12 @@ if(MSVC)
   )
 else()
   target_compile_options(termole_build_options INTERFACE -Wall -Wextra -Wpedantic)
+  target_link_options(termole_build_options INTERFACE -static-libgcc -static-libstdc++)
 endif()
+
+# MinGW needs an explicit Unicode startup entry point for wmain/wWinMain.
+function(termole_unicode_startup target)
+  if(MINGW)
+    target_link_options(${target} PRIVATE -municode)
+  endif()
+endfunction()

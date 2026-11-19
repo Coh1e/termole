@@ -105,7 +105,12 @@ public:
         uint16_t rows = 0;
     };
 
-    static std::expected<Session, Error> create(const Options& options = {})
+    static std::expected<Session, Error> create()
+    {
+        return create(Options{});
+    }
+
+    static std::expected<Session, Error> create(const Options& options)
     {
         termole_session_options raw = TERMOLE_SESSION_OPTIONS_INIT;
         raw.program = options.program && !options.program->empty() ? options.program->c_str() : nullptr;
@@ -267,7 +272,12 @@ public:
         uint32_t theme = TERMOLE_THEME_SYSTEM;
     };
 
-    static std::expected<View, Error> create(Session& session, HWND parent, const Options& options = {})
+    static std::expected<View, Error> create(Session& session, HWND parent)
+    {
+        return create(session, parent, Options{});
+    }
+
+    static std::expected<View, Error> create(Session& session, HWND parent, const Options& options)
     {
         if (!parent) return std::unexpected(Error{ TERMOLE_STATUS_INVALID_ARGUMENT, "parent HWND is null" });
         termole_view_options raw = TERMOLE_VIEW_OPTIONS_INIT;

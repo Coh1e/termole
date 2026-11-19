@@ -6,6 +6,7 @@
 #include <array>
 #include <cwctype>
 #include <cwchar>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -230,6 +231,12 @@ bool assign(ConfigValues& values, const std::wstring& key, const Value& value, s
         } else {
             error = L"theme must be \"system\", \"dark\" or \"light\"";
         }
+    } else if (key == L"width") {
+        if (!integer_value(values.window_width, 200, 10000)) error = L"width must be 200..10000";
+        else return true;
+    } else if (key == L"height") {
+        if (!integer_value(values.window_height, 120, 10000)) error = L"height must be 120..10000";
+        else return true;
     } else if (key == L"columns") {
         if (!integer_value(values.columns, 1, 1000)) error = L"columns must be 1..1000";
         else return true;
@@ -248,6 +255,14 @@ bool assign(ConfigValues& values, const std::wstring& key, const Value& value, s
     } else if (key == L"floating") {
         if (!bool_value(values.floating)) error = L"floating must be a boolean";
         else return true;
+    } else if (key == L"decorations") {
+        std::optional<bool> decorations;
+        if (!bool_value(decorations)) {
+            error = L"decorations must be a boolean";
+        } else {
+            values.borderless = !*decorations;
+            return true;
+        }
     } else if (key == L"borderless") {
         if (!bool_value(values.borderless)) error = L"borderless must be a boolean";
         else return true;
@@ -294,7 +309,7 @@ bool assign(ConfigValues& values, const std::wstring& key, const Value& value, s
 
 std::optional<std::wstring> read_utf8(const std::wstring& path, std::wstring& error)
 {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     if (!file) {
         error = L"could not open the configuration file";
         return std::nullopt;
@@ -353,7 +368,7 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
                 return result;
             }
             const std::wstring section = trim(content.substr(1, content.size() - 2));
-            if (section == L"termole") {
+            if (section == L"termole" || section == L"window") {
                 current = &result.config.root;
             } else if (section.rfind(L"profiles.", 0) == 0) {
                 const std::wstring name = section.substr(9);
@@ -418,7 +433,9 @@ void apply_config(CliOptions& options, const Config& config,
         if (selected.font_family) values.font_family = selected.font_family;
         if (selected.font_size) values.font_size = selected.font_size;
         if (selected.theme) values.theme = selected.theme;
-        if (selected.columns) values.columns = selected.columns;
+        if (selected.window_width) values.window_width = selected.window_width;
+    if (selected.window_height) values.window_height = selected.window_height;
+    if (selected.columns) values.columns = selected.columns;
         if (selected.rows) values.rows = selected.rows;
         if (selected.window_x) values.window_x = selected.window_x;
         if (selected.window_y) values.window_y = selected.window_y;
@@ -442,6 +459,8 @@ void apply_config(CliOptions& options, const Config& config,
     if (!options.font_family && values.font_family) options.font_family = values.font_family;
     if (options.font_size_dip == 0 && values.font_size) options.font_size_dip = *values.font_size;
     if (options.theme == TERMOLE_THEME_SYSTEM && values.theme) options.theme = *values.theme;
+    if (!options.window_width && values.window_width) options.window_width = (int32_t)*values.window_width;
+    if (!options.window_height && values.window_height) options.window_height = (int32_t)*values.window_height;
     if (options.columns == 0 && values.columns) options.columns = *values.columns;
     if (options.rows == 0 && values.rows) options.rows = *values.rows;
     if (!options.window_x && values.window_x) options.window_x = values.window_x;

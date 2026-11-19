@@ -3,48 +3,53 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
   "configurePresets": [
     {
-      "name": "windows",
-      "displayName": "Windows x64 product",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/.local/build/windows",
+      "name": "windows-mingw",
+      "displayName": "Windows x64 MinGW (MSYS Makefiles, Debug)",
+      "generator": "MSYS Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/mingw-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": true
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_EXE_LINKER_FLAGS": "-static",
+        "CMAKE_SHARED_LINKER_FLAGS": "-static"
       }
     },
     {
-      "name": "windows-spikes",
-      "displayName": "Windows x64 technical validation",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/.local/build/spikes",
+      "name": "windows-mingw-release",
+      "displayName": "Windows x64 MinGW (MSYS Makefiles, Release)",
+      "generator": "MSYS Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/mingw-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": true,
-        "TERMOLE_BUILD_SPIKES": true
+        "CMAKE_EXE_LINKER_FLAGS": "-static",
+        "CMAKE_SHARED_LINKER_FLAGS": "-static"
       }
     }
   ],
   "buildPresets": [
-    { "name": "windows", "configurePreset": "windows" },
-    { "name": "windows-spikes", "configurePreset": "windows-spikes" }
+    { "name": "windows-mingw", "configurePreset": "windows-mingw" },
+    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" }
   ],
   "testPresets": [
     {
-      "name": "windows",
-      "configurePreset": "windows",
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw",
       "filter": { "exclude": { "label": "known-red" } },
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "windows-visual",
-      "configurePreset": "windows",
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release",
+      "filter": { "exclude": { "label": "known-red" } },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-mingw-visual",
+      "configurePreset": "windows-mingw",
       "filter": { "include": { "label": "visual" } },
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "windows-spikes",
-      "configurePreset": "windows-spikes",
-      "filter": { "exclude": { "label": "known-red" } },
       "output": { "outputOnFailure": true }
     }
   ]

@@ -2,7 +2,7 @@
 
 #include "common/error.h"
 #include "common/win.h"
-#include "core/terminal.h"
+#include "core/screen.h"
 
 #include <d2d1.h>
 #include <dwrite.h>

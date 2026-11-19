@@ -16,6 +16,8 @@ struct ConfigValues {
     std::optional<std::wstring> font_family;
     std::optional<uint32_t> font_size;
     std::optional<uint32_t> theme;
+    std::optional<uint32_t> window_width;
+    std::optional<uint32_t> window_height;
     std::optional<uint16_t> columns;
     std::optional<uint16_t> rows;
     std::optional<int32_t> window_x;

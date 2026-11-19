@@ -56,7 +56,7 @@ std::wstring quote(const std::wstring& argument)
 
 std::string read_file(const std::wstring& path)
 {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(std::filesystem::path(path), std::ios::binary);
     return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
 }
 

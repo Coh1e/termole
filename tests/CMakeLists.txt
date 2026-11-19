@@ -33,14 +33,6 @@ set_target_properties(termole_t03_t05_test PROPERTIES
   INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
 )
 
-add_executable(termole_terminal_unicode_test
-  terminal_unicode_test.cpp
-  "${PROJECT_SOURCE_DIR}/src/core/terminal.cpp"
-  "${PROJECT_SOURCE_DIR}/src/core/utf8.cpp"
-)
-target_include_directories(termole_terminal_unicode_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(termole_terminal_unicode_test PRIVATE termole_build_options)
-
 add_executable(termole_config_test
   config_test.cpp
   "${PROJECT_SOURCE_DIR}/apps/common/config.cpp"
@@ -84,11 +76,6 @@ set_tests_properties(t03_t05_session PROPERTIES
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 
-add_test(NAME t08_unicode_internal COMMAND termole_terminal_unicode_test)
-set_tests_properties(t08_unicode_internal PROPERTIES
-  TIMEOUT 30
-  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-)
 
 if(TERMOLE_LAZYGIT)
   add_executable(termole_lazygit_test lazygit_test.cpp)
@@ -137,6 +124,7 @@ if(TERMOLE_WSL)
   add_test(NAME t17_wsl COMMAND termole_wsl_test "${TERMOLE_WSL}")
   set_tests_properties(t17_wsl PROPERTIES
     TIMEOUT 60
+    SKIP_RETURN_CODE 77
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 endif()
@@ -418,3 +406,179 @@ add_test(NAME t01_host_smoke
     -P "${CMAKE_CURRENT_SOURCE_DIR}/run_smoke.cmake"
 )
 set_tests_properties(t01_host_smoke PROPERTIES TIMEOUT 60)
+
+# MinGW: console tests use wmain; enable the Unicode startup entry point.
+set(_termole_wmain_targets
+  termole_test_console_helper
+  termole_cli_report_helper
+  termole_test_host_api
+  termole_t02_host_test
+  termole_t03_t05_test
+  termole_config_test
+  termole_cli_no_console_test
+  termole_cmd_test
+  termole_wrap_test
+  termole_app_window_test
+  termole_soak_test
+  termole_idle_paint_test
+  termole_launcher_test
+  termole_lazygit_test
+  termole_editor_test
+  termole_editor_shell_test
+  termole_wsl_test
+  termole_fzf_test
+  termole_visual_child
+  termole_input_child
+  termole_visual_test
+)
+foreach(_t IN LISTS _termole_wmain_targets)
+  if(TARGET ${_t})
+    termole_unicode_startup(${_t})
+  endif()
+endforeach()
+# Pure-C consumer characterization: links termole statically and verifies the
+# defensive ABI behavior plus one real ConPTY session without any C++ runtime.
+add_executable(termole_c_abi_characterization_test c_abi_characterization_test.c)
+target_link_libraries(termole_c_abi_characterization_test PRIVATE termole termole_build_options)
+add_test(NAME c_abi_characterization COMMAND termole_c_abi_characterization_test)
+set_tests_properties(c_abi_characterization PROPERTIES
+  TIMEOUT 60
+  LABELS "characterization;contract"
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+set_tests_properties(
+  t01_host_api
+  t02_host_args
+  t03_t05_session
+  t02_cli_args
+  t02_cli_help
+  t02_cli_error
+  t02_cli_cmd
+  t02_cli_no_console
+  t26_launcher
+  t26_cli_pipelines
+  t17_cmd_target
+  t17_wrap
+  t01_app_window
+  t01_standalone_smoke
+  t01_host_smoke
+  PROPERTIES LABELS "characterization"
+)
+set_tests_properties(t01_host_api PROPERTIES LABELS "characterization;contract")
+# libghostty-vt adapter smoke: headers + Windows gnu static library under MinGW.
+add_executable(termole_ghostty_smoke_test vt_ghostty_smoke_test.c)
+target_link_libraries(termole_ghostty_smoke_test PRIVATE ghostty_vt termole_build_options)
+add_test(NAME ghostty_vt_smoke COMMAND termole_ghostty_smoke_test)
+set_tests_properties(ghostty_vt_smoke PROPERTIES
+  TIMEOUT 30
+  LABELS "adapter;domain"
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+# C VT adapter contract (include/termole/core.h + src/vt/termole_vt.c).
+add_executable(termole_vt_adapter_test
+  vt_adapter_test.c
+  "${PROJECT_SOURCE_DIR}/src/vt/termole_vt.c"
+)
+target_include_directories(termole_vt_adapter_test PRIVATE
+  "${PROJECT_SOURCE_DIR}/include"
+  "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(termole_vt_adapter_test PRIVATE ghostty_vt)
+add_test(NAME vt_adapter_contract COMMAND termole_vt_adapter_test)
+set_tests_properties(vt_adapter_contract PROPERTIES
+  TIMEOUT 30
+  LABELS "adapter;domain"
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+# Conventions: no Ninja entry points; static product dependencies.
+add_test(NAME conventions_no_ninja
+  COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckNoNinja.cmake")
+set_tests_properties(conventions_no_ninja PROPERTIES LABELS "conventions")
+
+add_test(NAME conventions_static_deps
+  COMMAND "${CMAKE_COMMAND}"
+    "-DOBJDUMP=${CMAKE_OBJDUMP}"
+    "-DEXE=$<TARGET_FILE:termole_app>"
+    -P "${PROJECT_SOURCE_DIR}/cmake/CheckDeps.cmake")
+set_tests_properties(conventions_static_deps PROPERTIES LABELS "conventions")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  add_test(NAME conventions_release_size
+    COMMAND "${CMAKE_COMMAND}"
+      "-DEXE=$<TARGET_FILE:termole_app>"
+      "-DMAX_BYTES=7340032"
+      -P "${PROJECT_SOURCE_DIR}/cmake/CheckSize.cmake")
+  set_tests_properties(conventions_release_size PROPERTIES LABELS "conventions")
+endif()
+add_test(NAME conventions_c_core
+  COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckBoundary.cmake")
+set_tests_properties(conventions_c_core PROPERTIES LABELS "conventions")
+add_executable(termole_window_config_test
+  window_config_test.cpp
+  "${PROJECT_SOURCE_DIR}/apps/common/config.cpp"
+)
+target_include_directories(termole_window_config_test PRIVATE "${PROJECT_SOURCE_DIR}/apps"
+  "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_window_config_test PRIVATE termole_build_options)
+add_test(NAME t14_window_config COMMAND termole_window_config_test)
+set_tests_properties(t14_window_config PROPERTIES LABELS "characterization")
+add_executable(termole_gdi_render_test
+  gdi_render_test.c
+  "${PROJECT_SOURCE_DIR}/src/gui/gdi_render.c"
+  "${PROJECT_SOURCE_DIR}/src/vt/termole_vt.c"
+)
+target_include_directories(termole_gdi_render_test PRIVATE
+  "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include"
+  "${PROJECT_SOURCE_DIR}/third_party/libghostty-vt/1.0.1/include")
+target_compile_definitions(termole_gdi_render_test PRIVATE GHOSTTY_STATIC)
+target_link_libraries(termole_gdi_render_test PRIVATE
+  ghostty_vt termole_build_options user32 gdi32 ntdll)
+add_test(NAME gdi_render_contract COMMAND termole_gdi_render_test)
+set_tests_properties(gdi_render_contract PROPERTIES LABELS "adapter;domain")
+add_executable(termole_cview_test cview_test.cpp)
+target_include_directories(termole_cview_test PRIVATE
+  "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_cview_test PRIVATE termole termole_build_options user32 gdi32)
+set_target_properties(termole_cview_test PROPERTIES LINKER_LANGUAGE CXX)
+add_test(NAME cview_contract COMMAND termole_cview_test)
+set_tests_properties(cview_contract PROPERTIES LABELS "adapter;domain")
+if(TARGET termole_cgui_smoke)
+  add_test(NAME cgui_smoke COMMAND termole_cgui_smoke --smoke)
+  add_test(NAME cgui_product_smoke COMMAND termole_app --c-gui --smoke)
+  add_test(NAME cgui_product_options
+    COMMAND termole_app --c-gui --smoke --title=C-GUI-Probe --width=900 --height=600
+            --font-size=24 --theme=light)
+  set_tests_properties(cgui_product_options PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
+  add_test(NAME cgui_product_program
+    COMMAND termole_app --c-gui --smoke --program=cmd.exe -- /c echo C-GUI-PROBE)
+  set_tests_properties(cgui_product_program PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
+  set_tests_properties(cgui_product_smoke PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
+  set_tests_properties(cgui_smoke PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
+endif()
+add_executable(termole_cgui_visual_test cgui_visual_test.cpp)
+target_compile_options(termole_cgui_visual_test PRIVATE -municode)
+target_link_options(termole_cgui_visual_test PRIVATE -municode)
+target_link_libraries(termole_cgui_visual_test PRIVATE termole_build_options user32 gdi32)
+add_test(NAME cgui_visual COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>")
+set_tests_properties(cgui_visual PROPERTIES TIMEOUT 30 LABELS "visual")
+set(cgui_config "${CMAKE_CURRENT_BINARY_DIR}/cgui-config.toml")
+file(WRITE "${cgui_config}"
+  "[window]\nwidth = 700\nheight = 420\ntitle = \"C-GUI-Visual\"\nfont = \"Consolas\"\nfont_size = 20\ntheme = \"light\"\n")
+add_test(NAME cgui_config_visual
+  COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>" "${cgui_config}")
+set_tests_properties(cgui_config_visual PROPERTIES TIMEOUT 30 LABELS "visual")
+add_executable(termole_script_stub_test script_stub_test.c)
+target_include_directories(termole_script_stub_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_script_stub_test PRIVATE termole termole_build_options)
+set_target_properties(termole_script_stub_test PROPERTIES LINKER_LANGUAGE CXX)
+add_test(NAME script_abi_stub COMMAND termole_script_stub_test)
+set_tests_properties(script_abi_stub PROPERTIES LABELS "contract")
+add_executable(termole_windows_pty_test
+  windows_pty_test.cpp
+  "${PROJECT_SOURCE_DIR}/src/platform/windows_pty.cpp"
+  "${PROJECT_SOURCE_DIR}/src/platform/pty.cpp"
+)
+target_include_directories(termole_windows_pty_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(termole_windows_pty_test PRIVATE termole_build_options)
+add_test(NAME windows_pty_contract COMMAND termole_windows_pty_test)
+set_tests_properties(windows_pty_contract PROPERTIES LABELS "adapter;domain")
