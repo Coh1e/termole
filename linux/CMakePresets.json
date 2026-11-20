@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "configurePresets": [
+    {
+      "name": "linux-static",
+      "displayName": "Linux static C core",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-linux-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXE_LINKER_FLAGS": "-static"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

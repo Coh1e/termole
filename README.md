@@ -1,6 +1,6 @@
 # Termole & Pip
 
-Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
+Windows 原生、可嵌入的终端界面。C 核心/ABI + C++23 外壳（ADR 0012：C 只做擅长的事），MinGW + MSYS Makefiles，静态链接，MIT。
 
 首版仍在进行中，尚未交付完整 MVP。当前已实现 T01–T08、T10–T19 基础、T20 资源验证、T21 性能基线、T22 外部开发包嵌入、T23 的部分切片、T26 控制台 launcher / GUI 双角色：同一 Session/View 通过 `termole.dll` 在独立窗口和最小原生宿主中运行真实 PowerShell；CLI 与宿主可按逻辑 argv、工作目录和每会话环境启动任意目标程序；支持退出码与保留窗口、事件队列、1000 行回滚、备用屏幕、CJK/组合字符/Emoji、字体/主题/DPI、选择/复制/粘贴、鼠标模式/bracketed paste、Applet 窗口、TOML/Profile、CMD/WSL/Neovim/Helix/lazygit 基础路径，以及 `termole.exe` + `termole.dll` 的单包交付。`termole.exe` 现在是控制台 launcher：普通模式启动窗口后立即返回，`-e` / `--stdio` 等待并转交程序退出状态；旧 picker 已移除。
 
@@ -37,23 +37,31 @@ Windows 原生、可嵌入的终端界面。C++23，CMake + Ninja，MIT。
 
 ## 构建与运行
 
-需要 Windows 10 22H2 / Windows 11 x64、MSVC 或 clang-cl、Windows SDK、CMake ≥ 3.28 和 Ninja。在开发者命令行中：
+需要 Windows 10 22H2 / Windows 11 x64、MSYS2 MinGW-w64 gcc/g++ 16、CMake ≥ 3.28。
+构建使用 **MSYS Makefiles**，不使用 Ninja/MSVC。在 MSYS2 bash 中从项目根目录：
 
-```powershell
-.\build.cmd
+```bash
+./build.sh --all
 ```
 
-`build.cmd` 仅在子进程内载入 MSVC 环境；不同安装位置通过 `TERMOLE_VCVARS` 指定 `vcvars64.bat`。默认构建产品、测试和一个入口（launcher / GUI 双角色），并运行 CTest。`package.cmd` 额外安装并生成单包 ZIP。
+`build.sh` 负责 configure/build/test；等价手工命令：
 
-编辑内循环用 `scripts\test-one.cmd <target> <ctest-regex>`，例如 `scripts\test-one.cmd termole_wrap_test t17_wrap`。提交前再跑全量 `build.cmd`。一次性安装空白/冲突标记钩子：
+```bash
+cmake --preset windows-mingw
+cmake --build --preset windows-mingw --parallel
+ctest --preset windows-mingw
+```
 
-```powershell
-.\scripts\install-hooks.cmd
+编辑内循环可指定目标，例如：
+
+```bash
+cmake --build --preset windows-mingw --target termole_wrap_test --parallel
+ctest --preset windows-mingw -R t17_wrap
 ```
 
 验证与视觉证据规则见 [docs/agents/testing.md](docs/agents/testing.md)。
 
-产物位于 `.local/build/windows/bin`：
+产物位于 `.local/build/mingw-debug/bin`：
 
 | 文件 | 用途 |
 | --- | --- |

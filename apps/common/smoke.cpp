@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "common/smoke.h"
 
 #include <windows.h>
@@ -75,7 +76,7 @@ void SmokeProbe::write_result(const std::string& text)
     std::error_code error;
     if (result_path_->has_parent_path())
         std::filesystem::create_directories(result_path_->parent_path(), error);
-    std::ofstream output(*result_path_, std::ios::binary | std::ios::trunc);
+    std::ofstream output(std::filesystem::path(*result_path_), std::ios::binary | std::ios::trunc);
     output.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 

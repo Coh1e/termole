@@ -179,7 +179,22 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 result.options.window_icon = std::move(value);
                 continue;
             }
-            if (token == L"--columns" || starts_with(token, L"--columns=") ||
+            if (token == L"--width" || starts_with(token, L"--width=") ||
+                token == L"--height" || starts_with(token, L"--height=")) {
+                const bool width = starts_with(token, L"--width");
+                std::wstring value;
+                if (!take_value(width ? L"--width" : L"--height", value))
+                    return error(width ? L"--width requires a number" : L"--height requires a number");
+                wchar_t* end = nullptr;
+                const unsigned long parsed = std::wcstoul(value.c_str(), &end, 10);
+                const unsigned long low = width ? 200u : 120u;
+                if (!end || *end != L'\0' || parsed < low || parsed > 10000)
+                    return error(width ? L"window width must be 200..10000"
+                                       : L"window height must be 120..10000");
+                if (width) result.options.window_width = static_cast<int32_t>(parsed);
+                else result.options.window_height = static_cast<int32_t>(parsed);
+                continue;
+            }            if (token == L"--columns" || starts_with(token, L"--columns=") ||
                 token == L"--rows" || starts_with(token, L"--rows=")) {
                 const bool columns = starts_with(token, L"--columns");
                 std::wstring value;
@@ -258,6 +273,7 @@ std::wstring help_text()
            L"  termole [options] [--] [program [arguments...]]\n"
            L"  termole [options] -e <program> [arguments...]\n"
            L"  termole [options] --stdio <program> [arguments...]\n"
+           L"  termole --c-gui [options]  C GUI prototype role (C View + GDI)\n"
            L"\n"
            L"Normal mode starts the window and returns immediately. -e and --stdio\n"
            L"wait for the program, forward its exit code and make this launcher wait\n"
@@ -274,7 +290,7 @@ std::wstring help_text()
            L"  --font <FAMILY>      Font family (default follows the system)\n"
            L"  --font-size <DIP>    Font size in DIPs, 8..96 (default 16)\n"
            L"  --theme <NAME>       system, dark or light\n"
-           L"  --columns <N>        Grid columns (applet window)\n"
+           L"  --width <N>          Window width in pixels (200..10000)\n  --height <N>         Window height in pixels (120..10000)\n  --columns <N>        Grid columns (applet window)\n"
            L"  --rows <N>           Grid rows (applet window)\n"
            L"  --x <PX> --y <PX>    Window position (applet window)\n"
            L"  --center             Center the applet window\n"

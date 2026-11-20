@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/terminal.h"
+#include "core/screen.h"
 #include "session/session.h"
 #include "view/renderer.h"
 
@@ -16,9 +16,9 @@
 
 namespace termole {
 
-// Native child window that presents one Session. The host owns the parent
+// Native child window that presents one NativeSession. The host owns the parent
 // window, layout, visibility and focus. All methods are UI-thread only.
-class View {
+class NativeView {
 public:
     struct Options {
         std::wstring font_family;
@@ -26,12 +26,13 @@ public:
         uint32_t theme = 0;
     };
 
-    static Result<std::unique_ptr<View>> create(std::shared_ptr<Session> session, HWND parent,
-                                                const Options& options = {});
+    static Result<std::unique_ptr<NativeView>> create(std::shared_ptr<NativeSession> session, HWND parent);
+    static Result<std::unique_ptr<NativeView>> create(std::shared_ptr<NativeSession> session, HWND parent,
+                                                const Options& options);
 
-    View(const View&) = delete;
-    View& operator=(const View&) = delete;
-    ~View();
+    NativeView(const NativeView&) = delete;
+    NativeView& operator=(const NativeView&) = delete;
+    ~NativeView();
 
     [[nodiscard]] HWND hwnd() const noexcept { return window_.load(std::memory_order_acquire); }
     [[nodiscard]] float cell_width() const noexcept { return renderer_ ? renderer_->cell_width() : 0.0f; }
@@ -53,7 +54,7 @@ public:
     static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 private:
-    View(std::shared_ptr<Session> session, HWND parent);
+    NativeView(std::shared_ptr<NativeSession> session, HWND parent);
 
     Result<void> initialize(const Options& options);
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -75,7 +76,7 @@ private:
     Result<void> start_watcher();
     void stop_watcher();
 
-    std::shared_ptr<Session> session_;
+    std::shared_ptr<NativeSession> session_;
     HWND parent_ = nullptr;
     std::atomic<HWND> window_{ nullptr };
     std::unique_ptr<Renderer> renderer_;

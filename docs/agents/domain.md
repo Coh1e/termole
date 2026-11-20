@@ -2,6 +2,8 @@
 
 采用单一领域结构：根目录 GLOSSARY.md 和 docs/adr/。
 
+- 术语、上下文、不变量、状态机与验收示例见 [../domain-model.md](../domain-model.md)；
+  领域模型评审通过后才开始实现改动。
 - 探索代码、撰写规格或任务前，读取 GLOSSARY.md
   及涉及当前工作的 ADR。
 - 使用术语表定义的名称。

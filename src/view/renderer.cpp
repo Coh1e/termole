@@ -1,6 +1,7 @@
 #include "view/renderer.h"
 
 #include "common/limits.h"
+#include <dwmapi.h>
 
 #include <algorithm>
 #include <string>

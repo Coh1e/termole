@@ -48,7 +48,7 @@ std::string utf8(const std::wstring& text)
 
 std::string contents(const std::filesystem::path& path)
 {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(std::filesystem::path(path), std::ios::binary);
     return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
 }
 } // namespace

@@ -1,17 +1,25 @@
 cmake_minimum_required(VERSION 3.28)
-project(Termole VERSION 0.1.0 LANGUAGES CXX)
+project(Termole VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Termole currently targets Windows x64.")
 endif()
-if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID
+   AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64"
+   AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x86_64")
   message(FATAL_ERROR "Only the x64 compiler target is currently supported.")
 endif()
+
+set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # Keep generated artifacts and dependency caches inside the checkout.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -20,12 +28,24 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 # FetchContent is the single dependency-acquisition path for all optional
 # sources. The product targets currently need no fetched dependency, so a
 # clean product configure performs no network access.
+option(TERMOLE_BUILD_C_GUI "Build the experimental C GUI role (Windows only)" ${WIN32})
+
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.local/fetchcontent" CACHE PATH
     "Project-local dependency cache")
 
 include(CTest)
 include(cmake/TermoleBuild.cmake)
+
+# Vendored libghostty-vt (x86_64-windows-gnu static, MPL-2.0).
+set(TERMOLE_GHOSTTY_VT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libghostty-vt/1.0.1")
+add_library(ghostty_vt STATIC IMPORTED)
+set_target_properties(ghostty_vt PROPERTIES
+  IMPORTED_LOCATION "${TERMOLE_GHOSTTY_VT_ROOT}/lib/ghostty-vt-static.lib"
+  INTERFACE_INCLUDE_DIRECTORIES "${TERMOLE_GHOSTTY_VT_ROOT}/include"
+  INTERFACE_COMPILE_DEFINITIONS GHOSTTY_STATIC
+  INTERFACE_LINK_LIBRARIES ntdll
+)
 
 option(TERMOLE_BUILD_APP "Build the Termole app, embedding host example and SDK" ON)
 option(TERMOLE_BUILD_SPIKES "Build the feasibility probes (fetch third-party sources)" OFF)
@@ -37,12 +57,14 @@ if(TERMOLE_BUILD_APP)
     add_subdirectory(tests)
   endif()
 
-  install(TARGETS termole termole_app
+  install(TARGETS termole termole_app termole_build_options
     EXPORT termoleTargets
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION bin
     ARCHIVE DESTINATION lib
   )
+  install(FILES "$<TARGET_FILE:ghostty_vt>" DESTINATION lib)
+  install(FILES "${TERMOLE_GHOSTTY_VT_ROOT}/LICENSE" DESTINATION licenses RENAME libghostty-vt.txt)
   install(DIRECTORY include/termole DESTINATION include)
   install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
   install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md

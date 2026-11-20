@@ -273,25 +273,116 @@ struct ProcThreadAttributeList {
 
 } // namespace
 
-Session::Session(uint16_t columns, uint16_t rows) : terminal_(columns, rows)
+namespace {
+
+void append_utf8(std::string& out, char32_t codepoint)
 {
-    terminal_.set_response_handler([this](std::string_view response) { (void)write_raw(response); });
-    terminal_.set_title_handler([this](std::wstring_view title) {
-        push_event(TERMOLE_EVENT_TITLE_CHANGED, 0, win::wide_to_utf8(title));
-    });
-    terminal_.set_bell_handler([this] { push_event(TERMOLE_EVENT_BELL); });
+    if (codepoint <= 0x7F) {
+        out.push_back(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
 }
 
-Session::~Session()
+Cell cell_from_c(const termole_cell& in)
+{
+    Cell out;
+    out.character = in.codepoint_count > 0 ? static_cast<char32_t>(in.codepoints[0]) : U' ';
+    out.width = in.width;
+    out.continuation = in.continuation != 0;
+    for (uint8_t index = 1; index < in.codepoint_count; ++index)
+        out.combining.push_back(static_cast<char32_t>(in.codepoints[index]));
+    out.foreground = in.foreground_is_default ? kColorDefault : in.foreground;
+    out.background = in.background_is_default ? kColorDefault : in.background;
+    out.attributes = in.attributes;
+    return out;
+}
+
+std::string line_text_from(const Cell* cells, size_t count)
+{
+    std::string line;
+    for (size_t index = 0; index < count; ++index) {
+        const Cell& cell = cells[index];
+        if (cell.continuation) continue;
+        append_utf8(line, cell.character == 0 ? U' ' : cell.character);
+        for (const char32_t combining : cell.combining) append_utf8(line, combining);
+    }
+    while (!line.empty() && line.back() == ' ') line.pop_back();
+    return line;
+}
+
+std::wstring utf8_to_wide_local(std::string_view text)
+{
+    if (text.empty()) return {};
+    const int length = ::MultiByteToWideChar(CP_UTF8, 0, text.data(),
+                                             static_cast<int>(text.size()), nullptr, 0);
+    if (length <= 0) return {};
+    std::wstring result(static_cast<size_t>(length), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                          result.data(), length);
+    return result;
+}
+
+} // namespace
+void NativeSession::on_write_pty(void* userdata, const void* data, size_t size)
+{
+    auto* session = static_cast<NativeSession*>(userdata);
+    if (session && data && size) {
+        (void)session->write_raw(std::string_view(static_cast<const char*>(data), size));
+    }
+}
+
+void NativeSession::on_bell(void* userdata)
+{
+    auto* session = static_cast<NativeSession*>(userdata);
+    if (session) session->push_event(TERMOLE_EVENT_BELL);
+}
+
+void NativeSession::on_title_changed(void* userdata)
+{
+    auto* session = static_cast<NativeSession*>(userdata);
+    if (!session) return;
+    char buffer[512];
+    size_t length = 0;
+    if (termole_vt_title(session->vt_, buffer, sizeof(buffer), &length) == TERMOLE_CORE_OK) {
+        session->push_event(TERMOLE_EVENT_TITLE_CHANGED, 0, std::string(buffer, length));
+    }
+}
+
+NativeSession::NativeSession(uint16_t columns, uint16_t rows)
+{
+    if (termole_vt_create(columns, rows, &vt_) != TERMOLE_CORE_OK) {
+        vt_ = nullptr;
+        return;
+    }
+    const termole_vt_callbacks callbacks{ this, &NativeSession::on_write_pty,
+                                          &NativeSession::on_bell,
+                                          &NativeSession::on_title_changed };
+    (void)termole_vt_set_callbacks(vt_, &callbacks);
+}
+
+NativeSession::~NativeSession()
 {
     try {
         (void)terminate();
     } catch (...) {
         // A destructor reached through the C ABI must never throw.
     }
+    termole_vt_free(vt_);
+    vt_ = nullptr;
 }
 
-Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
+Result<std::shared_ptr<NativeSession>> NativeSession::create(const SessionOptions& options)
 {
     if (options.columns != 0 &&
         (options.columns < kMinColumns || options.columns > kMaxColumns)) {
@@ -503,7 +594,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
         return std::unexpected(win::system_error("ResumeThread", ::GetLastError()));
     }
 
-    auto session = std::shared_ptr<Session>(new Session(columns, rows));
+    auto session = std::shared_ptr<NativeSession>(new NativeSession(columns, rows));
     session->input_write_ = std::move(input_write);
     session->output_read_ = std::move(output_read);
     session->process_ = std::move(process);
@@ -518,7 +609,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     }
     session->data_event_.reset(event);
 
-    // The reader holds a raw pointer, not a shared_ptr: the Session's
+    // The reader holds a raw pointer, not a shared_ptr: the NativeSession's
     // destructor joins this thread, and a shared_ptr cycle here would keep the
     // session (and its process tree) alive forever after termole_session_destroy.
     session->exit_thread_ = std::thread([pointer = session.get()] { pointer->exit_loop(); });
@@ -526,7 +617,7 @@ Result<std::shared_ptr<Session>> Session::create(const SessionOptions& options)
     return session;
 }
 
-void Session::read_loop()
+void NativeSession::read_loop()
 {
     std::array<char, 8192> buffer{};
     bool read_failed = false;
@@ -545,8 +636,7 @@ void Session::read_loop()
         if (read == 0) break;
         {
             std::lock_guard lock(mutex_);
-            decoder_.feed(buffer.data(), read,
-                          [this](char32_t codepoint) { terminal_.input(codepoint); });
+            if (vt_) (void)termole_vt_feed(vt_, buffer.data(), static_cast<size_t>(read));
         }
         if (data_event_) ::SetEvent(data_event_.get());
     }
@@ -564,7 +654,7 @@ void Session::read_loop()
     if (data_event_) ::SetEvent(data_event_.get());
 }
 
-void Session::exit_loop()
+void NativeSession::exit_loop()
 {
     if (process_) ::WaitForSingleObject(process_.get(), INFINITE);
 
@@ -578,7 +668,7 @@ void Session::exit_loop()
     pseudo_console_.reset();
 }
 
-void Session::push_event(termole_event_type type, int32_t exit_code, std::string text)
+void NativeSession::push_event(termole_event_type type, int32_t exit_code, std::string text)
 {
     constexpr size_t kMaxEventQueue = 256;
     std::lock_guard lock(event_mutex_);
@@ -600,7 +690,7 @@ void Session::push_event(termole_event_type type, int32_t exit_code, std::string
     if (data_event_) ::SetEvent(data_event_.get());
 }
 
-bool Session::poll_event(EventRecord& out)
+bool NativeSession::poll_event(EventRecord& out)
 {
     std::lock_guard lock(event_mutex_);
     if (events_.empty()) return false;
@@ -609,7 +699,7 @@ bool Session::poll_event(EventRecord& out)
     return true;
 }
 
-Result<int32_t> Session::exit_code() const
+Result<int32_t> NativeSession::exit_code() const
 {
     if (running()) {
         return std::unexpected(
@@ -618,19 +708,38 @@ Result<int32_t> Session::exit_code() const
     return exit_code_.load(std::memory_order_acquire);
 }
 
-std::string Session::scrollback_text() const
+std::string NativeSession::scrollback_text() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.scrollback_text();
+    if (!vt_) return {};
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return {};
+    uint32_t history = 0;
+    (void)termole_vt_history_rows(vt_, &history);
+    std::string result;
+    for (uint32_t row = 0; row < history; ++row) {
+        if (row != 0) result.push_back('\n');
+        std::vector<Cell> cells(static_cast<size_t>(frame->columns));
+        for (int column = 0; column < frame->columns; ++column) {
+            termole_cell cell;
+            if (termole_vt_cell(vt_, static_cast<int>(row), column, &cell) == TERMOLE_CORE_OK)
+                cells[static_cast<size_t>(column)] = cell_from_c(cell);
+        }
+        result += line_text_from(cells.data(), cells.size());
+    }
+    return result;
 }
 
-size_t Session::scrollback_line_count() const
+size_t NativeSession::scrollback_line_count() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.scrollback_line_count();
+    if (!vt_) return 0;
+    uint32_t history = 0;
+    if (termole_vt_history_rows(vt_, &history) != TERMOLE_CORE_OK) return 0;
+    return history;
 }
 
-Result<void> Session::terminate()
+Result<void> NativeSession::terminate()
 {
     std::lock_guard terminate_lock(terminate_mutex_);
     if (stopping_.exchange(true)) return {};
@@ -683,12 +792,12 @@ Result<void> Session::terminate()
     return {};
 }
 
-Result<void> Session::write(std::string_view bytes)
+Result<void> NativeSession::write(std::string_view bytes)
 {
     return write_raw(bytes);
 }
 
-Result<void> Session::write_raw(std::string_view bytes)
+Result<void> NativeSession::write_raw(std::string_view bytes)
 {
     if (bytes.empty()) return {};
     std::lock_guard lock(input_mutex_);
@@ -712,7 +821,7 @@ Result<void> Session::write_raw(std::string_view bytes)
     return {};
 }
 
-Result<void> Session::send_key(termole_key key)
+Result<void> NativeSession::send_key(termole_key key)
 {
     const bool application = application_cursor();
     const char* bytes = nullptr;
@@ -772,7 +881,7 @@ Result<void> Session::send_key(termole_key key)
     return write_raw(bytes);
 }
 
-Result<void> Session::resize(uint16_t columns, uint16_t rows)
+Result<void> NativeSession::resize(uint16_t columns, uint16_t rows)
 {
     if (columns < kMinColumns || columns > kMaxColumns || rows < kMinRows || rows > kMaxRows) {
         return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT,
@@ -787,7 +896,7 @@ Result<void> Session::resize(uint16_t columns, uint16_t rows)
 
     {
         std::lock_guard lock(mutex_);
-        terminal_.resize(columns, rows);
+        if (vt_) (void)termole_vt_resize(vt_, columns, rows);
     }
     if (pseudo_console_) {
         std::lock_guard lock(pseudo_mutex_);
@@ -802,70 +911,159 @@ Result<void> Session::resize(uint16_t columns, uint16_t rows)
     return {};
 }
 
-bool Session::attach_view() noexcept
+bool NativeSession::attach_view() noexcept
 {
     bool expected = false;
     return view_attached_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
 }
 
-void Session::detach_view() noexcept
+void NativeSession::detach_view() noexcept
 {
     view_attached_.store(false, std::memory_order_release);
 }
 
-Snapshot Session::snapshot(int scroll_offset) const
+Snapshot NativeSession::snapshot(int scroll_offset) const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.snapshot(scroll_offset);
+    Snapshot result;
+    if (!vt_) return result;
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return result;
+    uint32_t history = 0;
+    (void)termole_vt_history_rows(vt_, &history);
+    result.columns = frame->columns;
+    result.rows = frame->rows;
+    result.cells.assign(static_cast<size_t>(frame->columns) * frame->rows, Cell{});
+    const int offset = std::clamp(scroll_offset, 0, static_cast<int>(history));
+    const int first_row = static_cast<int>(history) - offset;
+    for (int row = 0; row < frame->rows; ++row) {
+        for (int column = 0; column < frame->columns; ++column) {
+            termole_cell cell;
+            if (termole_vt_cell(vt_, first_row + row, column, &cell) == TERMOLE_CORE_OK) {
+                result.cells[static_cast<size_t>(row) * frame->columns + column] = cell_from_c(cell);
+            }
+        }
+    }
+    result.cursor_column = frame->cursor_column;
+    result.cursor_row = frame->cursor_row;
+    result.cursor_visible = offset == 0 && frame->cursor_visible != 0;
+    return result;
 }
 
-std::string Session::selection_text(int start_row, int start_column, int end_row,
-                                    int end_column) const
+std::string NativeSession::selection_text(int start_row, int start_column, int end_row,
+                                          int end_column) const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.selection_text(start_row, start_column, end_row, end_column);
+    if (!vt_) return {};
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return {};
+    uint32_t history = 0;
+    (void)termole_vt_history_rows(vt_, &history);
+    const int total_rows = static_cast<int>(history) + frame->rows;
+    int first_row = std::clamp(start_row, 0, total_rows - 1);
+    int first_column = std::clamp(start_column, 0, frame->columns - 1);
+    int last_row = std::clamp(end_row, 0, total_rows - 1);
+    int last_column = std::clamp(end_column, 0, frame->columns - 1);
+    if (first_row > last_row || (first_row == last_row && first_column > last_column)) {
+        std::swap(first_row, last_row);
+        std::swap(first_column, last_column);
+    }
+    std::string result;
+    for (int row = first_row; row <= last_row; ++row) {
+        const int begin = row == first_row ? first_column : 0;
+        const int end = row == last_row ? last_column : frame->columns - 1;
+        for (int column = begin; column <= end; ++column) {
+            termole_cell cell;
+            if (termole_vt_cell(vt_, row, column, &cell) != TERMOLE_CORE_OK) continue;
+            if (cell.continuation) continue;
+            const Cell converted = cell_from_c(cell);
+            append_utf8(result, converted.character == 0 ? U' ' : converted.character);
+            for (const char32_t combining : converted.combining) append_utf8(result, combining);
+        }
+        if (row != last_row) result.push_back('\n');
+    }
+    return result;
 }
 
-std::pair<uint16_t, uint16_t> Session::size() const
+std::pair<uint16_t, uint16_t> NativeSession::size() const
 {
     std::lock_guard lock(mutex_);
-    return { terminal_.columns(), terminal_.rows() };
+    if (!vt_) return { 0, 0 };
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return { 0, 0 };
+    return { frame->columns, frame->rows };
 }
 
-std::string Session::screen_text() const
+std::string NativeSession::screen_text() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.text();
+    if (!vt_) return {};
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return {};
+    uint32_t history = 0;
+    (void)termole_vt_history_rows(vt_, &history);
+    std::vector<std::string> lines;
+    int last_content = -1;
+    for (int row = 0; row < frame->rows; ++row) {
+        std::vector<Cell> cells(static_cast<size_t>(frame->columns));
+        for (int column = 0; column < frame->columns; ++column) {
+            termole_cell cell;
+            if (termole_vt_cell(vt_, static_cast<int>(history) + row, column, &cell) == TERMOLE_CORE_OK)
+                cells[static_cast<size_t>(column)] = cell_from_c(cell);
+        }
+        std::string line = line_text_from(cells.data(), cells.size());
+        if (!line.empty()) last_content = row;
+        lines.push_back(std::move(line));
+    }
+    std::string result;
+    for (int row = 0; row <= last_content; ++row) {
+        result += lines[static_cast<size_t>(row)];
+        if (row != last_content) result.push_back('\n');
+    }
+    return result;
 }
 
-std::wstring Session::title() const
+std::wstring NativeSession::title() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.title();
+    if (!vt_) return {};
+    size_t needed = 0;
+    if (termole_vt_title(vt_, nullptr, 0, &needed) != TERMOLE_CORE_OUT_OF_SPACE) return {};
+    std::vector<char> buffer(needed + 1);
+    if (termole_vt_title(vt_, buffer.data(), buffer.size(), &needed) != TERMOLE_CORE_OK) return {};
+    return utf8_to_wide_local(std::string_view(buffer.data(), needed));
 }
 
-uint8_t Session::mouse_mode() const
+uint8_t NativeSession::mouse_mode() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.mouse_mode();
+    termole_modes modes;
+    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return 0;
+    return modes.mouse_tracking;
 }
 
-bool Session::sgr_mouse() const
+bool NativeSession::sgr_mouse() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.sgr_mouse();
+    termole_modes modes;
+    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
+    return modes.mouse_sgr != 0;
 }
 
-bool Session::bracketed_paste() const
+bool NativeSession::bracketed_paste() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.bracketed_paste();
+    termole_modes modes;
+    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
+    return modes.bracketed_paste != 0;
 }
 
-bool Session::application_cursor() const
+bool NativeSession::application_cursor() const
 {
     std::lock_guard lock(mutex_);
-    return terminal_.application_cursor();
+    termole_modes modes;
+    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
+    return modes.application_cursor != 0;
 }
 
 } // namespace termole

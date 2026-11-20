@@ -3,10 +3,12 @@ project(TermoleSdkConsumer LANGUAGES CXX)
 
 # This project is intentionally independent from the Termole source tree. It is
 # configured by tests/run_sdk_consumer.ps1 against an installed development
-# package, so it can only consume the public headers, import library and DLL.
+# package, so it can only consume the installed headers and libraries.
 if(NOT DEFINED TERMOLE_PACKAGE_ROOT)
   message(FATAL_ERROR "TERMOLE_PACKAGE_ROOT must point at the installed package")
 endif()
+
+file(TO_CMAKE_PATH "${TERMOLE_PACKAGE_ROOT}" TERMOLE_PACKAGE_ROOT)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,16 +28,15 @@ foreach(directory IN LISTS termole_includes)
   endif()
 endforeach()
 
-get_target_property(termole_location Termole::termole IMPORTED_LOCATION_RELEASE)
+get_target_property(termole_configs Termole::termole IMPORTED_CONFIGURATIONS)
+list(GET termole_configs 0 termole_config)
+get_target_property(termole_location Termole::termole "IMPORTED_LOCATION_${termole_config}")
 if(NOT termole_location)
-  get_target_property(termole_location Termole::termole IMPORTED_LOCATION)
+  message(FATAL_ERROR "Termole::termole does not publish an imported library location")
 endif()
-if(NOT termole_location)
-  message(FATAL_ERROR "Termole::termole does not publish an imported DLL location")
-endif()
-cmake_path(IS_PREFIX TERMOLE_PACKAGE_ROOT "${termole_location}" dll_inside_package)
-if(NOT dll_inside_package)
-  message(FATAL_ERROR "imported DLL '${termole_location}' is outside the package")
+cmake_path(IS_PREFIX TERMOLE_PACKAGE_ROOT "${termole_location}" library_inside_package)
+if(NOT library_inside_package)
+  message(FATAL_ERROR "imported library '${termole_location}' is outside the package")
 endif()
 
 add_executable(termole-sdk-consumer main.cpp capture.cpp)
@@ -48,8 +49,10 @@ target_compile_definitions(termole-sdk-consumer PRIVATE
 )
 if(MSVC)
   target_compile_options(termole-sdk-consumer PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus)
+elseif(MINGW)
+  target_link_options(termole-sdk-consumer PRIVATE -municode)
 endif()
 target_link_libraries(termole-sdk-consumer PRIVATE Termole::termole windowscodecs ole32)
 
 message(STATUS "Termole package: ${TERMOLE_PACKAGE_ROOT}")
-message(STATUS "Termole DLL: ${termole_location}")
+message(STATUS "Termole library: ${termole_location}")

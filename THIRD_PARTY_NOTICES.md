@@ -65,3 +65,19 @@ commits and license review boundaries are recorded in
 [docs/core-validation.md](docs/core-validation.md). Any future redistribution
 of their code or binaries must retain their actual licenses and notices,
 including Unicode data notices where applicable.
+
+## libghostty-vt
+
+- Version: 1.0.1
+- Artifact: `ghostty-vt-1.0.1-x86_64-windows-gnu.zip` (static library)
+- SHA-256: `8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29`
+- License: MPL-2.0; the unmodified license text is vendored at
+  `third_party/libghostty-vt/1.0.1/LICENSE`.
+- Source: <https://release.files.ghostty.org/libghostty-vt/1.0.1/>
+- Usage: linked statically into the product; no upstream files are modified.
+
+## Not bundled
+
+- QuickJS: not part of the default build. If `TERMOLE_WITH_QUICKJS=ON` is added
+  later, its license and version must be recorded here before distribution.
+- MinGW-w64 runtime: linked statically; no runtime DLL is shipped.

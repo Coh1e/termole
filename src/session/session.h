@@ -3,9 +3,9 @@
 #include "common/error.h"
 #include "common/limits.h"
 #include "common/win.h"
-#include "core/terminal.h"
-#include "core/utf8.h"
+#include "core/screen.h"
 
+#include <termole/core.h>
 #include <termole/termole.h>
 
 #include <atomic>
@@ -37,16 +37,16 @@ struct SessionOptions {
 };
 
 // Owns the ConPTY, the managed process tree and the terminal screen. It does
-// not create a top-level window and can continue consuming output with no View
+// not create a top-level window and can continue consuming output with no NativeView
 // attached.
-class Session {
+class NativeSession {
 public:
-    static Result<std::shared_ptr<Session>> create(const SessionOptions& options);
+    static Result<std::shared_ptr<NativeSession>> create(const SessionOptions& options);
 
-    Session(const Session&) = delete;
-    Session& operator=(const Session&) = delete;
+    NativeSession(const NativeSession&) = delete;
+    NativeSession& operator=(const NativeSession&) = delete;
 
-    ~Session();
+    ~NativeSession();
 
     Result<void> resize(uint16_t columns, uint16_t rows);
     Result<void> write(std::string_view bytes);
@@ -78,14 +78,17 @@ public:
     // Pops one queued event. Returns false when the queue is empty.
     bool poll_event(EventRecord& out);
 
-    // The Session owns at most one View, as required by the accepted design.
+    // The NativeSession owns at most one NativeView, as required by the accepted design.
     [[nodiscard]] bool attach_view() noexcept;
     void detach_view() noexcept;
 
 private:
-    explicit Session(uint16_t columns, uint16_t rows);
+    explicit NativeSession(uint16_t columns, uint16_t rows);
 
     void read_loop();
+    static void on_write_pty(void* userdata, const void* data, size_t size);
+    static void on_bell(void* userdata);
+    static void on_title_changed(void* userdata);
     void exit_loop();
     Result<void> write_raw(std::string_view bytes);
     void push_event(termole_event_type type, int32_t exit_code = 0, std::string text = {});
@@ -95,8 +98,7 @@ private:
     std::mutex terminate_mutex_;
     std::mutex pseudo_mutex_;
     std::mutex event_mutex_;
-    Terminal terminal_;
-    Utf8Decoder decoder_;
+    termole_vt* vt_ = nullptr;
 
     win::unique_handle input_write_;
     win::unique_handle output_read_;

@@ -55,13 +55,13 @@ std::wstring quote(const std::wstring& argument)
 
 std::string read_file(const std::filesystem::path& path)
 {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(std::filesystem::path(path), std::ios::binary);
     return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
 }
 
 bool write_file(const std::filesystem::path& path, std::string_view content)
 {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
     output.write(content.data(), static_cast<std::streamsize>(content.size()));
     return output.good();
 }
@@ -154,7 +154,7 @@ bool write_bitmap(const std::filesystem::path& path, const void* pixels, int wid
     info.biBitCount = 32;
     info.biCompression = BI_RGB;
     info.biSizeImage = image_size;
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
     output.write(reinterpret_cast<const char*>(&file), sizeof(file));
     output.write(reinterpret_cast<const char*>(&info), sizeof(info));
     output.write(static_cast<const char*>(pixels), image_size);

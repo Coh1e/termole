@@ -31,6 +31,8 @@ struct CliOptions {
     uint32_t theme = 0;
     uint16_t columns = 0;
     uint16_t rows = 0;
+    std::optional<int32_t> window_width;
+    std::optional<int32_t> window_height;
     std::optional<int32_t> window_x;
     std::optional<int32_t> window_y;
     bool center = false;

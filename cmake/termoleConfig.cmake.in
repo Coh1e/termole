@@ -1,4 +1,12 @@
 @PACKAGE_INIT@
 
+if(NOT TARGET Termole::ghostty_vt)
+  add_library(Termole::ghostty_vt STATIC IMPORTED)
+  set_target_properties(Termole::ghostty_vt PROPERTIES
+    IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/lib/ghostty-vt-static.lib"
+    INTERFACE_LINK_LIBRARIES ntdll
+  )
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/termoleTargets.cmake")
 check_required_components(Termole)

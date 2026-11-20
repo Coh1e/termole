@@ -6,22 +6,15 @@ param(
     [Parameter(Mandatory = $true)][string]$Generator,
     [Parameter(Mandatory = $true)][string]$Config,
     [Parameter(Mandatory = $true)][string]$Cxx,
-    [Parameter(Mandatory = $true)][string]$Ninja,
+    [Parameter(Mandatory = $true)][string]$MakeProgram,
+    [Parameter(Mandatory = $true)][string]$Library,
     [Parameter(Mandatory = $true)][string]$Cmake
 )
 
 $ErrorActionPreference = 'Stop'
 
-# The external consumer and the shipped example are compiled at test time. The
-# documented entry point (build.cmd) loads vcvars, so only a direct ctest run
-# from a plain shell can miss the compiler environment.
-if ([string]::IsNullOrEmpty($env:INCLUDE) -or [string]::IsNullOrEmpty($env:LIB)) {
-    Write-Host 'SKIP: MSVC environment is not loaded; run build.cmd'
-    exit 77
-}
 if (-not (Test-Path -LiteralPath $Cxx)) {
-    Write-Host "SKIP: C++ compiler '$Cxx' is not available"
-    exit 77
+    throw "C++ compiler '$Cxx' is not available"
 }
 if ([string]::IsNullOrEmpty($Root)) {
     throw 'Root must not be empty'
@@ -57,10 +50,10 @@ try {
     Invoke-Cmake -Label 'install' -Arguments @('--install', $BuildDir, '--prefix', $package)
 
     $required = @(
-        'bin\termole.dll',
         'include\termole\termole.h',
         'include\termole\termole.hpp',
-        'lib\termole.lib',
+        "lib/$Library",
+        'lib/ghostty-vt-static.lib',
         'lib\cmake\termole\termoleConfig.cmake',
         'lib\cmake\termole\termoleConfigVersion.cmake',
         'lib\cmake\termole\termoleTargets.cmake',
@@ -86,7 +79,8 @@ try {
         "-DCMAKE_PREFIX_PATH=$package",
         "-DTERMOLE_PACKAGE_ROOT=$package",
         "-DCMAKE_CXX_COMPILER=$Cxx",
-        "-DCMAKE_MAKE_PROGRAM=$Ninja",
+        "-DCMAKE_MAKE_PROGRAM=$MakeProgram",
+        "-DCMAKE_EXE_LINKER_FLAGS=-static",
         '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF',
         '-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF'
     )
@@ -105,7 +99,8 @@ try {
         "-DCMAKE_BUILD_TYPE=$Config",
         "-DCMAKE_PREFIX_PATH=$package",
         "-DCMAKE_CXX_COMPILER=$Cxx",
-        "-DCMAKE_MAKE_PROGRAM=$Ninja",
+        "-DCMAKE_MAKE_PROGRAM=$MakeProgram",
+        "-DCMAKE_EXE_LINKER_FLAGS=-static",
         '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF'
     )
     Invoke-Cmake -Label 'example-build' -Arguments @('--build', $exampleBuild)
@@ -114,13 +109,9 @@ try {
         throw 'the shipped sdk-host example was not produced'
     }
 
-    Write-Host 'Running the external consumer against the installed DLL'
-    $env:PATH = (Join-Path $package 'bin') + ';' + $env:PATH
+    Write-Host 'Running the external consumer linked against the installed SDK'
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    # The CTest working directory is the build's bin directory, which also
-    # contains a termole.dll. Run from the consumer directory so the loader
-    # cannot pick that DLL through the current-directory search entry.
     Push-Location $consumerBuild
     try {
         $consumerOutput = & $consumer --helper $Helper --artifacts $artifacts `
