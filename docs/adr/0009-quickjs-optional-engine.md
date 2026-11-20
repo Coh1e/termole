@@ -33,7 +33,7 @@
 - 脚本生命周期（每 Session 一个 context，还是全局 host + per-session realm）。
 - 是否提供 TypeScript 声明生成。
 
-## 当前落地（ABI stub）
+## 当前落地
 
 `include/termole/script.h` 已提供稳定 C ABI：
 
@@ -43,4 +43,9 @@
 
 默认构建（QuickJS OFF）返回 `TERMOLE_STATUS_UNSUPPORTED`，不分配对象；
 `tests/script_stub_test.c` 覆盖 null、ABI mismatch 与 unsupported 路径。
-真正 QuickJS 引擎仍未接入。
+
+`TERMOLE_WITH_QUICKJS=ON` 时，Windows 静态 SDK 使用固定的 QuickJS 2026-06-04。
+每个上下文有独立 runtime，限制为 16 MiB 堆、256 KiB 栈，JavaScript 执行约一秒后
+请求中断。启用版测试覆盖异常诊断、循环中断、后续求值和 Release 体积。
+当前入口供显式调用 SDK 的宿主使用。配置加载与 Session/View 能力绑定仍按本 ADR
+的未决项推进。

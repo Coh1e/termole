@@ -314,24 +314,18 @@ termole_core_status termole_vt_cell(termole_vt* vt, int32_t row, int32_t column,
 
     GhosttyCell raw = 0;
     GhosttyCellWide wide = GHOSTTY_CELL_WIDE_NARROW;
-    bool has_text = false;
     if (ghostty_grid_ref_cell(&ref, &raw) != GHOSTTY_SUCCESS)
         return TERMOLE_CORE_INVALID_STATE;
     ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide);
-    ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_TEXT, &has_text);
 
     uint32_t codepoints[TERMOLE_CELL_MAX_CODEPOINTS];
     size_t count = 0;
-    if (ghostty_grid_ref_graphemes(&ref, codepoints, TERMOLE_CELL_MAX_CODEPOINTS, &count) !=
-            GHOSTTY_SUCCESS &&
-        count == 0) {
-        has_text = false;
-    }
+    (void)ghostty_grid_ref_graphemes(&ref, codepoints, TERMOLE_CELL_MAX_CODEPOINTS, &count);
     if (count > TERMOLE_CELL_MAX_CODEPOINTS) count = TERMOLE_CELL_MAX_CODEPOINTS;
     memcpy(out_cell->codepoints, codepoints, count * sizeof(uint32_t));
     out_cell->codepoint_count = (uint8_t)count;
     out_cell->width = wide == GHOSTTY_CELL_WIDE_WIDE ? 2u : 1u;
-    out_cell->continuation = (!has_text && count == 0 && column > 0) ? 1u : 0u;
+    out_cell->continuation = wide == GHOSTTY_CELL_WIDE_SPACER_TAIL ? 1u : 0u;
 
     GhosttyStyle style;
     memset(&style, 0, sizeof(style));

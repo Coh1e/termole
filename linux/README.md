@@ -1,37 +1,7 @@
-# Linux C core entry
+# Linux static core
 
-This directory is intentionally separate from the Windows product build.
-
-It builds only:
-
-- `src/vt/termole_vt.c` (C ABI adapter)
-- `tests/vt_adapter_test.c` (contract test)\n- `tests/posix_session_test.cpp` + `src/platform/posix_pty.cpp`（POSIX PTY + core 会话）\n- `tests/posix_interactive_test.cpp` + `src/platform/posix_session.cpp`（持续交互、resize、退出码）
-
-against a Linux static `libghostty-vt.a`.
-
-## Prerequisites
-
-- Linux x86_64, CMake >= 3.20, C compiler
-- `third_party/libghostty-vt/1.0.1-linux/include/ghostty/...`
-- `third_party/libghostty-vt/1.0.1-linux/lib/libghostty-vt.a`
-
-Build the static library from the pinned source as described in
-[docs/cross-platform-build.md](../docs/cross-platform-build.md).
-
-## Build
-
-```bash
-cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
-cmake --build build-linux --parallel
-ctest --test-dir build-linux --output-on-failure
-```
-
-The test executable links the static `libghostty-vt.a`; add `-static` via
-`CMAKE_EXE_LINKER_FLAGS` once the Linux static toolchain decision is finalized.
-
-## Presets (WSL)
-
-From `linux/`:
+From the repository root on Linux x86_64 or Ubuntu WSL, with CMake 3.28 or
+newer, GNU Make and a C/C++ compiler:
 
 ```bash
 cmake --preset linux-static
@@ -39,4 +9,31 @@ cmake --build --preset linux-static --parallel
 ctest --preset linux-static
 ```
 
-Equivalent to the explicit static CMake commands above.
+This builds the C VT adapter and runs the VT, POSIX session, and interactive
+PTY tests. It uses the pinned Linux static libghostty-vt archive. See
+[the cross-platform build notes](../docs/cross-platform-build.md) for its
+provenance and build instructions.
+
+Existing builds configured from the `linux/` directory can still use the
+standalone preset there.
+
+## SDL3 window
+
+Install the X11 headers and a monospace TrueType font. On Ubuntu:
+
+```bash
+sudo apt-get install pkgconf fonts-dejavu-core libx11-dev libxext-dev \
+  libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+  libxtst-dev libxinerama-dev libxkbcommon-dev
+cmake --preset linux-gui
+cmake --build --preset linux-gui --parallel
+ctest --preset linux-gui --output-on-failure
+.local/build/linux-gui/termole
+```
+
+Use `TERMOLE_FONT=/path/to/font.ttf` to override the default font. From the
+repository root on macOS, use the `macos-static` preset in the same three CMake
+commands. It builds the same SDL3 window and uses the official Ghostty macOS
+static library slice.
+
+See [local sessions](../docs/local-sessions.md) for the server/client roles.

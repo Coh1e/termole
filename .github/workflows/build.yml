@@ -1,0 +1,79 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkgconf fonts-dejavu-core \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxtst-dev libxinerama-dev libxkbcommon-dev xvfb xauth
+      - run: cmake --preset linux-gui
+      - run: cmake --build --preset linux-gui --parallel
+      - run: ctest --preset linux-gui --output-on-failure
+      - run: |
+          SDL_VIDEO_DRIVER=x11 xvfb-run -a .local/build/linux-gui/termole \
+            --test-render .local/build/linux-gui/termole-x11.bmp
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset macos-static
+      - run: cmake --build --preset macos-static --parallel
+      - run: ctest --preset macos-static --output-on-failure
+      - run: |
+          SDL_VIDEO_DRIVER=cocoa .local/build/macos-static/termole \
+            --test-render .local/build/macos-static/termole-cocoa.bmp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-terminal-pixels
+          include-hidden-files: true
+          path: .local/build/macos-static/termole-*.bmp
+
+  windows:
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: windows-mingw
+            quickjs: 'OFF'
+          - preset: windows-mingw-release
+            quickjs: 'ON'
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: make mingw-w64-x86_64-gcc
+      - name: Configure
+        run: |
+          export MINGW_PREFIX="$(cygpath -m /mingw64)"
+          cmake --preset "${{ matrix.preset }}" -DTERMOLE_WITH_QUICKJS=${{ matrix.quickjs }}
+      - run: cmake --build --preset "${{ matrix.preset }}" --parallel
+      - run: ctest --preset "${{ matrix.preset }}" --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-${{ matrix.preset }}-test-artifacts
+          include-hidden-files: true
+          path: |
+            .local/build/mingw-*/Testing/Temporary/LastTest.log
+            .local/build/mingw-*/tests/visual/**/*.png
+            .local/build/mingw-*/tests/sdk-consumer/artifacts/

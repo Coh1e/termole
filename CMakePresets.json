@@ -3,6 +3,47 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
   "configurePresets": [
     {
+      "name": "linux-static",
+      "displayName": "Linux static C core",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/linux-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXE_LINKER_FLAGS": "-static"
+      }
+    },
+    {
+      "name": "linux-musl",
+      "inherits": "linux-static",
+      "displayName": "Linux static C core (musl)",
+      "binaryDir": "${sourceDir}/.local/build/linux-musl",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-linux-musl.cmake",
+      "cacheVariables": {
+        "TERMOLE_GHOSTTY_VT_ROOT": "$env{TERMOLE_GHOSTTY_VT_MUSL_ROOT}"
+      }
+    },
+    {
+      "name": "linux-gui",
+      "inherits": "linux-static",
+      "displayName": "Linux SDL3 terminal",
+      "binaryDir": "${sourceDir}/.local/build/linux-gui",
+      "cacheVariables": {
+        "TERMOLE_BUILD_SDL_GUI": "ON"
+      }
+    },
+    {
+      "name": "macos-static",
+      "displayName": "macOS static C core",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/macos-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TERMOLE_BUILD_SDL_GUI": "ON"
+      }
+    },
+    {
       "name": "windows-mingw",
       "displayName": "Windows x64 MinGW (MSYS Makefiles, Debug)",
       "generator": "MSYS Makefiles",
@@ -30,10 +71,34 @@
     }
   ],
   "buildPresets": [
+    { "name": "linux-static", "configurePreset": "linux-static" },
+    { "name": "linux-musl", "configurePreset": "linux-musl" },
+    { "name": "linux-gui", "configurePreset": "linux-gui" },
+    { "name": "macos-static", "configurePreset": "macos-static" },
     { "name": "windows-mingw", "configurePreset": "windows-mingw" },
     { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" }
   ],
   "testPresets": [
+    {
+      "name": "linux-musl",
+      "configurePreset": "linux-musl",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-gui",
+      "configurePreset": "linux-gui",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos-static",
+      "configurePreset": "macos-static",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static",
+      "output": { "outputOnFailure": true }
+    },
     {
       "name": "windows-mingw",
       "configurePreset": "windows-mingw",

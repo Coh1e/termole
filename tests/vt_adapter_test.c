@@ -93,6 +93,9 @@ int main(void)
                       TERMOLE_CORE_OK,
                   "cell text active row");
             check(strcmp(via_text, "H") == 0, "active cell 0,0 is H");
+            check(termole_vt_cell(vt, 0, 3, &via_cell) == TERMOLE_CORE_OK &&
+                      !via_cell.continuation && via_cell.codepoint_count == 0,
+                  "blank columns are not wide-cell continuations");
             check((frame->cells[2].attributes & TERMOLE_CELL_BOLD) != 0, "X is bold");
             check(frame->cells[2].foreground_is_default == 0, "X has an explicit foreground");
             check(frame->cells[0].foreground_is_default == 1, "H uses the default foreground");
@@ -113,6 +116,9 @@ int main(void)
               "wide cell codepoint");
         check(frame->cells[0].width == 2, "wide cell width is 2");
         check(frame->cells[1].continuation == 1, "second cell is a continuation");
+        termole_cell tail;
+        check(termole_vt_cell(vt, 0, 1, &tail) == TERMOLE_CORE_OK && tail.continuation,
+              "cell query identifies the wide-cell tail");
     }
 
 

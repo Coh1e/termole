@@ -287,6 +287,9 @@ LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPA
     case WM_PAINT:
         on_paint();
         return 0;
+    case WM_PRINTCLIENT:
+        paint_client(window, reinterpret_cast<HDC>(wparam));
+        return 0;
     case WM_ERASEBKGND:
         return 1;
     case WM_SIZE:
@@ -376,7 +379,6 @@ void NativeView::on_size()
     const int width = std::max<LONG>(0, client.right - client.left);
     const int height = std::max<LONG>(0, client.bottom - client.top);
 
-    renderer_->resize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     if (width == 0 || height == 0 || renderer_->cell_width() <= 0.0f ||
         renderer_->cell_height() <= 0.0f) {
         return;
@@ -403,9 +405,18 @@ void NativeView::on_paint()
     PAINTSTRUCT paint{};
     HDC device = ::BeginPaint(window, &paint);
     paint_count_.fetch_add(1, std::memory_order_relaxed);
+    paint_client(window, device);
+    ::EndPaint(window, &paint);
+}
+
+void NativeView::paint_client(HWND window, HDC device)
+{
+    RECT client{};
+    ::GetClientRect(window, &client);
     bool painted = false;
     if (renderer_) {
-        Snapshot snapshot = session_->snapshot(scroll_offset_);        if (has_selection_) {
+        Snapshot snapshot = session_->snapshot(scroll_offset_);
+        if (has_selection_) {
             const int history = static_cast<int>(session_->scrollback_line_count());
             const int first = history - scroll_offset_;
             snapshot.has_selection = true;
@@ -414,13 +425,11 @@ void NativeView::on_paint()
             snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
             snapshot.selection_end_column = static_cast<int16_t>(selection_focus_column_);
         }
-        painted = renderer_->paint(snapshot, focused_);    }
+        painted = renderer_->paint(device, client, snapshot, focused_);
+    }
     if (!painted) {
-        RECT client{};
-        ::GetClientRect(window, &client);
         ::FillRect(device, &client, static_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH)));
     }
-    ::EndPaint(window, &paint);
 }
 
 void NativeView::scroll(int lines)

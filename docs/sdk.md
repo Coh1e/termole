@@ -1,21 +1,23 @@
 # 嵌入式 SDK（v0.1 / ABI 3）
 
 状态：v0.1 的 ABI 3 已冻结（T22，[#23](https://github.com/Coh1e/termole/issues/23)）。
-验证证据见 [t22-validation.md](t22-validation.md)。宿主只消费公开头文件、导入库和 DLL，不需要产品内部源码。
+历史 ABI 验证见 [t22-validation.md](t22-validation.md)。当前 SDK 通过
+`t22_sdk_consumer` 从安装包构建和运行独立宿主。宿主使用公开头文件和静态库。
 
 ## 文件
 
 ```text
-bin/termole.dll
 bin/termole.exe
-lib/termole.lib
+lib/termole.a
+lib/ghostty-vt-static.lib
+licenses/libghostty-vt.txt
 include/termole/termole.h
 include/termole/termole.hpp
 lib/cmake/termole/termoleConfig.cmake
 share/termole/examples/sdk-host/
 ```
 
-`bin/termole.exe` 是独立入口，不是嵌入宿主的运行依赖；嵌入宿主只需要 DLL、导入库和头文件。发布 ZIP 只有一个 DLL 和一个 EXE。
+`bin/termole.exe` 是独立入口。嵌入宿主通过 `Termole::termole` 链接安装包的静态库。
 
 ## 构建外部宿主
 
@@ -28,8 +30,7 @@ add_executable(my-host main.cpp)
 target_link_libraries(my-host PRIVATE Termole::termole)
 ```
 
-把解压后的包的 `lib/cmake/termole` 加入 `CMAKE_PREFIX_PATH`，或直接把包根目录加入
-`CMAKE_PREFIX_PATH`。DLL 必须与宿主可执行文件一起分发，或位于加载路径。
+把解压后的包根目录加入 `CMAKE_PREFIX_PATH`，使用与 SDK 兼容的 MinGW-w64 编译器。
 `examples/sdk-host` 是可独立配置、编译的最小示例；`tests/sdk-consumer` 是覆盖全部
 宿主能力的验收宿主，两者都只使用公开头文件。
 
@@ -37,12 +38,12 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 
 | 项 | v0.1 规则 |
 | --- | --- |
-| 版本 | `TERMOLE_ABI_VERSION` 为 `3`；`termole_abi_version()` 返回 DLL 编译版本。 |
+| 版本 | `TERMOLE_ABI_VERSION` 为 `3`；`termole_abi_version()` 返回库的 ABI 版本。 |
 | 调用约定 | 所有导出函数使用 `TERMOLE_CALL`（`__cdecl`）；仅支持 Windows x64。 |
 | 结构体布局 | `termole_session_options`、`termole_view_options`、`termole_appearance` 首字段为 `size`，第二个字段为 `abi_version`；调用方必须用 `TERMOLE_*_INIT` 初始化。 |
-| 版本拒绝 | `size` 小于 DLL 编译时的结构体大小，或 `abi_version` 不等于 `TERMOLE_ABI_VERSION`，返回 `TERMOLE_STATUS_ABI_MISMATCH`，不解释其余字段。更大的结构体被接受，库只读取自己已知的前缀。 |
+| 版本拒绝 | `size` 小于库编译时的结构体大小，或 `abi_version` 不等于 `TERMOLE_ABI_VERSION`，返回 `TERMOLE_STATUS_ABI_MISMATCH`，不解释其余字段。更大的结构体被接受，库只读取自己已知的前缀。 |
 | 事件结构 | `termole_event.size` 必须至少为 `sizeof(termole_event)`；否则返回 `TERMOLE_STATUS_ABI_MISMATCH`。事件没有独立的 `abi_version`，类型由 `TERMOLE_EVENT_*` 冻结。 |
-| 异常 | C++ 异常不跨 DLL 边界。所有可失败入口返回 `termole_status`；内部异常转换为状态和诊断，不向调用方传播。 |
+| 异常 | 所有可失败入口返回 `termole_status`。库将内部 C++ 异常转换为状态和诊断。 |
 | 诊断 | `termole_last_error()` 返回当前线程的 UTF-8 诊断，非 NULL，有效期到同一线程下一次 Termole 调用。 |
 
 ## 所有权

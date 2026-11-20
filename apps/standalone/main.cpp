@@ -4,6 +4,7 @@
 #include "common/diagnostics.h"
 #include "common/exit_codes.h"
 #include "standalone/gui.h"
+#include "standalone/ipc_role.h"
 #ifdef TERMOLE_C_GUI_ENABLED
 #include "cgui/main.h"
 #endif
@@ -12,6 +13,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -164,42 +166,53 @@ int run_launcher(int argc, wchar_t** argv)
 
 int wmain(int argc, wchar_t** argv)
 {
+    if (argc > 1 && (std::wstring_view(argv[1]) == L"--server" ||
+                     std::wstring_view(argv[1]) == L"--client")) {
+        return termole::app::run_ipc_role(argc, argv);
+    }
 #ifdef TERMOLE_C_GUI_ENABLED
     if (argc > 1 && std::wstring_view(argv[1]) == L"--c-gui") {
-        std::wstring config_path = termole::app::default_config_path();
-        bool use_config = true;
-        for (int index = 2; index < argc; ++index) {
-            const std::wstring_view argument = argv[index];
-            if (argument == L"--no-config") {
-                use_config = false;
-            } else if (argument.rfind(L"--config=", 0) == 0) {
-                config_path = std::wstring(argument.substr(9));
-            } else if (argument == L"--config" && index + 1 < argc) {
-                config_path = argv[++index];
+        auto parsed = termole::app::parse_cli(argc - 1, argv + 1, true);
+        if (const auto exit_code = termole::app::handle_cli_action(parsed)) return *exit_code;
+        auto& options = parsed.options;
+        if (!options.no_config) {
+            const auto path = options.config_path.value_or(termole::app::default_config_path());
+            const bool exists = !path.empty() &&
+                ::GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+            if (!path.empty() && (exists || options.config_path)) {
+                const auto loaded = termole::app::load_config(path, options.profile);
+                if (!loaded.ok) {
+                    report_error(L"configuration error: " + loaded.error + L"\nUsing defaults.");
+                } else {
+                    termole::app::apply_config(options, loaded.config, options.profile);
+                }
             }
         }
-        if (use_config && !config_path.empty()) {
-            const auto loaded = termole::app::load_config(config_path, std::nullopt);
-            if (loaded.ok) {
-                termole::app::CliOptions options;
-                termole::app::apply_config(options, loaded.config, std::nullopt);
-                const auto set_env = [](const wchar_t* name, const std::wstring& value) {
-                    ::SetEnvironmentVariableW(name, value.empty() ? nullptr : value.c_str());
-                };
-                if (options.window_title) set_env(L"TERMOLE_CGUI_TITLE", *options.window_title);
-                if (options.window_width)
-                    set_env(L"TERMOLE_CGUI_WIDTH", std::to_wstring(*options.window_width));
-                if (options.window_height)
-                    set_env(L"TERMOLE_CGUI_HEIGHT", std::to_wstring(*options.window_height));
-                if (options.font_family) set_env(L"TERMOLE_CGUI_FONT", *options.font_family);
-                if (options.font_size_dip)
-                    set_env(L"TERMOLE_CGUI_FONT_SIZE", std::to_wstring(options.font_size_dip));
-                if (options.theme)
-                    set_env(L"TERMOLE_CGUI_THEME",
-                            options.theme == TERMOLE_THEME_LIGHT ? L"light" : L"dark");
-            }
-        }
-        return termole_cgui_run(::GetModuleHandleW(nullptr), ::GetCommandLineW(), SW_SHOW);
+
+        std::vector<const wchar_t*> arguments;
+        for (const auto& argument : options.arguments) arguments.push_back(argument.c_str());
+        std::vector<const wchar_t*> environment;
+        for (const auto& entry : options.environment) environment.push_back(entry.c_str());
+
+        termole_cgui_options c_gui{};
+        c_gui.session = TERMOLE_SESSION_OPTIONS_INIT;
+        c_gui.session.program = options.program ? options.program->c_str() : nullptr;
+        c_gui.session.arguments = arguments.data();
+        c_gui.session.argument_count = static_cast<uint32_t>(arguments.size());
+        c_gui.session.working_directory =
+            options.working_directory ? options.working_directory->c_str() : nullptr;
+        c_gui.session.environment = environment.data();
+        c_gui.session.environment_count = static_cast<uint32_t>(environment.size());
+        c_gui.session.columns = options.columns;
+        c_gui.session.rows = options.rows;
+        c_gui.width = options.window_width.value_or(0);
+        c_gui.height = options.window_height.value_or(0);
+        c_gui.title = options.window_title ? options.window_title->c_str() : nullptr;
+        c_gui.font = options.font_family ? options.font_family->c_str() : nullptr;
+        c_gui.font_size = options.font_size_dip;
+        c_gui.theme = options.theme;
+        c_gui.smoke = parsed.smoke;
+        return termole_cgui_run(::GetModuleHandleW(nullptr), &c_gui, SW_SHOW);
     }
 #endif
     if (argc > 1 && std::wstring_view(argv[1]) == L"--gui") {

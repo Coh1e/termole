@@ -230,39 +230,46 @@ if ($outputDirectory -and -not (Test-Path -LiteralPath $outputDirectory)) {
 }
 
 $bitmap = [System.Drawing.Bitmap]::new($Width, $Height, [System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$device = $graphics.GetHdc()
-try {
-    $captured = [TermoleWindowCapture]::PrintWindow(
-        $handle, $device, [TermoleWindowCapture]::PW_RENDERFULLCONTENT)
-}
-finally {
-    $graphics.ReleaseHdc($device)
-    $graphics.Dispose()
-}
-
-if (-not $captured) {
-    $bitmap.Dispose()
-    throw "PrintWindow failed for $Hwnd"
-}
-
 $rectangle = [System.Drawing.Rectangle]::new(0, 0, $Width, $Height)
-$bits = $bitmap.LockBits(
-    $rectangle,
-    [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
-    [System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
 try {
-    $stride = [Math]::Abs($bits.Stride)
-    $pixels = [byte[]]::new($stride * $Height)
-    [System.Runtime.InteropServices.Marshal]::Copy($bits.Scan0, $pixels, 0, $pixels.Length)
+    for ($attempt = 0; $attempt -lt 3; ++$attempt) {
+        # DWM can report success with an empty surface between repaints. Retry
+        # that exact result, then ask the HWND to paint into the capture DC.
+        # A persistently blank HWND still produces zero ink for the caller.
+        $flags = if ($attempt -eq 2) { 0 } else { [TermoleWindowCapture]::PW_RENDERFULLCONTENT }
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $device = $graphics.GetHdc()
+        try {
+            $captured = [TermoleWindowCapture]::PrintWindow($handle, $device, $flags)
+        }
+        finally {
+            $graphics.ReleaseHdc($device)
+            $graphics.Dispose()
+        }
+        if (-not $captured) { continue }
+
+        $bits = $bitmap.LockBits(
+            $rectangle,
+            [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+            [System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
+        try {
+            $stride = [Math]::Abs($bits.Stride)
+            $pixels = [byte[]]::new($stride * $Height)
+            [System.Runtime.InteropServices.Marshal]::Copy($bits.Scan0, $pixels, 0, $pixels.Length)
+        }
+        finally {
+            $bitmap.UnlockBits($bits)
+        }
+        $analysis = [TermoleWindowCapture]::Analyze($pixels, $Width, $Height, $stride, $BandTop, $BandBottom)
+        if ($analysis.Colors -gt 1 -or $analysis.Background -ne 0) { break }
+        Start-Sleep -Milliseconds 25
+    }
+    if (-not $captured) { throw "PrintWindow failed for $Hwnd" }
+    $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
 }
 finally {
-    $bitmap.UnlockBits($bits)
+    $bitmap.Dispose()
 }
-
-$analysis = [TermoleWindowCapture]::Analyze($pixels, $Width, $Height, $stride, $BandTop, $BandBottom)
-$bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
-$bitmap.Dispose()
 
 $total = [int64]$Width * [int64]$Height
 $inkRatio = if ($total -gt 0) { [Math]::Round($analysis.Ink / $total, 6) } else { 0 }

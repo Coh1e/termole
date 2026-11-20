@@ -479,6 +479,9 @@ set_tests_properties(t01_host_smoke PROPERTIES TIMEOUT 60)
 set(_termole_wmain_targets
   termole_test_console_helper
   termole_cli_report_helper
+  termole_pipe_helper
+  termole_pipe_runner_test
+  termole_pipe_e2e_test
   termole_test_host_api
   termole_t02_host_test
   termole_t03_t05_test
@@ -622,31 +625,68 @@ if(TARGET termole_cgui_smoke)
   set_tests_properties(cgui_product_program PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
   set_tests_properties(cgui_product_smoke PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
   set_tests_properties(cgui_smoke PROPERTIES TIMEOUT 20 LABELS "adapter;domain")
+  add_executable(termole_cgui_visual_test cgui_visual_test.cpp)
+  termole_unicode_startup(termole_cgui_visual_test)
+  target_link_libraries(termole_cgui_visual_test PRIVATE termole_build_options user32 gdi32)
+  add_test(NAME cgui_visual COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>")
+  set_tests_properties(cgui_visual PROPERTIES TIMEOUT 30 LABELS "visual")
+  set(cgui_config "${CMAKE_CURRENT_BINARY_DIR}/cgui-config.toml")
+  file(WRITE "${cgui_config}"
+    "[window]\nwidth = 700\nheight = 420\ntitle = \"C-GUI-Visual\"\nfont = \"Consolas\"\nfont_size = 20\ntheme = \"light\"\n")
+  add_test(NAME cgui_config_visual
+    COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>" "${cgui_config}")
+  set_tests_properties(cgui_config_visual PROPERTIES TIMEOUT 30 LABELS "visual")
 endif()
-add_executable(termole_cgui_visual_test cgui_visual_test.cpp)
-target_compile_options(termole_cgui_visual_test PRIVATE -municode)
-target_link_options(termole_cgui_visual_test PRIVATE -municode)
-target_link_libraries(termole_cgui_visual_test PRIVATE termole_build_options user32 gdi32)
-add_test(NAME cgui_visual COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>")
-set_tests_properties(cgui_visual PROPERTIES TIMEOUT 30 LABELS "visual")
-set(cgui_config "${CMAKE_CURRENT_BINARY_DIR}/cgui-config.toml")
-file(WRITE "${cgui_config}"
-  "[window]\nwidth = 700\nheight = 420\ntitle = \"C-GUI-Visual\"\nfont = \"Consolas\"\nfont_size = 20\ntheme = \"light\"\n")
-add_test(NAME cgui_config_visual
-  COMMAND termole_cgui_visual_test "$<TARGET_FILE:termole_app>" "${cgui_config}")
-set_tests_properties(cgui_config_visual PROPERTIES TIMEOUT 30 LABELS "visual")
 add_executable(termole_script_stub_test script_stub_test.c)
 target_include_directories(termole_script_stub_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(termole_script_stub_test PRIVATE termole termole_build_options)
 set_target_properties(termole_script_stub_test PROPERTIES LINKER_LANGUAGE CXX)
 add_test(NAME script_abi_stub COMMAND termole_script_stub_test)
+if(TERMOLE_WITH_QUICKJS)
+  target_compile_definitions(termole_script_stub_test PRIVATE TERMOLE_WITH_QUICKJS)
+  set_tests_properties(script_abi_stub PROPERTIES TIMEOUT 10)
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_test(NAME conventions_quickjs_size
+      COMMAND "${CMAKE_COMMAND}"
+        "-DEXE=$<TARGET_FILE:termole_script_stub_test>"
+        "-DMAX_BYTES=8388608"
+        -P "${PROJECT_SOURCE_DIR}/cmake/CheckSize.cmake")
+    set_tests_properties(conventions_quickjs_size PROPERTIES LABELS "conventions")
+  endif()
+endif()
 set_tests_properties(script_abi_stub PROPERTIES LABELS "contract")
 add_executable(termole_windows_pty_test
   windows_pty_test.cpp
-  "${PROJECT_SOURCE_DIR}/src/platform/windows_pty.cpp"
-  "${PROJECT_SOURCE_DIR}/src/platform/pty.cpp"
 )
 target_include_directories(termole_windows_pty_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
-target_link_libraries(termole_windows_pty_test PRIVATE termole_build_options)
+target_link_libraries(termole_windows_pty_test PRIVATE termole termole_build_options)
 add_test(NAME windows_pty_contract COMMAND termole_windows_pty_test)
 set_tests_properties(windows_pty_contract PROPERTIES LABELS "adapter;domain")
+
+add_executable(termole_pty_contract_test pty_contract_test.cpp)
+target_include_directories(termole_pty_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(termole_pty_contract_test PRIVATE termole termole_build_options)
+add_test(NAME pty_contract_windows COMMAND termole_pty_contract_test)
+set_tests_properties(pty_contract_windows PROPERTIES LABELS "adapter;domain" TIMEOUT 15)
+
+add_executable(termole_session_contract_test session_contract_test.cpp)
+target_include_directories(termole_session_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(termole_session_contract_test PRIVATE termole termole_build_options)
+add_test(NAME session_contract_windows COMMAND termole_session_contract_test)
+set_tests_properties(session_contract_windows PROPERTIES LABELS "adapter;domain" TIMEOUT 15)
+
+add_executable(termole_session_ipc_test session_ipc_test.cpp)
+target_include_directories(termole_session_ipc_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(termole_session_ipc_test PRIVATE termole termole_build_options)
+add_test(NAME session_ipc_windows COMMAND termole_session_ipc_test)
+set_tests_properties(session_ipc_windows PROPERTIES LABELS "adapter;contract" TIMEOUT 20)
+
+add_executable(termole_ipc_visual_test windows_ipc_visual_test.cpp)
+target_include_directories(termole_ipc_visual_test PRIVATE "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_ipc_visual_test PRIVATE termole_build_options user32 gdi32)
+termole_unicode_startup(termole_ipc_visual_test)
+add_dependencies(termole_ipc_visual_test termole_app termole_visual_child)
+add_test(NAME visual_session_ipc_windows COMMAND termole_ipc_visual_test
+  "$<TARGET_FILE:termole_app>" "$<TARGET_FILE:termole_visual_child>")
+set_tests_properties(visual_session_ipc_windows PROPERTIES LABELS "visual" TIMEOUT 25)

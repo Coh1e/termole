@@ -59,9 +59,10 @@ struct CliParseResult {
     CliAction action = CliAction::Run;
     CliOptions options;
     std::wstring message;
+    bool smoke = false;
 };
 
-CliParseResult parse_cli(int argc, wchar_t** argv);
+CliParseResult parse_cli(int argc, wchar_t** argv, bool c_gui = false);
 std::wstring help_text();
 std::wstring version_text();
 

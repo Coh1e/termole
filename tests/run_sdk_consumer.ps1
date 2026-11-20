@@ -114,8 +114,7 @@ try {
     $ErrorActionPreference = 'Continue'
     Push-Location $consumerBuild
     try {
-        $consumerOutput = & $consumer --helper $Helper --artifacts $artifacts `
-            --expected-dll (Join-Path $package 'bin\termole.dll') 2>&1
+        $consumerOutput = & $consumer --helper $Helper --artifacts $artifacts 2>&1
         $consumerCode = $LASTEXITCODE
     } finally {
         Pop-Location

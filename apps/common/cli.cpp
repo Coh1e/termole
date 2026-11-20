@@ -41,15 +41,20 @@ CliParseResult error(std::wstring message)
 
 } // namespace
 
-CliParseResult parse_cli(int argc, wchar_t** argv)
+CliParseResult parse_cli(int argc, wchar_t** argv, bool c_gui)
 {
     CliParseResult result;
     if (argc <= 1) return result;
 
+    std::optional<std::wstring> explicit_program;
     for (int index = 1; index < argc; ++index) {
         const std::wstring token = argv[index];
 
         if (!result.options.program && token == L"--") {
+            if (explicit_program) {
+                for (++index; index < argc; ++index) result.options.arguments.emplace_back(argv[index]);
+                break;
+            }
             if (index + 1 < argc) {
                 result.options.program = argv[++index];
                 if (result.options.program->empty()) return error(L"program name is empty");
@@ -79,6 +84,17 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
                 }
                 return false;
             };
+            if (c_gui && token == L"--smoke") {
+                result.smoke = true;
+                continue;
+            }
+            if (c_gui && (token == L"--program" || starts_with(token, L"--program="))) {
+                std::wstring value;
+                if (!take_value(L"--program", value) || value.empty())
+                    return error(L"--program requires a program");
+                explicit_program = std::move(value);
+                continue;
+            }
 
             if (token == L"--keep-window") {
                 result.options.exit_policy = ExitPolicy::KeepWindow;
@@ -259,6 +275,10 @@ CliParseResult parse_cli(int argc, wchar_t** argv)
         result.options.arguments.push_back(token);
     }
 
+    if (explicit_program) {
+        if (result.options.program) return error(L"program was specified twice");
+        result.options.program = std::move(explicit_program);
+    }
     if (result.options.center && (result.options.window_x || result.options.window_y)) {
         return error(L"--center cannot be combined with --x/--y");
     }
@@ -274,6 +294,8 @@ std::wstring help_text()
            L"  termole [options] -e <program> [arguments...]\n"
            L"  termole [options] --stdio <program> [arguments...]\n"
            L"  termole --c-gui [options]  C GUI prototype role (C View + GDI)\n"
+           L"  termole --server [--pipe NAME] [-- PROGRAM [ARGS...]]\n"
+           L"  termole --client [--pipe NAME] [--detach]\n"
            L"\n"
            L"Normal mode starts the window and returns immediately. -e and --stdio\n"
            L"wait for the program, forward its exit code and make this launcher wait\n"

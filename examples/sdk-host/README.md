@@ -1,18 +1,16 @@
 # SDK host example
 
-Build against an installed Termole development package:
+Build from an MSYS2 MinGW shell against an installed Termole development package:
 
-```bat
-cmake -S examples\sdk-host -B .local\sdk-host -G Ninja ^
-  -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_PREFIX_PATH=D:\path\to\Termole-0.1.0-win64
-cmake --build .local\sdk-host
+```sh
+cmake -S examples/sdk-host -B .local/sdk-host -G 'MSYS Makefiles' \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS=-static \
+  -DCMAKE_PREFIX_PATH=D:/path/to/Termole-0.1.0-win64
+cmake --build .local/sdk-host
 ```
 
-The executable is `.local\sdk-host\termole-sdk-host.exe`; keep `termole.dll` beside it
-or on `PATH`.
-
-This host uses only `termole.hpp`, the import library and the DLL. It owns the
+The executable is `.local/sdk-host/termole-sdk-host.exe`.
+It uses `termole.hpp` and the installed static SDK. The host owns the
 top-level window and message loop; Termole owns the child View and Session. The
 host decides the layout, focus and shutdown order. Termole does not read the
 user's TOML configuration, does not write the clipboard unless the host calls

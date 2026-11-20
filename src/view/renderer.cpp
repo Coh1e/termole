@@ -1,7 +1,6 @@
 #include "view/renderer.h"
 
 #include "common/limits.h"
-#include <dwmapi.h>
 
 #include <algorithm>
 #include <string>
@@ -187,11 +186,6 @@ Result<void> Renderer::create_format()
 
 bool Renderer::create_target()
 {
-    RECT client{};
-    ::GetClientRect(window_, &client);
-    const UINT32 width = static_cast<UINT32>(std::max<LONG>(1, client.right - client.left));
-    const UINT32 height = static_cast<UINT32>(std::max<LONG>(1, client.bottom - client.top));
-
     // The renderer measures the cell size with DirectWrite and uses it as
     // device pixels for the grid and for every draw coordinate. A D2D render
     // target otherwise inherits the system DPI and scales those coordinates a
@@ -199,12 +193,10 @@ bool Renderer::create_target()
     // 640 px window, so bottom-anchored TUIs such as fzf are drawn off-screen
     // and the window looks blank (#26). Pin the target to 96 DPI so one DIP is
     // exactly one device pixel.
-    D2D1_RENDER_TARGET_PROPERTIES properties = D2D1::RenderTargetProperties();
-    properties.dpiX = 96.0f;
-    properties.dpiY = 96.0f;
-    const HRESULT status = graphics_state().d2d->CreateHwndRenderTarget(
-        properties, D2D1::HwndRenderTargetProperties(window_, D2D1::SizeU(width, height)),
-        target_.put());
+    const auto properties = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), 96.0f, 96.0f);
+    const HRESULT status = graphics_state().d2d->CreateDCRenderTarget(&properties, target_.put());
     if (FAILED(status)) return false;
 
     target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
@@ -220,15 +212,6 @@ bool Renderer::ensure_target()
 {
     if (target_ && brush_) return true;
     return create_target();
-}
-
-void Renderer::resize(uint32_t width, uint32_t height)
-{
-    if (!target_) return;
-    if (FAILED(target_->Resize(D2D1::SizeU(std::max(1u, width), std::max(1u, height))))) {
-        target_.reset();
-        brush_.reset();
-    }
 }
 
 void Renderer::set_dpi(uint32_t dpi)
@@ -274,9 +257,9 @@ Result<void> Renderer::set_appearance(const Appearance& appearance)
     return {};
 }
 
-bool Renderer::paint(const Snapshot& snapshot, bool focused)
+bool Renderer::paint(HDC device, const RECT& client, const Snapshot& snapshot, bool focused)
 {
-    if (!ensure_target()) return false;
+    if (!device || !ensure_target() || FAILED(target_->BindDC(device, &client))) return false;
 
     const bool cursor_visible = focused && snapshot.cursor_visible;
     target_->BeginDraw();

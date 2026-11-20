@@ -16,8 +16,7 @@ struct PtyOptions {
     unsigned short rows = 24;
 };
 
-// Platform-neutral PTY contract. POSIX is implemented; Windows ConPTY will
-// implement the same interface before NativeSession is refactored.
+// Platform-neutral PTY contract implemented by the POSIX and ConPTY backends.
 class Pty {
 public:
     static std::unique_ptr<Pty> spawn(const PtyOptions& options, std::string& error);

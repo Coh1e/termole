@@ -20,6 +20,9 @@ function(add_termole_window_app target output_name smoke_enabled cli_enabled)
   )
   target_link_libraries(${target} PRIVATE termole termole_build_options)
   target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  if(cli_enabled)
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  endif()
   termole_unicode_startup(${target})
   if(smoke_enabled)
     target_compile_definitions(${target} PRIVATE TERMOLE_ENABLE_SMOKE=1)
@@ -29,9 +32,9 @@ function(add_termole_window_app target output_name smoke_enabled cli_enabled)
   endif()
 endfunction()
 
-# Shipped entry point: one console launcher + internal GUI role, one DLL.
+# Shipped entry point: one console launcher + internal GUI role.
 add_termole_window_app(termole_app "termole" OFF ON
-  standalone/main.cpp standalone/gui.cpp)
+  standalone/main.cpp standalone/gui.cpp standalone/ipc_role.cpp)
 if(TERMOLE_BUILD_C_GUI AND WIN32)
   target_sources(termole_app PRIVATE cgui/main.c)
   target_compile_definitions(termole_app PRIVATE TERMOLE_CGUI_NO_ENTRY TERMOLE_C_GUI_ENABLED)
@@ -41,12 +44,12 @@ endif()
 # not part of the product package.
 if(BUILD_TESTING)
   add_termole_window_app(termole_smoke_app "termole-smoke" ON ON
-    standalone/main.cpp standalone/gui.cpp)
+    standalone/main.cpp standalone/gui.cpp standalone/ipc_role.cpp)
   add_termole_window_app(termole_smoke_host "termole-smoke-host" ON OFF host/main.cpp)
   set_target_properties(termole_smoke_host PROPERTIES WIN32_EXECUTABLE ON)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND TERMOLE_BUILD_C_GUI)
   # C-only GUI prototype: same C ABI + public C view, no C++ View path.
   add_executable(termole_cgui_smoke cgui/main.c)
   target_link_libraries(termole_cgui_smoke PRIVATE termole termole_build_options)

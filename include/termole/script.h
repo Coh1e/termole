@@ -25,8 +25,9 @@ TERMOLE_API termole_status TERMOLE_CALL
 termole_script_create(const termole_script_options* options, termole_script** out_script);
 void TERMOLE_CALL termole_script_destroy(termole_script* script);
 
-/* Evaluates UTF-8 source. On failure out_error is library allocated and must be
-   released with termole_free(). */
+/* Evaluates at most 1 MiB of UTF-8 source. On failure, a non-NULL out_error
+   value is library allocated and must be released with termole_free().
+   Use each context from one thread and serialize evaluation and destruction. */
 TERMOLE_API termole_status TERMOLE_CALL
 termole_script_eval(termole_script* script, const char* source, size_t length, char** out_error);
 

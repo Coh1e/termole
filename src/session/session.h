@@ -3,7 +3,9 @@
 #include "common/error.h"
 #include "common/limits.h"
 #include "common/win.h"
+#include "core/frame.h"
 #include "core/screen.h"
+#include "platform/windows_pty.h"
 
 #include <termole/core.h>
 #include <termole/termole.h>
@@ -13,6 +15,7 @@
 #include <expected>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -21,20 +24,7 @@
 
 namespace termole {
 
-struct SessionOptions {
-    std::wstring program;
-    std::vector<std::wstring> arguments;
-    std::wstring working_directory;
-    std::vector<std::wstring> environment;
-    std::wstring stdin_path;
-    std::wstring stdout_path;
-    // Direct child stdin/stdout handles (application data channel). Exclusive
-    // with the file paths above; both are set together.
-    HANDLE stdin_handle = nullptr;
-    HANDLE stdout_handle = nullptr;
-    uint16_t columns = 80;
-    uint16_t rows = 24;
-};
+using SessionOptions = platform::WindowsPtyOptions;
 
 // Owns the ConPTY, the managed process tree and the terminal screen. It does
 // not create a top-level window and can continue consuming output with no NativeView
@@ -54,6 +44,8 @@ public:
     Result<void> terminate();
 
     [[nodiscard]] Snapshot snapshot(int scroll_offset = 0) const;
+    [[nodiscard]] std::optional<SessionFrame> frame_after(uint64_t revision) const;
+    [[nodiscard]] termole_modes modes() const;
     [[nodiscard]] std::pair<uint16_t, uint16_t> size() const;
     [[nodiscard]] std::string screen_text() const;
     [[nodiscard]] std::string selection_text(int start_row, int start_column, int end_row,
@@ -94,22 +86,13 @@ private:
     void push_event(termole_event_type type, int32_t exit_code = 0, std::string text = {});
 
     mutable std::mutex mutex_;
-    std::mutex input_mutex_;
     std::mutex terminate_mutex_;
-    std::mutex pseudo_mutex_;
     std::mutex event_mutex_;
     termole_vt* vt_ = nullptr;
+    uint64_t revision_ = 1;
 
-    win::unique_handle input_write_;
-    win::unique_handle output_read_;
-    // Kept only for the stdio data channel: it is the child's stderr handle,
-    // wired to the ConPTY output stream. It must be closed with the pseudoconsole
-    // so the reader can observe EOF.
-    win::unique_handle console_output_write_;
-    win::unique_handle process_;
-    win::unique_handle job_;
+    std::unique_ptr<platform::WindowsPty> pty_;
     win::unique_handle data_event_;
-    win::unique_pseudo_console pseudo_console_;
     std::thread reader_;
     std::thread exit_thread_;
 

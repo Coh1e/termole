@@ -16,6 +16,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(Termole CONFIG REQUIRED PATHS "${TERMOLE_PACKAGE_ROOT}" NO_DEFAULT_PATH)
+get_target_property(termole_type Termole::termole TYPE)
+if(NOT termole_type STREQUAL "STATIC_LIBRARY")
+  message(FATAL_ERROR "Termole::termole must be a static library")
+endif()
 
 get_target_property(termole_includes Termole::termole INTERFACE_INCLUDE_DIRECTORIES)
 if(NOT termole_includes)

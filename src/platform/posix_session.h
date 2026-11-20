@@ -2,10 +2,12 @@
 
 #include <termole/core.h>
 
+#include "core/frame.h"
 #include "platform/pty.h"
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -19,6 +21,8 @@ struct PosixSessionOptions {
     unsigned short columns = 80;
     unsigned short rows = 24;
 };
+
+using PosixFrame = SessionFrame;
 
 // Minimal interactive POSIX session: PTY reader thread feeds the C core.
 // This is the Linux counterpart of NativeSession; it deliberately exposes
@@ -35,6 +39,9 @@ public:
     bool write(std::string_view bytes, std::string& error);
     bool resize(unsigned short columns, unsigned short rows, std::string& error);
     std::string text() const;
+    std::optional<PosixFrame> frame_after(uint64_t revision) const;
+    termole_modes modes() const;
+    bool running() const;
     int wait();
 
 private:
@@ -48,6 +55,7 @@ private:
     std::thread reader_;
     bool stopped_ = false;
     int exit_code_ = -1;
+    uint64_t revision_ = 1;
 };
 
 } // namespace termole::platform

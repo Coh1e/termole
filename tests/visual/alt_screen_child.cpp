@@ -28,6 +28,25 @@ bool write_stdout(std::string_view text)
     return true;
 }
 
+bool write_frame(std::string_view rgb, std::string_view label)
+{
+    // Explicitly paint the sampled rectangle. An erase can use the default
+    // background and indexed ANSI colors vary across terminal palettes.
+    std::string frame = "\x1b[H\x1b[0m\x1b[48;2;";
+    frame += rgb;
+    frame += 'm';
+    frame += label;
+    frame += "\x1b[38;2;";
+    frame += rgb;
+    frame += 'm';
+    for (int row = 2; row <= 8; ++row) {
+        frame += "\x1b[" + std::to_string(row) + ";1H";
+        // A console can omit trailing spaces when forwarding a changed row.
+        frame.append(40, 'X');
+    }
+    return write_stdout(frame);
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -38,16 +57,15 @@ int wmain(int argc, wchar_t** argv)
         // No echo or line buffering: one View WM_CHAR produces one new frame.
         const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
         if (!::SetConsoleMode(input, ENABLE_PROCESSED_INPUT)) return 3;
-        if (!write_stdout("\x1b[?25l\x1b[44m\x1b[2J\x1b[HT21 READY")) return 3;
+        if (!write_stdout("\x1b[?25l") || !write_frame("30;55;220", "T21 READY")) return 3;
         for (;;) {
             char key{};
             DWORD read = 0;
             if (!::ReadFile(input, &key, 1, &read, nullptr) || read != 1) return 3;
             if (key == 'q') return 0;
             if (key != 'a' && key != 'b') continue;
-            const std::string frame = std::string("\x1b[") + (key == 'a' ? "41" : "42") +
-                "m\x1b[2J\x1b[HT21 FRAME " + key;
-            if (!write_stdout(frame)) return 3;
+            if (!write_frame(key == 'a' ? "220;30;55" : "30;220;55",
+                             key == 'a' ? "T21 FRAME A" : "T21 FRAME B")) return 3;
         }
     }
 

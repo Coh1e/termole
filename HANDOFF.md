@@ -2,6 +2,20 @@
 
 阶段性收尾。本文记录已完成、验证方式、未完成项与建议顺序。工作区改动均未提交。
 
+## 后续收尾记录
+
+- Windows 的默认 GUI 保持 C++ View，C GUI 继续作为实验角色。两者使用相同的 CLI
+  与 TOML/Profile 解析入口处理已支持的窗口和会话选项。
+- Windows 的 NativeSession 使用 WindowsPty。Windows 和 POSIX 共享 PTY 与
+  交互会话契约测试。独立 SDK 宿主从安装包链接静态库并验证真实窗口像素。
+- Windows 命名管道与 Linux/macOS Unix socket 提供同一可执行文件的
+  server/client 角色。支持一端点一会话、单 View、脱离重连、输入和尺寸转发。
+- QuickJS 静态引擎默认关闭。启用配置覆盖 UTF-8、异常、执行中断和体积门禁。
+- Linux 与 macOS 共用 SDL3 窗口和 FreeType 渲染。Linux 提供 X11 界面构建及
+  独立 musl headless preset，macOS 使用官方通用静态 XCFramework。
+- 统一入口及平台测试命令见 [跨平台构建](docs/cross-platform-build.md)，
+  远程视图操作见 [本地会话](docs/local-sessions.md)。下方保留原交接时的状态。
+
 ## 1. 当前定位
 
 - 项目：`D:\playground\home\dev\projects\termole`

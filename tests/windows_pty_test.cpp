@@ -1,4 +1,5 @@
 #include "platform/pty.h"
+#include "platform/windows_pty.h"
 
 #include <chrono>
 #include <cstdio>
@@ -19,6 +20,20 @@ static void check(bool condition, const char* what)
 int main()
 {
     using namespace termole::platform;
+    WindowsPtyOptions invalid;
+    invalid.program = L"cmd.exe";
+    invalid.stdout_path = L"unused-output.txt";
+    auto missing_path = WindowsPty::spawn_native(invalid);
+    check(!missing_path && missing_path.error().status == TERMOLE_STATUS_INVALID_ARGUMENT,
+          "reject incomplete file redirection before opening paths");
+
+    invalid.stdout_path.clear();
+    invalid.stdin_handle = ::GetStdHandle(STD_INPUT_HANDLE);
+    if (!invalid.stdin_handle) invalid.stdin_handle = INVALID_HANDLE_VALUE;
+    auto missing_handle = WindowsPty::spawn_native(invalid);
+    check(!missing_handle && missing_handle.error().status == TERMOLE_STATUS_INVALID_ARGUMENT,
+          "reject incomplete direct handle redirection before spawning");
+
     PtyOptions options;
     options.arguments = { "cmd.exe", "/c", "echo", "WINDOWS-PTY" };
     options.columns = 80;

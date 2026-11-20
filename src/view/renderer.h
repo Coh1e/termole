@@ -35,10 +35,9 @@ public:
 
     static Result<std::unique_ptr<Renderer>> create(HWND window, Appearance appearance);
 
-    void resize(uint32_t width, uint32_t height);
     void set_dpi(uint32_t dpi);
     Result<void> set_appearance(const Appearance& appearance);
-    bool paint(const Snapshot& snapshot, bool focused);
+    bool paint(HDC device, const RECT& client, const Snapshot& snapshot, bool focused);
 
     [[nodiscard]] float cell_width() const noexcept { return cell_width_; }
     [[nodiscard]] float cell_height() const noexcept { return cell_height_; }
@@ -64,7 +63,7 @@ private:
     float cell_width_ = 8.0f;
     float cell_height_ = 16.0f;
 
-    win::com_ptr<ID2D1HwndRenderTarget> target_;
+    win::com_ptr<ID2D1DCRenderTarget> target_;
     win::com_ptr<IDWriteTextFormat> format_;
     win::com_ptr<IDWriteTextFormat> bold_format_;
     win::com_ptr<ID2D1SolidColorBrush> brush_;

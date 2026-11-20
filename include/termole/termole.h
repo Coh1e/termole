@@ -151,7 +151,7 @@ typedef struct termole_session_options {
        channel (the standalone --stdio path). Both must be set or both NULL,
        and they are mutually exclusive with stdin_path/stdout_path. The child
        reads/writes these handles directly; stderr and the UI still use the
-       ConPTY. The library marks them inheritable for the child process. */
+       ConPTY. The library passes inheritable copies to the child process. */
     HANDLE stdin_handle;
     HANDLE stdout_handle;
 } termole_session_options;

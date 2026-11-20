@@ -1,7 +1,11 @@
 #include "platform/posix_pty.h"
 
 #include <fcntl.h>
+#if defined(__APPLE__)
+#include <util.h>
+#else
 #include <pty.h>
+#endif
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>

@@ -2,7 +2,7 @@
 //
 // This executable is built by an independent CMake project from an installed
 // Termole development package: it consumes only include/termole/termole.hpp,
-// the import library and termole.dll. It exercises the public host contract
+// the installed static library. It exercises the public host contract
 // through a real ConPTY session and a real child HWND, and records pixel
 // evidence for the View.
 
@@ -99,15 +99,6 @@ bool wait_for_size_change(termole::Session& session, std::pair<uint16_t, uint16_
             return size && *size != before;
         },
         timeout_ms);
-}
-
-std::filesystem::path module_file_name(HMODULE module)
-{
-    std::array<wchar_t, 32768> buffer{};
-    const DWORD length =
-        ::GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
-    if (length == 0 || length >= buffer.size()) return {};
-    return std::filesystem::path(std::wstring(buffer.data(), length));
 }
 
 std::wstring environment_value(const wchar_t* name)
@@ -334,7 +325,6 @@ BOOL CALLBACK count_visible_window(HWND window, LPARAM parameter)
 struct Arguments {
     std::filesystem::path helper;
     std::filesystem::path artifacts;
-    std::filesystem::path expected_dll;
 };
 
 bool parse_arguments(int argc, wchar_t** argv, Arguments& arguments)
@@ -345,8 +335,6 @@ bool parse_arguments(int argc, wchar_t** argv, Arguments& arguments)
             arguments.helper = argv[++index];
         } else if (argument == L"--artifacts" && index + 1 < argc) {
             arguments.artifacts = argv[++index];
-        } else if (argument == L"--expected-dll" && index + 1 < argc) {
-            arguments.expected_dll = argv[++index];
         } else {
             std::wcerr << L"unknown argument: " << argument << L'\n';
             return false;
@@ -382,8 +370,7 @@ int wmain(int argc, wchar_t** argv)
 {
     Arguments arguments;
     if (!parse_arguments(argc, argv, arguments)) {
-        std::cerr << "usage: termole-sdk-consumer --helper <path> --artifacts <dir> "
-                     "--expected-dll <path>\n";
+        std::cerr << "usage: termole-sdk-consumer --helper <path> --artifacts <dir>\n";
         return 2;
     }
 
@@ -460,18 +447,7 @@ int wmain(int argc, wchar_t** argv)
           "view creation without a session is rejected before ABI checks");
     check(termole_view_hwnd(nullptr) == nullptr, "termole_view_hwnd(NULL) is harmless");
 
-    if (!arguments.expected_dll.empty()) {
-        HMODULE module = ::GetModuleHandleW(L"termole.dll");
-        check(module != nullptr, "termole.dll is loaded");
-        if (module) {
-            const std::filesystem::path actual = module_file_name(module);
-            const std::wstring actual_text = actual.wstring();
-            const std::wstring expected_text = arguments.expected_dll.wstring();
-            check(!actual_text.empty() && _wcsicmp(actual_text.c_str(), expected_text.c_str()) == 0,
-                  "the host loaded termole.dll from the development package");
-            std::cout << "DLL: " << actual.string() << '\n';
-        }
-    }
+    check(::GetModuleHandleW(L"termole.dll") == nullptr, "the SDK consumer runs without termole.dll");
 
     // A malformed user configuration must not affect an embedded host: the
     // library does not read the product configuration at all.

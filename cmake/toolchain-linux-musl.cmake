@@ -1,0 +1,6 @@
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+
+find_program(TERMOLE_ZIG zig HINTS "$ENV{TERMOLE_ZIG_BIN}" REQUIRED)
+set(CMAKE_C_COMPILER "${TERMOLE_ZIG}" cc -target x86_64-linux-musl)
+set(CMAKE_CXX_COMPILER "${TERMOLE_ZIG}" c++ -target x86_64-linux-musl)

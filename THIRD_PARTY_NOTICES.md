@@ -76,8 +76,24 @@ including Unicode data notices where applicable.
 - Source: <https://release.files.ghostty.org/libghostty-vt/1.0.1/>
 - Usage: linked statically into the product; no upstream files are modified.
 
+## QuickJS
+
+- Version: 2026-06-04, MIT.
+- Source archive: [QuickJS upstream](https://bellard.org/quickjs/quickjs-2026-06-04.tar.xz).
+- SHA-256: `b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a`.
+- Linked into the static SDK only when `TERMOLE_WITH_QUICKJS=ON`. The original
+  archive and license are in `third_party/quickjs/2026-06-04/`.
+
 ## Not bundled
 
-- QuickJS: not part of the default build. If `TERMOLE_WITH_QUICKJS=ON` is added
-  later, its license and version must be recorded here before distribution.
 - MinGW-w64 runtime: linked statically; no runtime DLL is shipped.
+
+## SDL3 and FreeType
+
+The Linux and macOS terminal window statically links the following pinned
+upstream releases. Their source archives include the applicable license texts.
+
+- [SDL 3.4.20](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.20),
+  zlib license. Source SHA-256 `f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f`.
+- [FreeType 2.14.3](https://freetype.org/download.html), FreeType License.
+  Source SHA-256 `36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f`.

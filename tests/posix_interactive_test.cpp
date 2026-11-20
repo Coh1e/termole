@@ -70,6 +70,23 @@ int main()
     check(session->write("exit 7\r\n", error), "write exit to posix session");
     check(session->wait() == 7, "interactive shell exit code");
 
+    options.arguments = { "/bin/sh", "-c", "trap '' HUP; printf 'SESSION-ACTIVE'; sleep 60" };
+    auto active = PosixSession::create(options, error);
+    check(active != nullptr, "create a session while testing shutdown");
+    if (active) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (active->text().find("SESSION-ACTIVE") == std::string::npos &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        check(active->text().find("SESSION-ACTIVE") != std::string::npos,
+              "the child is running before the session is closed");
+        const auto started = std::chrono::steady_clock::now();
+        active.reset();
+        check(std::chrono::steady_clock::now() - started < std::chrono::seconds(2),
+              "destroy cancels the reader and reaps a running shell promptly");
+    }
+
     if (failures != 0) {
         std::fprintf(stderr, "%d posix interactive check(s) failed\n", failures);
         return 1;

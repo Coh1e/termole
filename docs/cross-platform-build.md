@@ -55,41 +55,57 @@ PASS: child exit code preserved
 PASS: posix pty
 ```
 
-## 已验证（Linux 静态 C core）\n\n```\ncmake -S linux -B build-linux-static -DCMAKE_BUILD_TYPE=Release \\\n      -DCMAKE_EXE_LINKER_FLAGS=-static\ncmake --build build-linux-static --parallel\n./build-linux-static/vt_adapter_linux\n=> PASS: VT adapter contract\n```\n\n同一入口还构建 `posix_session_linux`（POSIX PTY + Linux C core）：\n\n```\nctest --test-dir build-linux-static --output-on-failure\n1/2 vt_adapter_linux .... Passed\n2/2 posix_session_linux .. Passed\n```\n\n- 产物：`ELF 64-bit LSB executable, x86-64, ... statically linked`\n- vendored 静态库 SHA-256：`c59b9938936f17c7543c3ebec1ddc6b800bace6ea67a38ba6027209348819ba5`\n- 链接时有 glibc `getaddrinfo` 静态警告；当前 core 测试不需要 DNS，最终 Linux 分发仍建议 musl。\n\n## 待办
+## Linux 静态 C core
 
-1. 拿到 `libghostty-vt.a` 后，在 WSL 编译并运行 `src/vt/termole_vt.c` + `tests/vt_adapter_test.c`。
-2. 把 Linux `.a`/headers 固定到 `third_party/libghostty-vt/1.0.1-linux/` 并记录 SHA-256。
-3. 建立 Linux core 的 CMake 入口（独立于当前 Windows-only 产品目标）。
-4. WSL 的 CMake 3.22 需升级到 ≥3.28，或提供 Linux 专用最小 CMake 入口。
+从仓库根目录运行：
 
-## 统一 PTY 接口（进行中）
-
-`src/platform/pty.h` 定义平台无关的 `Pty`：
-
-```cpp
-struct PtyOptions { arguments, working_directory, columns, rows };
-class Pty {
-  static std::unique_ptr<Pty> spawn(...);
-  read / write / resize / wait / close;
-};
+```bash
+cmake --preset linux-static
+cmake --build --preset linux-static --parallel
+ctest --preset linux-static --output-on-failure
 ```
 
-- Linux：`Pty::spawn` 返回 POSIX PTY 后端（已接入 `PosixSession`）。
-- Windows：占位实现返回明确错误；`NativeSession` 仍直接用 ConPTY，后续接入同一接口。
-- Linux CTest 仍为 3/3 通过。
-## Windows ConPTY backend for `platform::Pty`
+Linux preset 构建核心、PTY 和 Session 回归测试。Windows 和 Linux 各自的
+PTY 与 Session 后端共用 PTY 契约测试和交互会话契约测试。两个共享测试覆盖
+启动、子进程输出与退出码，Session 测试也覆盖输入和 resize 调用。
 
-`src/platform/windows_pty.h/.cpp` implements the same `Pty` contract with
-`CreatePseudoConsole` + `CreateProcessW`:
+`linux/` 下的独立入口仍兼容已有构建目录。当前静态 glibc 构建仍会报告
+`getaddrinfo` 的 NSS 警告。测试使用本地 shell 和 PTY，未覆盖 DNS。
 
-- argv/cwd/cols/rows
-- read/write
-- `ResizePseudoConsole`
-- wait/exit code
-- job object kill-on-close
+### musl 构建
 
-`tests/windows_pty_test.cpp` verifies spawn, resize, output and exit code.
-Windows full suite: 47/47 passed.
+另外下载 [Ghostty 1.0.1 依赖包](https://release.files.ghostty.org/libghostty-vt/1.0.1/libghostty-vt-1.0.1-deps.tar.gz)
+（SHA-256 `91a4e10960a52bf5bf4b15aa2a2cddaff8a89d6cd903d3055bda4fd17de3356d`）。
+在 Linux 文件系统解压源码、依赖包和 Zig，从 Ghostty 源码目录运行：
 
-`NativeSession` still owns its richer ConPTY path (file/handle redirection,
-stdio data channel); it has not been migrated onto `platform::Pty` yet.
+```bash
+../zig-x86_64-linux-0.17.0/zig build -Demit-lib-vt \
+  --system ../libghostty-vt-1.0.1-deps -Dtarget=x86_64-linux-musl \
+  -Doptimize=ReleaseFast -p ../ghostty-musl
+```
+
+回到 Termole 根目录，把以下两个变量指向实际解压和安装路径：
+
+```bash
+export TERMOLE_ZIG_BIN=/path/to/zig-x86_64-linux-0.17.0
+export TERMOLE_GHOSTTY_VT_MUSL_ROOT=/path/to/ghostty-musl
+cmake --preset linux-musl
+cmake --build --preset linux-musl --parallel
+ctest --preset linux-musl --output-on-failure
+readelf -d .local/build/linux-musl/session_ipc_linux
+```
+
+该 preset 覆盖 headless 核心、PTY、Session 和 Unix socket。SDL3 的 Linux X11
+构建用静态链接的 SDL3 和 FreeType，通过系统 X11 库连接桌面。
+
+### macOS 构建
+
+`macos-static` preset 使用 [Ghostty 1.0.1 官方 XCFramework](https://release.files.ghostty.org/libghostty-vt/1.0.1/ghostty-vt-1.0.1.xcframework.zip)
+中的 macOS 通用静态库。SDL3 和 FreeType 静态链接，Cocoa 等系统框架由
+macOS 提供。CI 运行核心、PTY、会话连接和 SDL3 像素用例。
+
+## Windows ConPTY
+
+`WindowsPty` 统一负责进程启动、环境、ConPTY、重定向和进程树生命周期。
+`NativeSession` 通过它操作终端设备，继续负责 VT 状态与通知。
+文件重定向、直接 stdio 句柄和纯终端三种路径仍由现有产品测试覆盖。

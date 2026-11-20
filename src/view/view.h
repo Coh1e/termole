@@ -60,6 +60,7 @@ private:
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     void on_size();
     void on_paint();
+    void paint_client(HWND window, HDC device);
     void on_character(wchar_t character);
     void on_key_down(WPARAM key);
     void position_ime();

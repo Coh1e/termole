@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.28)
 project(Termole VERSION 0.1.0 LANGUAGES C CXX)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  include(CTest)
+  include(cmake/TermolePosix.cmake)
+  return()
+endif()
+
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Termole currently targets Windows x64.")
 endif()
@@ -36,6 +42,7 @@ set(FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.local/fetchcontent" CACH
 
 include(CTest)
 include(cmake/TermoleBuild.cmake)
+include(cmake/TermoleQuickJS.cmake)
 
 # Vendored libghostty-vt (x86_64-windows-gnu static, MPL-2.0).
 set(TERMOLE_GHOSTTY_VT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libghostty-vt/1.0.1")
@@ -65,6 +72,9 @@ if(TERMOLE_BUILD_APP)
   )
   install(FILES "$<TARGET_FILE:ghostty_vt>" DESTINATION lib)
   install(FILES "${TERMOLE_GHOSTTY_VT_ROOT}/LICENSE" DESTINATION licenses RENAME libghostty-vt.txt)
+  if(TERMOLE_WITH_QUICKJS)
+    install(FILES "${TERMOLE_QUICKJS_ROOT}/LICENSE" DESTINATION licenses RENAME quickjs.txt)
+  endif()
   install(DIRECTORY include/termole DESTINATION include)
   install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
   install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md

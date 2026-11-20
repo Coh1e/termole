@@ -38,6 +38,7 @@ void PosixSession::read_loop()
         if (read <= 0) break;
         std::lock_guard lock(mutex_);
         if (vt_) (void)termole_vt_feed(vt_, buffer, static_cast<size_t>(read));
+        ++revision_;
     }
     const int code = pty_ ? pty_->wait() : -1;
     std::lock_guard lock(mutex_);
@@ -59,8 +60,45 @@ bool PosixSession::write(std::string_view bytes, std::string& error)
 
 bool PosixSession::resize(unsigned short columns, unsigned short rows, std::string& error)
 {
+    if (!columns || !rows || columns > 1000 || rows > 1000) {
+        error = "terminal rows and columns must be between 1 and 1000";
+        return false;
+    }
     if (!pty_) { error = "PTY is closed"; return false; }
-    return pty_->resize(columns, rows, error);
+    if (!pty_->resize(columns, rows, error)) return false;
+    std::lock_guard lock(mutex_);
+    if (termole_vt_resize(vt_, columns, rows) != TERMOLE_CORE_OK) {
+        error = "could not resize the terminal core";
+        return false;
+    }
+    ++revision_;
+    return true;
+}
+
+std::optional<PosixFrame> PosixSession::frame_after(uint64_t revision) const
+{
+    std::lock_guard lock(mutex_);
+    if (revision_ == revision) return std::nullopt;
+    const termole_frame* frame = nullptr;
+    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return std::nullopt;
+    const size_t count = static_cast<size_t>(frame->columns) * frame->rows;
+    return PosixFrame{ revision_, frame->columns, frame->rows,
+                      frame->cursor_column, frame->cursor_row, frame->cursor_visible != 0,
+                      { frame->cells, frame->cells + count } };
+}
+
+bool PosixSession::running() const
+{
+    std::lock_guard lock(mutex_);
+    return !stopped_;
+}
+
+termole_modes PosixSession::modes() const
+{
+    std::lock_guard lock(mutex_);
+    termole_modes result{};
+    (void)termole_vt_modes(vt_, &result);
+    return result;
 }
 
 std::string PosixSession::text() const
