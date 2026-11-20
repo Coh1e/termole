@@ -10,17 +10,17 @@ namespace termole {
 
 // Internal, typed failure shared by Session, View and Renderer. The C ABI
 // returns status and message without reconstructing categories from prose.
-struct Error {
+struct NativeError {
     termole_status status = TERMOLE_STATUS_SYSTEM_ERROR;
     std::string message;
 };
 
 template <class T>
-using Result = std::expected<T, Error>;
+using Result = std::expected<T, NativeError>;
 
-inline Error make_error(termole_status status, std::string message)
+inline NativeError make_error(termole_status status, std::string message)
 {
-    return Error{ status, std::move(message) };
+    return NativeError{ status, std::move(message) };
 }
 
 } // namespace termole

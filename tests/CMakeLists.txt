@@ -681,6 +681,12 @@ target_link_libraries(termole_session_ipc_test PRIVATE termole termole_build_opt
 add_test(NAME session_ipc_windows COMMAND termole_session_ipc_test)
 set_tests_properties(session_ipc_windows PROPERTIES LABELS "adapter;contract" TIMEOUT 20)
 
+# These tests instantiate the library's internal C++ result types. Use the
+# same Release LTO mode as their implementation in the static archive.
+set_target_properties(
+  termole_windows_pty_test termole_session_contract_test termole_session_ipc_test
+  PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+
 add_executable(termole_ipc_visual_test windows_ipc_visual_test.cpp)
 target_include_directories(termole_ipc_visual_test PRIVATE "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/include")

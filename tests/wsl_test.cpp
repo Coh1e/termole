@@ -26,6 +26,13 @@ int wmain(int argc, wchar_t** argv)
     }
     const auto screen = session->screen_text();
     (void)session->terminate();
+    if (screen && (screen->find("WSL_E_DISTRO_NOT_FOUND") != std::string::npos ||
+                   screen->find("no installed distributions") != std::string::npos ||
+                   (screen->find("wsl.exe --list --online") != std::string::npos &&
+                    screen->find("wsl.exe --install") != std::string::npos))) {
+        std::cerr << "SKIP: WSL has no installed distribution.\n";
+        return 77;
+    }
     if (screen && (screen->find("E_ACCESSDENIED") != std::string::npos ||
                    screen->find("拒绝访问") != std::string::npos)) {
         std::cerr << "SKIP: WSL is present but access is denied by the host policy.\n";

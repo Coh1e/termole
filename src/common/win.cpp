@@ -39,13 +39,13 @@ std::string win32_error_message(DWORD error)
     return wide_to_utf8(message);
 }
 
-Error system_error(std::string_view operation, DWORD error)
+NativeError system_error(std::string_view operation, DWORD error)
 {
     return make_error(TERMOLE_STATUS_SYSTEM_ERROR,
                       std::string(operation) + ": " + win32_error_message(error));
 }
 
-Error hresult_error(std::string_view operation, HRESULT status)
+NativeError hresult_error(std::string_view operation, HRESULT status)
 {
     char code[16]{};
     std::snprintf(code, sizeof(code), "0x%08lX", static_cast<unsigned long>(status));

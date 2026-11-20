@@ -71,7 +71,7 @@ private:
 
 std::string wide_to_utf8(std::wstring_view text);
 std::string win32_error_message(DWORD error);
-Error system_error(std::string_view operation, DWORD error);
-Error hresult_error(std::string_view operation, HRESULT status);
+NativeError system_error(std::string_view operation, DWORD error);
+NativeError hresult_error(std::string_view operation, HRESULT status);
 
 } // namespace termole::win
