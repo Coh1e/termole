@@ -32,7 +32,7 @@ struct ListenerSignals {
         stop_requested = 0;
         struct sigaction action{};
         action.sa_handler = stop_listener;
-        ::sigemptyset(&action.sa_mask);
+        sigemptyset(&action.sa_mask);
         have_interrupt = ::sigaction(SIGINT, &action, &previous_interrupt) == 0;
         have_terminate = ::sigaction(SIGTERM, &action, &previous_terminate) == 0;
     }
