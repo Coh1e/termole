@@ -46,6 +46,7 @@ for attempt in $(seq 1 30); do
     grep -Fxq 'Termole ready' "$evidence/ready.txt" && break
     sleep 0.1
 done
+cat "$evidence/ready.txt"
 grep -Fxq 'Termole ready' "$evidence/ready.txt"
 shell_pid=$(cat "$test_home/first")
 test "$(ps -p "$shell_pid" -o ppid= | tr -d ' ')" = "$app_pid"

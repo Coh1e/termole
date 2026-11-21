@@ -97,13 +97,15 @@ jobs:
         run: |
           export MINGW_PREFIX="$(cygpath -m /mingw64)"
           cmake --preset "${{ matrix.preset }}" -DTERMOLE_WITH_QUICKJS=${{ matrix.quickjs }}
-      - run: cmake --build --preset "${{ matrix.preset }}" --parallel
-      - run: ctest --preset "${{ matrix.preset }}" --output-on-failure
+      - id: windows_build
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel
       - name: Default Windows shell clipboard round trip
         if: matrix.preset == 'windows-mingw'
         shell: powershell
         run: |
           tests/visual/standalone-clipboard.ps1 -Termole .local/build/mingw-debug/bin/termole.exe -Artifacts .local/build/mingw-debug/tests/visual/standalone-clipboard
+      - if: ${{ !cancelled() && steps.windows_build.outcome == 'success' }}
+        run: ctest --preset "${{ matrix.preset }}" --output-on-failure
       - uses: actions/upload-artifact@v4
         if: always() && matrix.preset == 'windows-mingw'
         with:

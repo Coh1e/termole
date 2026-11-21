@@ -47,7 +47,11 @@ class Window:
         stack.callback(self.cleanup)
         self.wid = wait_for("visible " + name, self.find_window)
         self.command('echo $$ > "$HOME/shellpid"')
-        self.shellpid = int(wait_for("shell PID", lambda: self.read("shellpid")))
+        try:
+            self.shellpid = int(wait_for("shell PID", lambda: self.read("shellpid")))
+        except RuntimeError:
+            print(self.capture("shell-pid-timeout"), flush=True)
+            raise
         if output("ps", "-p", str(self.shellpid), "-o", "ppid=") != str(self.app.pid):
             raise RuntimeError("Shell process does not belong to the launched window")
         actual = output("ps", "-p", str(self.shellpid), "-o", "comm=")

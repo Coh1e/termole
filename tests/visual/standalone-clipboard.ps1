@@ -88,7 +88,7 @@ try {
     }
     $copied = Get-Clipboard -Raw
     if ([T2Input]::GetClipboardSequenceNumber() -eq $sequence -or $copied -cne $expected) {
-        throw 'Ctrl+C did not publish the exact selected Unicode text to the Windows clipboard'
+        throw "Ctrl+C copy mismatch (clipboard sequence $sequence -> $([T2Input]::GetClipboardSequenceNumber()), expected $($expected.Length) UTF-16 units, received $(([string]$copied).Length))"
     }
     Send-ViewMessage 258 22 0
     Start-Sleep -Milliseconds 400

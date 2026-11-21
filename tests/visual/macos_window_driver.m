@@ -44,10 +44,40 @@ static void key(pid_t pid, CGKeyCode code, const UniChar *character, CGEventFlag
 
 static int type_command(pid_t pid, NSString *command, bool submit)
 {
-    if (find_window(pid) != 0) return 1;
+    NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+    if (!window_info(pid) || !app) return 1;
+    if (!app.active) {
+        [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+        for (int i = 0; i < 50 && !app.active; ++i) usleep(20000);
+        if (!app.active) {
+            fprintf(stderr, "Could not focus Termole process %d\n", pid);
+            return 1;
+        }
+    }
+    // US ANSI keyboard positions used by the macOS CI runner. AppKit text
+    // interpretation can translate the physical key independently of the
+    // Unicode string that Quartz attaches to an event.
+    static const struct { char plain, shifted; CGKeyCode code; } keys[] = {
+        {'a','A',0}, {'s','S',1}, {'d','D',2}, {'f','F',3}, {'h','H',4}, {'g','G',5},
+        {'z','Z',6}, {'x','X',7}, {'c','C',8}, {'v','V',9}, {'b','B',11}, {'q','Q',12},
+        {'w','W',13}, {'e','E',14}, {'r','R',15}, {'y','Y',16}, {'t','T',17},
+        {'1','!',18}, {'2','@',19}, {'3','#',20}, {'4','$',21}, {'6','^',22}, {'5','%',23},
+        {'=','+',24}, {'9','(',25}, {'7','&',26}, {'-','_',27}, {'8','*',28}, {'0',')',29},
+        {']','}',30}, {'o','O',31}, {'u','U',32}, {'[','{',33}, {'i','I',34}, {'p','P',35},
+        {'l','L',37}, {'\'','"',39}, {'k','K',40}, {';',':',41}, {'\\','|',42}, {',','<',43},
+        {'/','?',44}, {'n','N',45}, {'m','M',46}, {'.','>',47}, {' ',' ',49}, {'`','~',50},
+        {'j','J',38}
+    };
     for (NSUInteger i = 0; i < command.length; ++i) {
         UniChar character = [command characterAtIndex:i];
-        key(pid, 0, &character, 0);
+        size_t k = 0;
+        while (k < sizeof(keys) / sizeof(keys[0]) &&
+               character != keys[k].plain && character != keys[k].shifted) ++k;
+        if (k == sizeof(keys) / sizeof(keys[0])) {
+            fprintf(stderr, "Unsupported keyboard character U+%04x\n", character);
+            return 1;
+        }
+        key(pid, keys[k].code, &character, character == keys[k].plain ? 0 : kCGEventFlagMaskShift);
     }
     if (submit) key(pid, 36, NULL, 0); // Return on an Apple keyboard.
     return 0;
