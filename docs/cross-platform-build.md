@@ -109,3 +109,5 @@ macOS 提供。CI 运行核心、PTY、会话连接和 SDL3 像素用例。
 `WindowsPty` 统一负责进程启动、环境、ConPTY、重定向和进程树生命周期。
 `NativeSession` 通过它操作终端设备，继续负责 VT 状态与通知。
 文件重定向、直接 stdio 句柄和纯终端三种路径仍由现有产品测试覆盖。
+
+原生 x86-64 Linux 的新构建会按通用 CPU 基线编译 VT 库。已有构建目录保留缓存的 TERMOLE_GHOSTTY_VT_ROOT，以便使用本地离线安装。要从旧缓存切换到按源码编译，运行 cmake --preset linux-gui -U TERMOLE_GHOSTTY_VT_ROOT。
