@@ -48,10 +48,13 @@ static int type_command(pid_t pid, NSString *command, bool submit)
     if (!window_info(pid) || !app) return 1;
     if (!app.active) {
         [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-        for (int i = 0; i < 50 && !app.active; ++i) usleep(20000);
+        // NSRunningApplication properties update when the caller's main run
+        // loop advances. Sleeping here leaves the initial activation cached.
+        for (int i = 0; i < 50 && !app.active; ++i) {
+            [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+        }
         if (!app.active) {
-            fprintf(stderr, "Could not focus Termole process %d\n", pid);
-            return 1;
+            fprintf(stderr, "Activation unconfirmed for pid %d; routing keys directly to its window\n", pid);
         }
     }
     // US ANSI keyboard positions used by the macOS CI runner. AppKit text
