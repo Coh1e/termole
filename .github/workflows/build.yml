@@ -17,13 +17,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkgconf fonts-dejavu-core \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
-            libxss-dev libxtst-dev libxinerama-dev libxkbcommon-dev xvfb xauth
+            libxss-dev libxtst-dev libxinerama-dev libxkbcommon-dev xvfb xauth xdotool imagemagick tesseract-ocr tesseract-ocr-eng
       - run: cmake --preset linux-gui
       - run: cmake --build --preset linux-gui --parallel
       - run: ctest --preset linux-gui --output-on-failure
       - run: |
           SDL_VIDEO_DRIVER=x11 xvfb-run -a .local/build/linux-gui/termole \
             --test-render .local/build/linux-gui/termole-x11.bmp
+
+      - name: Default shell through the public X11 window
+        run: |
+          xvfb-run -a timeout 60 sh tests/visual/posix_startup_x11.sh \
+            .local/build/linux-gui/termole .local/build/linux-gui/startup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-default-shell
+          include-hidden-files: true
+          path: .local/build/linux-gui/startup/
 
   macos:
     runs-on: macos-15
