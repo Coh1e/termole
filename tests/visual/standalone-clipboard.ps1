@@ -71,11 +71,12 @@ try {
     Capture-View before
     $stats = Get-Content before.txt -Raw | ConvertFrom-StringData
     $geometry = Get-Content geometry.txt
-    $cellWidth = [math]::Floor([int]$stats.width / [int]$geometry[0])
+    $cellWidth = [double]$stats.width / [int]$geometry[0]
     $cellHeight = [math]::Floor([int]$stats.height / [int]$geometry[1])
     $start = ([int]($cellHeight / 2) -shl 16) + [int]($cellWidth / 2)
     # The two Han characters each occupy two columns. The last t is in column 16 (zero-based).
-    $end = $start + [int](16 * $cellWidth)
+    # Preserve the fractional glyph advance until the final pixel coordinate.
+    $end = ([int]($cellHeight / 2) -shl 16) + [int](16.5 * $cellWidth)
     Send-ViewMessage 513 1 $start
     Send-ViewMessage 512 1 $end
     Send-ViewMessage 514 0 $end

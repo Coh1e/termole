@@ -241,6 +241,10 @@ int show_window(Session& terminal, const char* probe_path)
     std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window(
         SDL_CreateWindow("Termole", 880, 528, SDL_WINDOW_RESIZABLE), SDL_DestroyWindow);
     if (!window) return 1;
+#ifdef __APPLE__
+    // A standalone executable can launch behind the application that invoked it.
+    if (!probe) SDL_RaiseWindow(window.get());
+#endif
     std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer(
         SDL_CreateRenderer(window.get(), probe ? "software" : nullptr), SDL_DestroyRenderer);
     if (!renderer) return 1;

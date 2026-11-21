@@ -30,13 +30,73 @@ static int find_window(pid_t pid)
     return 0;
 }
 
-static void key(pid_t pid, CGKeyCode code, const UniChar *character, CGEventFlags flags)
+static id attribute(AXUIElementRef element, CFStringRef key);
+
+static bool focus_window(pid_t pid)
+{
+    NSDictionary *info = window_info(pid);
+    CGRect rect;
+    if (!info || !CGRectMakeWithDictionaryRepresentation(
+        (__bridge CFDictionaryRef)info[(__bridge NSString *)kCGWindowBounds], &rect)) return false;
+    NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+    AXUIElementRef target = AXUIElementCreateApplication(pid);
+    NSArray *windows = attribute(target, kAXWindowsAttribute);
+    CFRelease(target);
+    if (windows.count != 1) {
+        fprintf(stderr, "Cannot inspect pid %d windows (AX trusted=%d, count=%lu)\n",
+                pid, AXIsProcessTrusted(), (unsigned long)windows.count);
+        return false;
+    }
+    AXUIElementRef window = (__bridge AXUIElementRef)windows.firstObject;
+    if (![attribute(window, kAXTitleAttribute) isEqualToString:@"Termole"]) return false;
+    AXUIElementRef system = AXUIElementCreateSystemWide();
+    AXError raised = AXUIElementPerformAction(window, kAXRaiseAction);
+    bool focused = false;
+    pid_t front = -1;
+    for (int i = 0; i < 50; ++i) {
+        id current = attribute(system, kAXFocusedApplicationAttribute);
+        if (current) AXUIElementGetPid((__bridge AXUIElementRef)current, &front);
+        id focused_window = front == pid && current ?
+            attribute((__bridge AXUIElementRef)current, kAXFocusedWindowAttribute) : nil;
+        if (focused_window && CFEqual(window, (__bridge CFTypeRef)focused_window)) {
+            focused = true;
+            break;
+        }
+        // Click the title bar only if the system's hit test identifies this
+        // process at the click point. This cannot insert text or select cells.
+        if (i == 0) {
+            CGPoint p = CGPointMake(CGRectGetMidX(rect), CGRectGetMinY(rect) + 12);
+            AXUIElementRef hit = NULL;
+            pid_t hit_pid = -1;
+            if (AXUIElementCopyElementAtPosition(system, p.x, p.y, &hit) == kAXErrorSuccess && hit) {
+                AXUIElementGetPid(hit, &hit_pid);
+                CFRelease(hit);
+            }
+            if (hit_pid == pid) {
+                const CGEventType clicks[] = {kCGEventLeftMouseDown, kCGEventLeftMouseUp};
+                for (int j = 0; j < 2; ++j) {
+                    CGEventRef event = CGEventCreateMouseEvent(NULL, clicks[j], p, kCGMouseButtonLeft);
+                    CGEventPost(kCGHIDEventTap, event);
+                    CFRelease(event);
+                    usleep(40000);
+                }
+            }
+        }
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    CFRelease(system);
+    if (!focused) fprintf(stderr, "Focus failed: target=%d front=%d policy=%ld AXRaise=%d\n",
+                          pid, front, (long)app.activationPolicy, (int)raised);
+    return focused;
+}
+
+static void key(CGKeyCode code, const UniChar *character, CGEventFlags flags)
 {
     for (int down = 1; down >= 0; --down) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down);
         CGEventSetFlags(event, flags);
         if (character) CGEventKeyboardSetUnicodeString(event, 1, character);
-        CGEventPostToPid(pid, event);
+        CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
         usleep(8000);
     }
@@ -44,19 +104,7 @@ static void key(pid_t pid, CGKeyCode code, const UniChar *character, CGEventFlag
 
 static int type_command(pid_t pid, NSString *command, bool submit)
 {
-    NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
-    if (!window_info(pid) || !app) return 1;
-    if (!app.active) {
-        [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-        // NSRunningApplication properties update when the caller's main run
-        // loop advances. Sleeping here leaves the initial activation cached.
-        for (int i = 0; i < 50 && !app.active; ++i) {
-            [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
-        }
-        if (!app.active) {
-            fprintf(stderr, "Activation unconfirmed for pid %d; routing keys directly to its window\n", pid);
-        }
-    }
+    if (!focus_window(pid)) return 1;
     // US ANSI keyboard positions used by the macOS CI runner. AppKit text
     // interpretation can translate the physical key independently of the
     // Unicode string that Quartz attaches to an event.
@@ -80,9 +128,9 @@ static int type_command(pid_t pid, NSString *command, bool submit)
             fprintf(stderr, "Unsupported keyboard character U+%04x\n", character);
             return 1;
         }
-        key(pid, keys[k].code, &character, character == keys[k].plain ? 0 : kCGEventFlagMaskShift);
+        key(keys[k].code, &character, character == keys[k].plain ? 0 : kCGEventFlagMaskShift);
     }
-    if (submit) key(pid, 36, NULL, 0); // Return on an Apple keyboard.
+    if (submit) key(36, NULL, 0); // Return on an Apple keyboard.
     return 0;
 }
 
@@ -197,19 +245,19 @@ static int named_key(pid_t pid, NSString *name)
 {
     NSDictionary *codes = @{@"copy": @8, @"paste": @9, @"up": @126, @"esc": @53, @"enter": @36};
     NSNumber *code = codes[name];
-    if (!code || !window_info(pid)) return 1;
+    if (!code || !focus_window(pid)) return 1;
     bool cmd = [name isEqualToString:@"copy"] || [name isEqualToString:@"paste"];
     if (cmd) {
         CGEventRef modifier = CGEventCreateKeyboardEvent(NULL, 55, true);
         CGEventSetFlags(modifier, kCGEventFlagMaskCommand);
-        CGEventPostToPid(pid, modifier);
+        CGEventPost(kCGHIDEventTap, modifier);
         CFRelease(modifier);
     }
-    key(pid, code.unsignedShortValue, NULL, cmd ? kCGEventFlagMaskCommand : 0);
+    key(code.unsignedShortValue, NULL, cmd ? kCGEventFlagMaskCommand : 0);
     if (cmd) {
         CGEventRef modifier = CGEventCreateKeyboardEvent(NULL, 55, false);
         CGEventSetFlags(modifier, 0);
-        CGEventPostToPid(pid, modifier);
+        CGEventPost(kCGHIDEventTap, modifier);
         CFRelease(modifier);
     }
     return 0;
@@ -219,6 +267,10 @@ int main(int argc, const char **argv)
 {
     @autoreleasepool {
         if (argc == 2 && strcmp(argv[1], "permissions") == 0) {
+            if (!AXIsProcessTrusted()) {
+                fputs("Accessibility control is unavailable for this runner.\n", stderr);
+                return 1;
+            }
             if (!CGPreflightScreenCaptureAccess()) {
                 fputs("Screen Recording access is unavailable for this runner.\n", stderr);
                 return 1;
