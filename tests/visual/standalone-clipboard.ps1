@@ -52,7 +52,7 @@ try {
         '[IO.File]::WriteAllText((Join-Path $PSScriptRoot ''received.txt''), $line)'
     ) | Set-Content foreground.ps1 -Encoding ASCII
     $before = @(Get-Process termole -ErrorAction SilentlyContinue | ForEach-Object Id)
-    & $exe
+    Start-Process -FilePath $exe -WorkingDirectory $run.FullName -WindowStyle Hidden
     for ($i = 0; $i -lt 100; $i++) {
         $gui = Get-Process termole -ErrorAction SilentlyContinue | Where-Object {
             $_.Id -notin $before -and $_.Path -eq $exe -and $_.MainWindowHandle

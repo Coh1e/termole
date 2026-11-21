@@ -29,8 +29,16 @@ jobs:
         run: |
           status=0
           for scenario in startup clipboard fzf_resize fzf_escape close; do
-            xvfb-run -a timeout 120 sh "tests/visual/posix_${scenario}_x11.sh" \
-              .local/build/linux-gui/termole ".local/build/linux-gui/standalone/$scenario" || status=1
+            dir=".local/build/linux-gui/standalone/$scenario"
+            mkdir -p "$dir"
+            if xvfb-run -a timeout 120 sh -x "tests/visual/posix_${scenario}_x11.sh" \
+                .local/build/linux-gui/termole "$dir" > "$dir/run.log" 2>&1; then
+              echo "PASS X11 $scenario"
+            else
+              echo "FAIL X11 $scenario ($?)"
+              tail -80 "$dir/run.log"
+              status=1
+            fi
           done
           exit "$status"
       - uses: actions/upload-artifact@v4
@@ -56,11 +64,21 @@ jobs:
         run: |
           build=.local/build/macos-static
           status=0
-          sh tests/visual/posix_startup_cocoa.sh "$build/termole" "$build/macos_window_driver" \
-            "$build/standalone/t1" || status=1
-          for scenario in t2 t3 t4 t5; do
-            python3 tests/visual/posix_scenarios_cocoa.py "$scenario" "$build/termole" \
-              "$build/macos_window_driver" "$build/standalone/$scenario" || status=1
+          for scenario in t1 t2 t3 t4 t5; do
+            dir="$build/standalone/$scenario"
+            mkdir -p "$dir"
+            if [ "$scenario" = t1 ]; then
+              command=(sh -x tests/visual/posix_startup_cocoa.sh)
+            else
+              command=(python3 tests/visual/posix_scenarios_cocoa.py "$scenario")
+            fi
+            if "${command[@]}" "$build/termole" "$build/macos_window_driver" "$dir" > "$dir/run.log" 2>&1; then
+              echo "PASS Cocoa $scenario"
+            else
+              echo "FAIL Cocoa $scenario ($?)"
+              tail -80 "$dir/run.log"
+              status=1
+            fi
           done
           exit "$status"
       - uses: actions/upload-artifact@v4
@@ -100,6 +118,7 @@ jobs:
       - id: windows_build
         run: cmake --build --preset "${{ matrix.preset }}" --parallel
       - name: Default Windows shell clipboard round trip
+        timeout-minutes: 3
         if: matrix.preset == 'windows-mingw'
         shell: powershell
         run: |

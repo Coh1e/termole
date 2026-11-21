@@ -8,7 +8,8 @@ home=$(mktemp -d)
 SHELL=$(getent passwd "$(id -u)" | cut -d: -f7)
 export SHELL
 cd "$home"
-HOME=$home XDG_CONFIG_HOME=$home/config SDL_VIDEO_DRIVER=x11 "$app" &
+HOME=$home XDG_CONFIG_HOME=$home/config SDL_VIDEO_DRIVER=x11 TERM=xterm-256color \
+    FZF_DEFAULT_OPTS='--layout=reverse --info=hidden --prompt="Query " --color=fg+:15,bg+:0,hl+:15' "$app" &
 app_pid=$!
 cleanup() {
     kill "$app_pid" 2>/dev/null || :
@@ -29,7 +30,8 @@ wait_for_text() {
     pattern=$2
     for attempt in $(seq 1 40); do
         import -silent -window "$window" "$evidence/$stage.png"
-        tesseract "$evidence/$stage.png" stdout --psm 6 > "$evidence/$stage.txt" 2>/dev/null
+        convert "$evidence/$stage.png" -resize 200% "$home/ocr.png"
+        tesseract "$home/ocr.png" stdout --psm 6 > "$evidence/$stage.txt" 2>/dev/null
         grep -Eiq "$pattern" "$evidence/$stage.txt" && return 0
         sleep 0.1
     done
@@ -38,8 +40,8 @@ wait_for_text() {
 }
 
 # Split the marker in the command so only the output line satisfies the OCR.
-command_line 'PS1="Ready "; stty size > grid; echo $$ > first; printf "\033[2J\033[H"; echo Garden mar"ker"'
-wait_for_text marker '^Garden marker[[:space:]]*$'
+command_line 'PS1="Ready "; stty size > grid; echo $$ > first; printf "\033[2J\033[H"; echo Gar"den"'
+wait_for_text marker '^Garden[[:space:]]*$'
 shell_pid=$(cat first)
 [ "$(readlink "/proc/$shell_pid/exe")" = "$(readlink -f "$SHELL")" ]
 # Use a short command so its echo cannot scroll the marker out of view.
@@ -47,14 +49,14 @@ printf '%s\n' alpha bravo charlie > choices
 command_line 'fzf < choices'
 wait_for_text selector 'charlie'
 xdotool type --clearmodifiers --delay 100 'bra'
-wait_for_text filtered '1[[:space:]]*/[[:space:]]*3'
+wait_for_text filtered 'Query[[:space:]]+bra'
 grep -iq 'bravo' "$evidence/filtered.txt"
-grep -Eiq '>[[:space:]]*bra' "$evidence/filtered.txt"
+if grep -Eiq 'alpha|charlie' "$evidence/filtered.txt"; then exit 1; fi
 xdotool key Escape
 wait_for_text restored '^Ready([[:space:]]|$)'
-grep -Eiq '^Garden marker[[:space:]]*$' "$evidence/restored.txt"
+grep -Eiq '^Garden[[:space:]]*$' "$evidence/restored.txt"
 no_selector() {
-    if grep -Eiq 'alpha|bravo|charlie|>[[:space:]]*bra|1[[:space:]]*/[[:space:]]*3' "$evidence/$1.txt"; then
+    if grep -Eiq 'alpha|bravo|charlie|Query' "$evidence/$1.txt"; then
         cat "$evidence/$1.txt" >&2
         exit 1
     fi
