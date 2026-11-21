@@ -83,12 +83,23 @@ try {
     Capture-View selection
     $sequence = [T2Input]::GetClipboardSequenceNumber()
     Send-ViewMessage 258 3 0
-    for ($i = 0; $i -lt 30 -and [T2Input]::GetClipboardSequenceNumber() -eq $sequence; $i++) {
+    $copied = $null
+    $readError = $null
+    for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Milliseconds 100
+        if ([T2Input]::GetClipboardSequenceNumber() -eq $sequence) { continue }
+        try {
+            $copied = Get-Clipboard -Raw
+            if ($copied -ceq $expected) { break }
+        } catch {
+            $readError = $_.Exception.GetType().Name
+        }
     }
-    $copied = Get-Clipboard -Raw
-    if ([T2Input]::GetClipboardSequenceNumber() -eq $sequence -or $copied -cne $expected) {
-        throw "Ctrl+C copy mismatch (clipboard sequence $sequence -> $([T2Input]::GetClipboardSequenceNumber()), expected $($expected.Length) UTF-16 units, received $(([string]$copied).Length))"
+    if ($copied -cne $expected) {
+        $prefix = 0
+        $length = ([string]$copied).Length
+        while ($prefix -lt [Math]::Min($length, $expected.Length) -and $copied[$prefix] -ceq $expected[$prefix]) { $prefix++ }
+        throw "Copy failed. Clipboard sequence $sequence -> $([T2Input]::GetClipboardSequenceNumber()), expected $($expected.Length) UTF-16 units, received $length, matching prefix $prefix, read error '$readError', viewport $($stats.width)x$($stats.height) for $($geometry[0])x$($geometry[1]) cells."
     }
     Send-ViewMessage 258 22 0
     Start-Sleep -Milliseconds 400
