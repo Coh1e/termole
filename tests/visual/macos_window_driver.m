@@ -147,11 +147,40 @@ static int read_lines(NSString *file, bool geometry)
         fprintf(stderr, "%s\n", error.localizedDescription.UTF8String);
         return 1;
     }
-    for (VNRecognizedTextObservation *line in request.results) {
-        VNRecognizedText *text = [line topCandidates:1].firstObject;
-        if (text) {
-            if (geometry) printf("%.6f\t", CGRectGetMidY(line.boundingBox));
-            puts(text.string.UTF8String);
+    if (!geometry) {
+        for (VNRecognizedTextObservation *line in request.results) {
+            VNRecognizedText *text = [line topCandidates:1].firstObject;
+            if (text) puts(text.string.UTF8String);
+        }
+        return 0;
+    }
+    // Vision may return separate observations for the pointer, highlighted
+    // match and candidate suffix, or the Latin and Han runs on one line.
+    // Group only boxes with overlapping vertical centres, then read left to right.
+    NSMutableArray<VNRecognizedTextObservation *> *pending = [request.results mutableCopy];
+    while (pending.count) {
+        VNRecognizedTextObservation *anchor = pending.firstObject;
+        NSMutableArray<VNRecognizedTextObservation *> *row = [NSMutableArray arrayWithObject:anchor];
+        [pending removeObjectAtIndex:0];
+        for (VNRecognizedTextObservation *other in [pending copy]) {
+            double dy = fabs(CGRectGetMidY(anchor.boundingBox) - CGRectGetMidY(other.boundingBox));
+            if (dy < 0.45 * MIN(anchor.boundingBox.size.height, other.boundingBox.size.height)) {
+                [row addObject:other];
+                [pending removeObject:other];
+            }
+        }
+        [row sortUsingComparator:^NSComparisonResult(VNRecognizedTextObservation *a,
+                                                     VNRecognizedTextObservation *b) {
+            return [@(CGRectGetMinX(a.boundingBox)) compare:@(CGRectGetMinX(b.boundingBox))];
+        }];
+        NSMutableArray *words = [NSMutableArray array];
+        for (VNRecognizedTextObservation *word in row) {
+            NSString *value = [word topCandidates:1].firstObject.string;
+            if (value.length) [words addObject:value];
+        }
+        if (words.count) {
+            if (geometry) printf("%.6f\t", CGRectGetMidY(anchor.boundingBox));
+            puts([[words componentsJoinedByString:@" "] UTF8String]);
         }
     }
     return 0;

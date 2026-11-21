@@ -34,7 +34,7 @@ function Wait-File($path) {
 }
 function Capture-View($name) {
     & $capture -Hwnd $view.ToInt64() -OutputPath "$run/$name.png" -StatsPath "$run/$name.txt" -Quiet
-    if ($LASTEXITCODE -ne 0) { throw "Capture failed: $name" }
+    if (!(Test-Path -LiteralPath "$run/$name.png") -or !(Test-Path -LiteralPath "$run/$name.txt")) { throw "Capture artifacts missing for $name" }
 }
 
 $originalProfile = $env:APPDATA

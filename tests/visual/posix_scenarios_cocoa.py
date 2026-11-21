@@ -46,7 +46,7 @@ class Window:
         self.app = subprocess.Popen([args.app], cwd=self.home, env=env)
         stack.callback(self.cleanup)
         self.wid = wait_for("visible " + name, self.find_window)
-        self.command('echo $$ > "$HOME/shellpid"')
+        self.command('pwd -P > "$HOME/cwd"; echo $$ > "$HOME/shellpid"')
         try:
             self.shellpid = int(wait_for("shell PID", lambda: self.read("shellpid")))
         except RuntimeError:
@@ -56,7 +56,7 @@ class Window:
             raise RuntimeError("Shell process does not belong to the launched window")
         actual = output("ps", "-p", str(self.shellpid), "-o", "comm=")
         metadata = {"window_id": self.wid, "app_pid": self.app.pid, "shell_pid": self.shellpid,
-                    "shell_executable": actual}
+                    "shell_executable": actual, "cwd": self.read("cwd"), "fixture_home": str(self.home)}
         (self.evidence / f"{name}-session.json").write_text(json.dumps(metadata, indent=2) + "\n")
         if Path(actual).name != Path(shell).name:
             raise RuntimeError(f"Unexpected shell {actual}")
@@ -100,7 +100,12 @@ class Window:
         return lines
 
     def see(self, stage, condition):
-        return wait_for(stage, lambda: condition(self.capture(stage)))
+        try:
+            return wait_for(stage, lambda: condition(self.capture(stage)))
+        except RuntimeError:
+            print(f"{self.name} {stage} OCR:\n{(self.evidence / (self.name + '-' + stage + '.txt')).read_text()}",
+                  flush=True)
+            raise
 
     def continued(self, label):
         self.command(f'echo $$ > "$HOME/again"; echo {label[:-1]}"{label[-1]}"')
@@ -114,10 +119,12 @@ def clipboard(window):
     # Separate fixture input from the user's selection and the foreground receiver.
     (window.home / "source").write_bytes(fixture + b"\n")
     receiver = window.home / "received"
-    window.command('stty size > size; printf "\\033[2J\\033[H"; cat source; head -n 1 > received')
+    window.command('stty size > "$HOME/size"; printf "\\033[2J\\033[H"; cat "$HOME/source"; head -n 1 > "$HOME/received"')
+    grid = wait_for("terminal grid", lambda: window.read("size"))
+    print(f"clipboard grid={grid} window={window.action('size')}", flush=True)
     y = window.see("source", lambda lines: next((y for y, s in lines
                    if "Termole" in s and "test" in s), None))
-    _, cols = map(int, window.read("size").split())
+    _, cols = map(int, grid.split())
     subprocess.run(["pbcopy"], input=uuid.uuid4().hex.encode(), check=True)
     # Two CJK characters occupy four cells; select through the final t.
     window.action("drag", 0.5 / cols, 16.5 / cols, y)
@@ -135,7 +142,9 @@ def clipboard(window):
 
 def fzf(window):
     (window.home / "options").write_text("Amber alpha\nAmber bravo\nViolet cobalt\n")
-    window.command("fzf --layout=default --no-sort --pointer=Z --prompt='Find ' < options > picked")
+    window.command("fzf --layout=default --no-sort --info=hidden --pointer=X --prompt='Find ' "
+                   "--color=fg:15,fg+:15,bg:0,bg+:0,hl:15,hl+:15,pointer:15,prompt:15,query:15 "
+                   '< "$HOME/options" > "$HOME/picked"')
     window.see("initial-fzf", lambda lines: any("Violet cobalt" in s for _, s in lines))
     kids = output("pgrep", "-P", str(window.shellpid)).splitlines()
     matching = [int(pid) for pid in kids if Path(output("ps", "-p", pid, "-o", "comm=")).name == "fzf"]
@@ -146,13 +155,13 @@ def fzf(window):
 
 def fzf_frame(lines, selected):
     texts = [s for _, s in lines]
-    query = geometry(lines, "Find Amber")
+    query = next((y for y, s in lines if re.search(r"\bFind\s*Amber\b", s)), None)
     # Default fzf layout anchors the query at the bottom. A stale old-size frame
     # in a larger window puts it far from the new bottom edge.
     return (query is not None and query < 0.12
             and any("Amber alpha" in s for s in texts) and any("Amber bravo" in s for s in texts)
             and all("Violet cobalt" not in s for s in texts)
-            and any(re.fullmatch(r"Z\s*" + selected, s) for s in texts))
+            and any(re.fullmatch(r"X\s*" + selected, s) for s in texts))
 
 
 def resize(window):
@@ -201,8 +210,7 @@ def cancel(window):
     window.continued("Termole continued")
 
 
-def isolate(first, second):
-    child = fzf(first)
+def isolate(first, child, second):
     assert first.wid != second.wid and first.shellpid != second.shellpid
     pids = {"closed_shell": first.shellpid, "closed_fzf": child, "surviving_shell": second.shellpid}
     (first.evidence / "processes.json").write_text(json.dumps(pids, indent=2) + "\n")
@@ -239,7 +247,8 @@ def main():
     with ExitStack() as stack:
         first = Window(stack, args, "first", shell)
         if args.scenario == "t5":
-            isolate(first, Window(stack, args, "second", shell))
+            child = fzf(first)
+            isolate(first, child, Window(stack, args, "second", shell))
         else:
             {"t2": clipboard, "t3": resize, "t4": cancel}[args.scenario](first)
 
