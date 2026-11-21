@@ -5,8 +5,8 @@ app=$1
 evidence=$2
 mkdir -p "$evidence"
 home=$(mktemp -d)
-SHELL=$(getent passwd "$(id -u)" | cut -d: -f7)
-export SHELL
+login_shell=$(getent passwd "$(id -u)" | cut -d: -f7)
+unset SHELL
 HOME=$home XDG_CONFIG_HOME=$home/config SDL_VIDEO_DRIVER=x11 "$app" &
 app_pid=$!
 cleanup() {
@@ -47,11 +47,11 @@ done
 grep -Fxq 'Termole ready' "$evidence/ready.txt"
 shell_pid=$(cat "$home/first")
 actual_shell=$(readlink "/proc/$shell_pid/exe")
-[ "$actual_shell" = "$(readlink -f "$SHELL")" ]
+[ "$actual_shell" = "$(readlink -f "$login_shell")" ]
 type_command 'echo $$ > "$HOME/second"; exit 37'
 status=0
 wait "$app_pid" || status=$?
 [ "$status" -eq 37 ]
 cmp "$home/first" "$home/second"
 uname -sr
-printf 'Default shell: %s, PID: %s\n' "$SHELL" "$(cat "$home/first")"
+printf 'Default shell: %s, PID: %s\n' "$login_shell" "$(cat "$home/first")"

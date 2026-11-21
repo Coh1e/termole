@@ -26,3 +26,4 @@ The protocol carries input bytes, viewport size, terminal modes, visible
 cells and exit status. It uses a versioned, length-prefixed byte format.
 The client renders the visible grid from the server's session state. Drag
 to select visible cells, use Ctrl+Shift+C to copy and Ctrl+Shift+V to paste.
+The macOS View also supports Command+C and Command+V.

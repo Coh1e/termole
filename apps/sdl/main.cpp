@@ -6,6 +6,9 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <pwd.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -149,6 +152,26 @@ void draw(SDL_Renderer* renderer, Font& font, const PosixFrame& frame, bool focu
     }
 }
 
+constexpr bool clipboard_modifiers(SDL_Keymod modifiers)
+{
+#ifdef __APPLE__
+    if ((modifiers & SDL_KMOD_GUI) && !(modifiers & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT | SDL_KMOD_ALT))) {
+        return true;
+    }
+#endif
+    return (modifiers & SDL_KMOD_CTRL) && (modifiers & SDL_KMOD_SHIFT);
+}
+
+static_assert(!clipboard_modifiers(SDL_KMOD_LCTRL));
+static_assert(clipboard_modifiers(SDL_KMOD_RCTRL | SDL_KMOD_LSHIFT));
+#ifdef __APPLE__
+static_assert(clipboard_modifiers(SDL_KMOD_LGUI | SDL_KMOD_CAPS));
+static_assert(clipboard_modifiers(SDL_KMOD_RGUI));
+static_assert(!clipboard_modifiers(SDL_KMOD_RGUI | SDL_KMOD_LALT));
+#else
+static_assert(!clipboard_modifiers(SDL_KMOD_LGUI));
+#endif
+
 template<class Session>
 void send_key(Session& session, const SDL_KeyboardEvent& key)
 {
@@ -204,6 +227,9 @@ termole::platform::PosixSessionOptions shell_options()
 {
     termole::platform::PosixSessionOptions options;
     const char* shell = std::getenv("SHELL");
+    if (!shell || !*shell) {
+        if (const auto* account = getpwuid(getuid())) shell = account->pw_shell;
+    }
     options.arguments = { shell && *shell ? shell : "/bin/sh" };
     return options;
 }
@@ -282,11 +308,9 @@ int show_window(Session& terminal, const char* probe_path)
                     break;
                 case SDL_EVENT_KEY_DOWN:
                     if (event.key.key == SDLK_C && frame && selection.anchor &&
-                        (event.key.mod & SDL_KMOD_CTRL) &&
-                        (event.key.mod & SDL_KMOD_SHIFT)) {
+                        clipboard_modifiers(event.key.mod)) {
                         SDL_SetClipboardText(selection.text(*frame).c_str());
-                    } else if (event.key.key == SDLK_V && (event.key.mod & SDL_KMOD_CTRL) &&
-                               (event.key.mod & SDL_KMOD_SHIFT)) {
+                    } else if (event.key.key == SDLK_V && clipboard_modifiers(event.key.mod)) {
                         std::unique_ptr<char, decltype(&SDL_free)> text(SDL_GetClipboardText(), SDL_free);
                         if (text && *text) {
                             const bool bracketed = terminal.modes().bracketed_paste != 0;
