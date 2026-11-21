@@ -228,18 +228,47 @@ static int drag(pid_t pid, double start, double end, double y)
     CGRect rect;
     if (!bounds(window, &rect) || start < 0 || end >= 1 || end <= start || y <= 0 || y >= 1)
         return 1;
-    const unsigned int wid = [window[(__bridge NSString *)kCGWindowNumber] unsignedIntValue];
-    const CGEventType types[] = {kCGEventLeftMouseDown, kCGEventLeftMouseDragged, kCGEventLeftMouseUp};
-    for (int i = 0; i < 3; ++i) {
-        CGPoint point = CGPointMake(rect.origin.x + (i == 0 ? start : end) * rect.size.width,
-                                    rect.origin.y + (1 - y) * rect.size.height);
-        CGEventRef event = CGEventCreateMouseEvent(NULL, types[i], point, kCGMouseButtonLeft);
-        CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointer, wid);
-        CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent, wid);
-        CGEventPostToPid(pid, event);
+    if (!focus_window(pid)) return 1;
+    CGPoint first = CGPointMake(rect.origin.x + start * rect.size.width,
+                                rect.origin.y + (1 - y) * rect.size.height);
+    double distance = (end - start) * rect.size.width;
+    fprintf(stderr, "HID drag on pid %d at screen (%.1f,%.1f) to (%.1f,%.1f)\n",
+            pid, first.x, first.y, first.x + distance, first.y);
+    for (int i = 0; i <= 10; ++i) {
+        CGEventType type = i == 0 ? kCGEventMouseMoved : i == 1 ? kCGEventLeftMouseDown :
+                           i == 10 ? kCGEventLeftMouseUp : kCGEventLeftMouseDragged;
+        CGPoint point = first;
+        if (i > 1) point.x += distance * MIN(i - 1, 8) / 8;
+        CGEventRef event = CGEventCreateMouseEvent(NULL, type, point, kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
-        usleep(50000);
+        usleep(40000);
     }
+    return 0;
+}
+
+// Compare the source and selection captures on the source text row. The
+// View paints selected cells blue, including the spaces between words.
+static int selection_span(NSString *before_path, NSString *after_path, double vision_y)
+{
+    NSBitmapImageRep *before = [NSBitmapImageRep imageRepWithData:[NSData dataWithContentsOfFile:before_path]];
+    NSBitmapImageRep *after = [NSBitmapImageRep imageRepWithData:[NSData dataWithContentsOfFile:after_path]];
+    if (!before || !after || before.pixelsWide != after.pixelsWide || before.pixelsHigh != after.pixelsHigh)
+        return 1;
+    NSInteger row = (NSInteger)((1 - vision_y) * after.pixelsHigh);
+    NSInteger left = after.pixelsWide, right = -1;
+    for (NSInteger x = 0; x < after.pixelsWide; ++x) {
+        for (NSInteger y = MAX(0, row - 4); y <= MIN(after.pixelsHigh - 1, row + 4); ++y) {
+            NSColor *a = [[before colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+            NSColor *b = [[after colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+            if (b.blueComponent > b.redComponent + 0.15 && b.blueComponent > a.blueComponent + 0.15) {
+                left = MIN(left, x);
+                right = MAX(right, x);
+                break;
+            }
+        }
+    }
+    printf("%ld %ld %ld\n", (long)left, (long)right, (long)after.pixelsWide);
     return 0;
 }
 
@@ -318,6 +347,8 @@ int main(int argc, const char **argv)
             return type_command(atoi(argv[2]), @(argv[3]), false);
         if (argc == 4 && strcmp(argv[1], "key") == 0) return named_key(atoi(argv[2]), @(argv[3]));
         if (argc == 3 && strcmp(argv[1], "lines") == 0) return read_lines(@(argv[2]), true);
+        if (argc == 5 && strcmp(argv[1], "selection-span") == 0)
+            return selection_span(@(argv[2]), @(argv[3]), atof(argv[4]));
         if (argc == 4 && strcmp(argv[1], "cursor") == 0)
             return cursor_x(@(argv[2]), atof(argv[3]));
         if (argc == 3 && strcmp(argv[1], "close") == 0)

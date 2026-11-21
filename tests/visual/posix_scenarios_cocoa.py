@@ -125,12 +125,28 @@ def clipboard(window):
     y = window.see("source", lambda lines: next((y for y, s in lines
                    if "Termole" in s and "test" in s), None))
     _, cols = map(int, grid.split())
-    subprocess.run(["pbcopy"], input=uuid.uuid4().hex.encode(), check=True)
+    sentinel = uuid.uuid4().hex.encode()
+    subprocess.run(["pbcopy"], input=sentinel, check=True)
     # Two CJK characters occupy four cells; select through the final t.
     window.action("drag", 0.5 / cols, 16.5 / cols, y)
     window.capture("selection")
+    base = window.evidence
+    left, right, width = map(int, output(window.driver, "selection-span",
+        base / f"{window.name}-source.png", base / f"{window.name}-selection.png", str(y)).split())
+    cell = width / cols
+    print(f"selection y={y:.4f}, changed span={left}..{right}, cell={cell:.2f}px", flush=True)
     window.action("key", "copy")
-    wait_for("exact selection on pasteboard", lambda: subprocess.check_output(["pbpaste"]) == fixture)
+    def copied():
+        return subprocess.check_output(["pbpaste"])
+    try:
+        wait_for("exact selection on pasteboard", lambda: copied() == fixture)
+    except RuntimeError:
+        actual = copied()
+        prefix = len(os.path.commonprefix([actual, fixture]))
+        print(f"clipboard bytes={len(actual)}, matching prefix={prefix}/{len(fixture)}, "
+              f"original sentinel={actual == sentinel}", flush=True)
+        raise
+    assert left < cell and right >= 16 * cell, "Selection did not visibly cover all 17 columns"
     window.action("key", "paste")
     window.action("key", "enter")
     wait_for("foreground program input", lambda: receiver.exists() and receiver.stat().st_size)
@@ -155,7 +171,7 @@ def fzf(window):
 
 def fzf_frame(lines, selected):
     texts = [s for _, s in lines]
-    query = next((y for y, s in lines if re.search(r"\bFind\s*Amber\b", s)), None)
+    query = next((y for y, s in lines if re.fullmatch(r"Find\s*Amber\s*_?", s)), None)
     # Default fzf layout anchors the query at the bottom. A stale old-size frame
     # in a larger window puts it far from the new bottom edge.
     return (query is not None and query < 0.12
