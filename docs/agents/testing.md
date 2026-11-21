@@ -69,3 +69,39 @@ For changes involving View, renderer, window placement or selector UI:
 - `termole --stdio <program>` is the explicit Termole extension that forwards caller stdin/stdout; Termole does not parse selector results.
 - `termole` is a console launcher: normal mode returns immediately; `-e`/`--stdio` wait and return the program exit code. `--stdio` requires piped/file stdin/stdout.
 - See [ADR 0006](../adr/0006-terminal-selector-boundary.md) and [ADR 0007](../adr/0007-console-launcher-wait.md).
+
+## POSIX default shell through the ordinary window (#33)
+
+On Linux, the GUI workflow runs `tests/visual/posix_startup_x11.sh` under Xvfb
+against the built executable with no arguments. It starts with an empty home and
+the account shell. The driver types into the X11 window, saves the prompt and output
+screenshots, checks the complete output line by OCR, and verifies the shell executable,
+PID and final exit code. Inspect `prompt.png` for the expected shell prompt.
+
+The macOS GUI workflow runs `tests/visual/posix_startup_cocoa.sh`. It targets the
+ordinary application's own Cocoa window by PID, captures it with `screencapture`,
+and checks the prompt and complete output line with Vision text recognition.
+The driver verifies the account shell process and the PID from both commands.
+Screen Recording and keyboard event posting permissions are required on the GUI
+runner. A missing permission fails the check.
+
+For manual verification on a macOS desktop, build the `macos-static` preset. In a terminal, run:
+
+```sh
+test_home=$(mktemp -d)
+login_shell=$(dscl . -read "/Users/$(id -un)" UserShell | awk '{print $2}')
+sw_vers
+printf 'Default shell: %s\n' "$login_shell"
+touch "$test_home/.zshrc"  # Skip zsh's first-use setup in the temporary home.
+HOME="$test_home" XDG_CONFIG_HOME="$test_home/config" SHELL="$login_shell" \
+  .local/build/macos-static/termole
+```
+
+Capture the new Termole window with its initial prompt. In that window type
+`echo $$ > "$HOME/first"; echo Termole rea"dy"`. Capture the window again and
+check that `Termole ready` occupies its own line, followed by a fresh prompt.
+Type `echo $$ > "$HOME/second"; ps -p $$ -o pid=,comm=` and check that the
+process is the recorded default shell. Type `exit 37`. In the calling terminal
+run `echo $?` immediately and verify 37, then `cmp "$test_home/first" "$test_home/second"`
+to verify the shell PID stayed the same. Retain both screenshots with the system
+version, shell path and test results.

@@ -20,9 +20,14 @@ else()
   if(DEFINED TERMOLE_GHOSTTY_VT_ROOT AND TERMOLE_GHOSTTY_VT_ROOT STREQUAL "")
     message(FATAL_ERROR "Set TERMOLE_GHOSTTY_VT_MUSL_ROOT to the installed musl Ghostty prefix.")
   endif()
-  set(TERMOLE_GHOSTTY_VT_ROOT "${termole_root}/third_party/libghostty-vt/1.0.1-linux"
-      CACHE PATH "Linux libghostty-vt prefix (include/ and lib/)")
+  if(NOT DEFINED TERMOLE_GHOSTTY_VT_ROOT)
+    if(CMAKE_CROSSCOMPILING OR NOT CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+      message(FATAL_ERROR "Set TERMOLE_GHOSTTY_VT_ROOT to a libghostty-vt installation for the target.")
+    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/BuildLinuxGhostty.cmake")
+  endif()
 
+  unset(TERMOLE_GHOSTTY_VT_LIBRARY CACHE)
   find_library(TERMOLE_GHOSTTY_VT_LIBRARY
     NAMES libghostty-vt.a ghostty-vt-static.a
     PATHS "${TERMOLE_GHOSTTY_VT_ROOT}/lib" NO_DEFAULT_PATH)

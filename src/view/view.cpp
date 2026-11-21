@@ -41,11 +41,11 @@ std::wstring wide_from_utf8(std::string_view text)
     return wide;
 }
 
-bool write_clipboard(std::wstring_view text)
+bool write_clipboard(HWND owner, std::wstring_view text)
 {
     bool opened = false;
     for (int attempt = 0; attempt < 100 && !opened; ++attempt) {
-        opened = ::OpenClipboard(nullptr) != FALSE;
+        opened = ::OpenClipboard(owner) != FALSE;
         if (!opened) ::Sleep(2);
     }
     if (!opened) return false;
@@ -503,7 +503,7 @@ Result<void> NativeView::copy_selection()
 {
     const std::string text = selection_text();
     if (text.empty()) return {};
-    if (!write_clipboard(wide_from_utf8(text))) {
+    if (!write_clipboard(hwnd(), wide_from_utf8(text))) {
         return std::unexpected(win::system_error("SetClipboardData", ::GetLastError()));
     }
     return {};
