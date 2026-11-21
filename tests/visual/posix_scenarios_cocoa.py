@@ -156,9 +156,10 @@ def clipboard(window):
     window.capture("pasted")
 
 
-def fzf(window):
+def fzf(window, print_query=False):
     (window.home / "options").write_text("Amber alpha\nAmber bravo\nViolet cobalt\n")
-    window.command("fzf --layout=default --no-sort --info=hidden --pointer=X --prompt='Find ' "
+    query_option = "--print-query " if print_query else ""
+    window.command(f"fzf {query_option}--layout=default --no-sort --info=hidden --pointer=X --prompt='Find ' "
                    "--color=fg:15,fg+:15,bg:0,bg+:0,hl:15,hl+:15,pointer:15,prompt:15,query:15 "
                    '< "$HOME/options" > "$HOME/picked"')
     window.see("initial-fzf", lambda lines: any("Violet cobalt" in s for _, s in lines))
@@ -171,7 +172,7 @@ def fzf(window):
 
 def fzf_frame(lines, selected):
     texts = [s for _, s in lines]
-    query = next((y for y, s in lines if re.fullmatch(r"Find\s*Amber\s*_?", s)), None)
+    query = next((y for y, s in lines if re.fullmatch(r"Find\s*Amber\s*[_l|]?", s)), None)
     # Default fzf layout anchors the query at the bottom. A stale old-size frame
     # in a larger window puts it far from the new bottom edge.
     return (query is not None and query < 0.12
@@ -181,7 +182,7 @@ def fzf_frame(lines, selected):
 
 
 def resize(window):
-    fzf(window)
+    fzf(window, print_query=True)
     window.action("text", "Amber")
     window.see("filtered", lambda lines: fzf_frame(lines, "Amber alpha"))
     window.action("key", "up")
@@ -194,7 +195,7 @@ def resize(window):
     wait_for("fzf result", lambda: window.read("picked"))
     result = (window.home / "picked").read_bytes()
     (window.evidence / "fzf-result.bin").write_bytes(result)
-    assert result == b"Amber bravo\n"
+    assert result == b"Amber\nAmber bravo\n", result
     window.continued("Termole resized")
 
 
