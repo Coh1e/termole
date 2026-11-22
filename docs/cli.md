@@ -105,3 +105,17 @@ T25 提供 `pipe-visible` / `pipe-selected` / `pipe-scrollback`：把当前可�
 ## 环境变量语义
 
 指定任一 `--env` 时，Termole 读取调用方环境，叠加 `KEY=VALUE` 覆盖，构造新的 Unicode 环境块传给子进程；调用方进程环境不变。每个条目必须包含 `=` 且键非空；值可以包含 `=`、空格和 Unicode。未指定 `--env` 时子进程继承调用方环境。
+
+## Windows 便携包文件选择示例
+
+将单独安装的 `fzf.exe` 加入 PATH。在 Windows PowerShell 5.1 中运行解压包里的示例。
+省略参数时列出当前目录的直属文件，也可以用 `-Directory` 指定目录。在浮窗中筛选后按 Enter，
+脚本输出所选文件的完整路径，退出码为 0。
+移动光标时，预览窗格读取当前文件开头最多 16 KiB 的文本，支持 UTF-8 和带 BOM 的 UTF-16。超限时首行提示截断。
+编码无效或含二进制控制字符时显示 `[Binary file]`，无法读取时显示 `[File unreadable]`。两类文件均可按 Enter 选中。
+
+```powershell
+$pick = 'C:\Tools\Termole\share\termole\examples\select-file.ps1'
+$selected = & $pick
+$selected = & $pick -Directory 'C:\work files'
+```

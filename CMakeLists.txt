@@ -101,6 +101,7 @@ if(TERMOLE_BUILD_APP)
     "${CMAKE_CURRENT_BINARY_DIR}/termoleConfigVersion.cmake"
     DESTINATION lib/cmake/termole
   )
+  install(FILES examples/select-file.ps1 examples/preview-file.ps1 DESTINATION share/termole/examples)
   install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
   set(CPACK_GENERATOR ZIP)
   set(CPACK_PACKAGE_NAME "Termole")

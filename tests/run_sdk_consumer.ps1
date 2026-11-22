@@ -60,6 +60,9 @@ try {
         'share\termole\examples\sdk-host\CMakeLists.txt',
         'share\termole\examples\sdk-host\main.cpp',
         'share\termole\examples\sdk-host\README.md',
+        'share\termole\examples\select-file.ps1',
+        'THIRD_PARTY_NOTICES.md',
+        'LICENSE',
         'docs\sdk.md',
         'docs\host-api.md'
     )
@@ -69,6 +72,11 @@ try {
             throw "the installed package is missing $relative"
         }
     }
+
+    & "$PSScriptRoot/run_file_preflight.ps1" -Package $package -Root "$Root/file-preflight"
+
+    & "$PSScriptRoot/run_file_preview.ps1" -Package $package -Root "$Root/file-preview"
+    & "$PSScriptRoot/run_file_example.ps1" -Package $package -Root "$Root/file-example"
 
     Write-Host 'Configuring the independent consumer against the package'
     Invoke-Cmake -Label 'consumer-configure' -Arguments @(
