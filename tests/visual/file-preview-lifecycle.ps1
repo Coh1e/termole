@@ -68,6 +68,9 @@ function Start-Picker($label) {
         }
         Start-Sleep -Milliseconds 100
     }
+    if ($proc.HasExited) {
+        throw "$label picker exited before window discovery: $($proc.ExitCode) stderr=$($proc.StandardError.ReadToEnd())"
+    }
     throw "Missing $label picker window"
 }
 function Send-Message($window, $msg, $key) {
