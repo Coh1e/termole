@@ -1,14 +1,13 @@
-# Triage labels
+# 分诊标签
 
-| 角色 | GitHub 标签 | 含义 |
+| 标准角色 | GitHub 标签 | 含义 |
 | --- | --- | --- |
-| needs-triage | needs-triage | 待评估 |
-| needs-info | needs-info | 待补充信息 |
-| ready-for-agent | ready-for-agent | 可交给代理实现 |
-| ready-for-human | ready-for-human | 需要人工处理 |
-| verify | verify | 实现已完成，只剩人工或端到端验收；不阻塞其他票 |
-| wontfix | wontfix | 不予实施 |
+| `needs-triage` | `needs-triage` | 等待维护者评估 |
+| `needs-info` | `needs-info` | 等待报告者补充信息 |
+| `ready-for-agent` | `ready-for-agent` | 规格完整，可交给代理独立实现 |
+| `ready-for-human` | `ready-for-human` | 需要人工实施 |
+| `wontfix` | `wontfix` | 不予处理 |
 
-复用现有同名标签，只创建缺少的标签。
+按表映射技能使用的分诊角色。复用同名标签，只创建缺少的标签。
 
-`verify` 是验证票的标签：实现已经在别的票交付，本票只欠确认。它不作为 blocking edge，避免「等人点一下」卡住实现工作。
+项目另用 `verify` 标记实现已交付、只剩人工或端到端验收的任务。依赖关系按 [Issue 跟踪说明](issue-tracker.md#切票)处理。

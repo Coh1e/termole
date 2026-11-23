@@ -3,7 +3,6 @@ set(root "${CMAKE_CURRENT_LIST_DIR}/..")
 set(files
   "${root}/CMakeLists.txt"
   "${root}/CMakePresets.json"
-  "${root}/build.sh"
 )
 file(GLOB extra "${root}/cmake/*.cmake")
 list(APPEND files ${extra})

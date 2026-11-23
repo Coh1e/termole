@@ -1,6 +1,6 @@
 # Termole
 
-Termole 为现有 CLI/TUI 程序提供 Windows 终端界面，并允许其他应用嵌入该界面。
+Termole 让已有 CLI/TUI 程序进入桌面工作流。产品范围见[产品基线](README.md#产品基线)。
 
 ## Language
 
@@ -31,7 +31,7 @@ _Avoid_: 把 Launcher 说成第二个可执行文件、把 GUI 角色当公开�
 _Avoid_: 把 GUI 角色与 Launcher 混成两个程序
 
 **嵌入（Embedding）**：
-其他应用在自己的界面内使用 Termole 终端的能力，是首版必须交付的产品能力。
+其他应用在自己的界面内使用 Termole 终端的能力。Windows 静态 SDK 提供进程内嵌入。
 _Avoid_: 仅启动外部终端窗口
 
 **Profile**：
@@ -43,12 +43,26 @@ _Avoid_: 插件、应用包
 Termole 只提供终端与数据通道，不实现选择结果协议。
 _Avoid_: 把选择器称为 Termole 的 picker 模式
 
+**TUI Applet**：
+由调用方为一项具体任务打开的终端交互界面。外部程序负责交互，调用方接收结果并继续工作流。
+_Avoid_: 产品名称、内置选择器
+
+**轻量独立终端**：
+用户直接打开的终端，用于启动 Shell、运行已有 CLI/TUI，并提供基本输入和复制粘贴。
+
+**Shell 集成（Shell integration）**：
+特定 Shell 为终端扩展提供当前命令行编辑状态的方式。例如，扩展可以根据光标所在的参数提供补全候选。读取视图选区等通用动作由 Termole 提供。
+
+**预热启动（Warm launch）**：
+通过已运行的启动端为每次调用创建新会话和视图。
+_Avoid_: 重连、恢复已有会话
+
 **执行模式（Execute，`-e`）**：
-Termole 在 ConPTY 中运行外部程序，程序 fd 0/1/2 都接终端；不转发调用方 stdin/stdout。
+外部程序的标准输入、标准输出和标准错误均连接终端。调用方等待程序结束并取得退出状态。
 _Avoid_: 把 `-e` 当成调用方数据通道
 
 **标准流模式（Stdio，`--stdio`）**：
-Termole 显式把调用方 stdin/stdout 接到外部程序，程序 UI 与 stderr 走 ConPTY；Termole 不解析结果。
+调用方通过管道或文件向外部程序的标准输入送入字节，从程序的标准输出原样取得结果字节。程序的交互界面和标准错误走终端，Termole 自身的诊断写入调用方的标准错误。调用方等待并取得退出状态。
 _Avoid_: picker、选择器内置模式
 
 **数据通道（Data Channel）**：

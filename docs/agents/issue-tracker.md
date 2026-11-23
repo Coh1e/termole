@@ -4,19 +4,17 @@
 地址：https://github.com/Coh1e/termole/issues
 
 规格和任务均发布为 GitHub Issues。
-优先使用 GitHub 连接工具；能力不足时使用 gh，
-并显式指定 --repo Coh1e/termole。
+优先使用 GitHub 插件，显式指定仓库 `Coh1e/termole`。
+插件缺少所需操作且环境已安装 `gh` 时，使用 `gh` 并显式指定 `--repo Coh1e/termole`。
 
-- 当前 GitHub 仓库没有分支和代码（空仓库），代码只在本地工作区；
-  不要假设远端有代码，也不要从远端取实现。
-- 读取任务时包含正文、标签和评论。
+- 技能要求发布规格或任务时，创建 GitHub Issue。读取或列出任务时，按状态和标签筛选，并获取相关任务的正文、标签和评论。
 - 多行正文使用结构化参数或 --body-file，保留真实换行。
-- 规格拆出的任务关联为子任务。
+- 规格拆出的任务使用 GitHub 原生子任务。原生操作不可用时，在子任务正文开头写 `Part of #编号`。
 - 阻塞关系优先使用 GitHub 原生依赖；不可用时，
   在正文维护 Blocked by: #编号。
 - 所有阻塞项完成后才能开始任务。
 - 完整规格和已确认的实施任务标记 ready-for-agent。
-- 标签映射见 triage-labels.md。
+- 应用或移除标签时，使用[标签映射](triage-labels.md)中的实际名称。
 
 ## 切票
 
@@ -34,7 +32,7 @@
 
 ## 状态查询
 
-- 状态以 GitHub 为准；`docs/issue-index.md` 只维护阻塞边。
-- `scripts/issue-status.ps1` 把两者 join 起来，输出 READY / BLOCKED / DRIFT。
+- 状态以 GitHub 为准。从当前交付规格找到对应父任务和依赖关系。
+- Applet 与轻量独立终端分别按[对应规格](../README.md)验收和拆票。
 
 PRs as a request surface: no.

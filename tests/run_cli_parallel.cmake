@@ -1,5 +1,5 @@
-if(NOT DEFINED APP OR NOT DEFINED HELPER OR NOT DEFINED ROOT OR NOT DEFINED POWERSHELL)
-  message(FATAL_ERROR "run_cli_parallel.cmake requires -DAPP=... -DHELPER=... -DROOT=... -DPOWERSHELL=...")
+if(NOT DEFINED APP OR NOT DEFINED HELPER OR NOT DEFINED ROOT)
+  message(FATAL_ERROR "run_cli_parallel.cmake requires -DAPP=... -DHELPER=... -DROOT=...")
 endif()
 
 set(cwd_a "${ROOT}/parallel A")
@@ -13,18 +13,17 @@ file(REMOVE "${report_a}" "${report_b}")
 set(helper_a "${cwd_a}/cli-report-helper.exe")
 set(helper_b "${cwd_b}/cli-report-helper.exe")
 
+# Multiple COMMAND clauses launch both instances concurrently.
 execute_process(
-  COMMAND "${POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
-    -File "${CMAKE_CURRENT_LIST_DIR}/run_cli_parallel.ps1"
-    -Exe "${APP}" -HelperA "${helper_a}" -HelperB "${helper_b}"
-    -CwdA "${cwd_a}" -CwdB "${cwd_b}" -ReportA "${report_a}" -ReportB "${report_b}"
-  RESULT_VARIABLE result
-  OUTPUT_VARIABLE output
-  ERROR_VARIABLE error
-  TIMEOUT 40
+  COMMAND "${APP}" --cwd "${cwd_a}" --env "TERMOLE_PROBE_REPORT=${report_a}"
+    --env "TERMOLE_PROBE_VALUE=parallel A" -e "${helper_a}" "parallel A" "a b"
+  COMMAND "${APP}" --cwd "${cwd_b}" --env "TERMOLE_PROBE_REPORT=${report_b}"
+    --env "TERMOLE_PROBE_VALUE=parallel B" -e "${helper_b}" "parallel B" "a b"
+  RESULTS_VARIABLE results
+  TIMEOUT 30
 )
-if(NOT result EQUAL 0)
-  message(FATAL_ERROR "parallel CLI launch exited with '${result}'. stdout:\n${output}\nstderr:\n${error}")
+if(NOT results STREQUAL "0;0")
+  message(FATAL_ERROR "Parallel CLI exit codes: ${results}")
 endif()
 if(NOT EXISTS "${report_a}" OR NOT EXISTS "${report_b}")
   message(FATAL_ERROR "parallel CLI launch did not write both reports")

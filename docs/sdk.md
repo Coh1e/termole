@@ -1,7 +1,7 @@
 # 嵌入式 SDK（v0.1 / ABI 3）
 
 状态：v0.1 的 ABI 3 已冻结（T22，[#23](https://github.com/Coh1e/termole/issues/23)）。
-历史 ABI 验证见 [t22-validation.md](t22-validation.md)。当前 SDK 通过
+当前 SDK 通过
 `t22_sdk_consumer` 从安装包构建和运行独立宿主。宿主使用公开头文件和静态库。
 
 ## 文件
@@ -112,7 +112,17 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 | 事件 | 标题、响铃、退出、错误；`termole_session_poll_event` | 49 |
 | 不弹窗 | 库不创建对话框；错误由宿主展示 | 50 |
 | 脚本复用边界 | 类型化操作/查询/事件契约；未来绑定只调用同一 C ABI | 51、52 |
-| 示例、构建说明、能力文档 | `examples/sdk-host`、本文、`host-api.md` | 55 |
+| 示例、构建说明、能力文档 | `examples/sdk-host`、本文 | 55 |
+
+| 族 | 主要内容 | 约束 |
+| --- | --- | --- |
+| 会话操作 | CreateSession、TerminateSession | 程序、参数、工作目录、环境变量分别传递；不自行拼 Shell 管道 |
+| 终端操作 | SendText、SendKey、Resize | 粘贴与按键是不同意图，由核心按当前终端模式编码 |
+| 视图操作 | CreateView、DestroyView、ApplyAppearance、Scroll、Select、Copy、Paste | 在宿主 UI 线程执行；子窗口布局由宿主负责 |
+| 查询 | State、Size、Title、Selection、ExitCode | 快照有明确所有权，退出码在退出完成前不可用 |
+| 事件 | TitleChanged、Bell、Exited、Error | 通过宿主可调度队列交付，不在 I/O 线程调用宿主 UI |
+
+字段布局见 [公开 C 接口](../include/termole/termole.h)。
 
 ### 操作与查询
 
@@ -136,10 +146,9 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 
 - 启动参数由宿主显式传入 program、逻辑 argv、工作目录和 `KEY=VALUE` 环境数组；库不
   拼接 Shell 命令，也不修改调用方进程环境。
-- 库不读取用户 TOML、不加载 Profile、不读取默认配置；嵌入宿主的设置全部来自公开
-  选项。宿主可以自行读取配置，再传入选项。
+- 通过公开选项传入宿主设置。配置来源由宿主选择，见 [ADR 0017](adr/0017-native-embedding.md)。
 - 库不创建顶层窗口、不接管宿主布局/焦点、不弹错误对话框、不安装全局钩子。
-- 库不提供通用文件、网络或脚本 API。宿主通过句柄传入的 stdin/stdout 数据通道和
+- 脚本绑定只能使用宿主授予的会话、进程与剪贴板能力。已有会话句柄不授予任意启动进程的权限。库不提供通用文件或网络 API。宿主通过句柄传入的 stdin/stdout 数据通道和
   显式剪贴板调用就是授权边界；终端输出不能扩大该边界。
 - 进程树由 Session 管理：销毁 Session 或关闭独立窗口结束本会话进程树；不支持宿主
   退出后的会话保活。
@@ -151,16 +160,12 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 子进程 stderr 和 UI 仍走 ConPTY。库会把句柄标记为可继承，但不替宿主解析、转码或
 排序任何字节。该通道属于宿主自己的进程/管道组合，不是 launcher，也不是 picker 协议。
 
-## 未来脚本能力
+## 可选脚本引擎
 
-本文描述的类型化操作、查询和事件是未来脚本绑定的能力契约。引入脚本引擎时，绑定只
-调用同一份 C ABI/核心校验逻辑，并由宿主授予会话、进程、剪贴板和资源范围；不提供
-通用文件/网络扩展，也不自带解释器或自定义 VM。首版不接 QuickJS，不引入相关构建
-依赖。
+Windows 静态 SDK 提供 [script.h](../include/termole/script.h) 中的上下文创建、求值和销毁接口。默认关闭 QuickJS，有效的创建请求返回 TERMOLE_STATUS_UNSUPPORTED。启用 TERMOLE_WITH_QUICKJS 后，每个上下文有独立运行时，堆上限为 16 MiB，栈上限为 256 KiB，求值约一秒后请求中断。宿主显式调用这些接口。授权边界见[宿主责任与授权](#宿主责任与授权)。
 
 ## 验证
 
 `t22_sdk_consumer` 从当前构建安装一个开发包，用独立的 CMake 工程
 `find_package(Termole CONFIG REQUIRED)` 编译 `tests/sdk-consumer`，再运行它驱动真实
-CMD/ConPTY 和 View；同一测试还编译发布包内的 `examples/sdk-host`。像素证据和逐条
-映射见 [t22-validation.md](t22-validation.md)。
+CMD/ConPTY 和 View；同一测试还编译发布包内的 `examples/sdk-host`。像素证据由当次宿主验收生成。

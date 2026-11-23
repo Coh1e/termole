@@ -108,27 +108,24 @@ set_tests_properties(t03_t05_session PROPERTIES
 # example and an independent consumer against it, then run the consumer. The
 # consumer uses only the public headers, static libraries and records
 # pixel evidence for the embedded View.
-if(TERMOLE_POWERSHELL)
-  add_test(NAME t22_sdk_consumer
-    COMMAND "${TERMOLE_POWERSHELL}"
-      -NoProfile -ExecutionPolicy Bypass
-      -File "${CMAKE_CURRENT_SOURCE_DIR}/run_sdk_consumer.ps1"
-      -SourceDir "${PROJECT_SOURCE_DIR}"
-      -BuildDir "${CMAKE_BINARY_DIR}"
-      -Root "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer"
-      -Helper "$<TARGET_FILE:termole_cli_report_helper>"
-      -Generator "${CMAKE_GENERATOR}"
-      -Config "${CMAKE_BUILD_TYPE}"
-      -Cxx "${CMAKE_CXX_COMPILER}"
-      -MakeProgram "${CMAKE_MAKE_PROGRAM}"
-      -Library "$<TARGET_FILE_NAME:termole>"
-      -Cmake "${CMAKE_COMMAND}"
-  )
-  set_tests_properties(t22_sdk_consumer PROPERTIES
-    TIMEOUT 300
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-endif()
+add_test(NAME t22_sdk_consumer
+  COMMAND "${CMAKE_COMMAND}"
+    "-DSourceDir=${PROJECT_SOURCE_DIR}"
+    "-DBuildDir=${CMAKE_BINARY_DIR}"
+    "-DRoot=${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer"
+    "-DHelper=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DGenerator=${CMAKE_GENERATOR}"
+    "-DConfig=${CMAKE_BUILD_TYPE}"
+    "-DCxx=${CMAKE_CXX_COMPILER}"
+    "-DMakeProgram=${CMAKE_MAKE_PROGRAM}"
+    "-DLibrary=$<TARGET_FILE_NAME:termole>"
+    "-DPowerShell=${TERMOLE_POWERSHELL}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_sdk_consumer.cmake"
+)
+set_tests_properties(t22_sdk_consumer PROPERTIES
+  TIMEOUT 300
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
 
 if(TERMOLE_LAZYGIT)
   add_executable(termole_lazygit_test lazygit_test.cpp)
@@ -389,16 +386,6 @@ if(TERMOLE_POWERSHELL)
   )
   set_tests_properties(t02_cli_powershell PROPERTIES TIMEOUT 60)
 
-  add_test(NAME t02_cli_parallel
-    COMMAND "${CMAKE_COMMAND}"
-      "-DAPP=$<TARGET_FILE:termole_app>"
-      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
-      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-parallel"
-      "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_parallel.cmake"
-  )
-  set_tests_properties(t02_cli_parallel PROPERTIES TIMEOUT 60)
-
   add_test(NAME t03_cli_exit
     COMMAND "${CMAKE_COMMAND}"
       "-DAPP=$<TARGET_FILE:termole_app>"
@@ -448,6 +435,15 @@ add_test(NAME t26_cli_pipelines
     -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_pipelines.cmake"
 )
 set_tests_properties(t26_cli_pipelines PROPERTIES TIMEOUT 180)
+
+add_test(NAME t26_cli_parallel
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-parallel"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_parallel.cmake"
+)
+set_tests_properties(t26_cli_parallel PROPERTIES TIMEOUT 60)
 
 add_test(NAME t02_cli_no_console
   COMMAND termole_cli_no_console_test
@@ -529,6 +525,7 @@ set_tests_properties(
   t02_cli_no_console
   t26_launcher
   t26_cli_pipelines
+  t26_cli_parallel
   t17_cmd_target
   t17_wrap
   t01_app_window
@@ -600,7 +597,7 @@ add_executable(termole_gdi_render_test
 )
 target_include_directories(termole_gdi_render_test PRIVATE
   "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include"
-  "${PROJECT_SOURCE_DIR}/third_party/libghostty-vt/1.0.1/include")
+  "${TERMOLE_GHOSTTY_VT_ROOT}/include")
 target_compile_definitions(termole_gdi_render_test PRIVATE GHOSTTY_STATIC)
 target_link_libraries(termole_gdi_render_test PRIVATE
   ghostty_vt termole_build_options user32 gdi32 ntdll)

@@ -2,12 +2,12 @@
 .SYNOPSIS
   Record T21 launcher/GUI resource and startup baselines using public entries.
 .DESCRIPTION
-  Run on an idle interactive desktop after build.cmd. First launch is recorded
+  Run on an idle interactive desktop after building the Windows Release preset. First launch is recorded
   separately; filesystem/standby caches are not purged. No global state changes.
 #>
 [CmdletBinding()]
 param(
-    [string] $Build = "$PSScriptRoot/../.local/build/windows",
+    [string] $Build = "$PSScriptRoot/../.local/build/mingw-release",
     [string] $Output = "$PSScriptRoot/../.local/t21-performance",
     [ValidateSet('normal', 'execute', 'throughput')]
     [string[]] $Kinds = @('normal', 'execute', 'throughput'),

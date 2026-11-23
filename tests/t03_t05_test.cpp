@@ -553,22 +553,30 @@ int wmain()
         auto paste_view = termole::View::create(*paste_session, parent);
         check(paste_view.has_value(), "paste view created");
         if (paste_view) {
-            const bool clipboard_ready =
-                set_clipboard(L"echo PASTE-OK> \"" + paste_file.wstring() + L"\"");
+            // Redirect the group before the helper delays writing the marker.
+            const bool clipboard_ready = set_clipboard(
+                L"(\"" + helper_path().wstring() + L"\" --sleep-ms 750 & echo PASTE-OK)> \"" +
+                paste_file.wstring() + L"\"");
             if (clipboard_ready) {
                 check(paste_view->paste().has_value(), "host paste succeeds");
                 (void)paste_session->send_key(termole::Key::Enter);
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-                while (!std::filesystem::exists(paste_file) &&
-                       std::chrono::steady_clock::now() < deadline) {
+                bool marker_written = false;
+                std::size_t bytes_read = 0;
+                for (;;) {
                     pump_messages();
+                    const auto output = file_contents(paste_file);
+                    bytes_read = output.size();
+                    marker_written = output.find("PASTE-OK") != std::string::npos;
+                    if (marker_written || std::chrono::steady_clock::now() >= deadline) break;
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
                 check(std::filesystem::exists(paste_file), "pasted command reaches cmd.exe");
-                if (std::filesystem::exists(paste_file)) {
-                    check(file_contents(paste_file).find("PASTE-OK") != std::string::npos,
-                          "pasted command produces expected output");
+                if (!marker_written) {
+                    std::cerr << "Paste output timed out waiting for PASTE-OK; last read "
+                              << bytes_read << " bytes\n";
                 }
+                check(marker_written, "pasted command produces expected output");
             } else {
                 std::cout << "SKIP: system clipboard is unavailable for paste\n";
             }

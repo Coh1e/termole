@@ -117,5 +117,15 @@
       "filter": { "include": { "label": "visual" } },
       "output": { "outputOnFailure": true }
     }
+  ],
+  "workflowPresets": [
+    {
+      "name": "windows-mingw",
+      "steps": [
+        { "type": "configure", "name": "windows-mingw" },
+        { "type": "build", "name": "windows-mingw" },
+        { "type": "test", "name": "windows-mingw" }
+      ]
+    }
   ]
 }

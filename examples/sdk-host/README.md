@@ -1,22 +1,16 @@
-# SDK host example
+# SDK 宿主示例
 
-Build from an MSYS2 MinGW shell against an installed Termole development package:
+在解压后的 Termole 开发包根目录打开 MSYS2 MinGW 终端。
 
 ```sh
-cmake -S examples/sdk-host -B .local/sdk-host -G 'MSYS Makefiles' \
+cmake -S share/termole/examples/sdk-host -B .local/sdk-host -G 'MSYS Makefiles' \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS=-static \
-  -DCMAKE_PREFIX_PATH=D:/path/to/Termole-0.1.0-win64
+  -DCMAKE_PREFIX_PATH="$(cygpath -m "$PWD")"
 cmake --build .local/sdk-host
 ```
 
-The executable is `.local/sdk-host/termole-sdk-host.exe`.
-It uses `termole.hpp` and the installed static SDK. The host owns the
-top-level window and message loop; Termole owns the child View and Session. The
-host decides the layout, focus and shutdown order. Termole does not read the
-user's TOML configuration, does not write the clipboard unless the host calls
-`termole_view_copy_selection`, and does not display dialogs.
+生成的程序为 `.local/sdk-host/termole-sdk-host.exe`。示例通过 `termole.hpp` 使用静态 SDK。宿主管理顶层窗口、消息循环、布局、焦点和关闭顺序，Termole 管理子视图和会话。库不读取用户 TOML，也不弹出对话框。宿主调用 `termole_view_copy_selection` 时，库才向剪贴板写入选区。
 
-The full contract is in the package's `docs/sdk.md` and `docs/host-api.md`
-(repository: `docs/`). A host that needs every capability in one place can read
-`tests/sdk-consumer/main.cpp`, which is built against an installed package by the
-`t22_sdk_consumer` test.
+从源码仓库构建时，将 `-S` 改为 `examples/sdk-host`，并将 `CMAKE_PREFIX_PATH` 指向开发包根目录。
+
+开发包内的接口手册位于 `docs/sdk.md`。仓库中可查阅 [SDK 手册](https://github.com/Coh1e/termole/blob/main/docs/sdk.md)和[完整调用示例](https://github.com/Coh1e/termole/blob/main/tests/sdk-consumer/main.cpp)。测试 `t22_sdk_consumer` 使用已安装的开发包构建该示例。

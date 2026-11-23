@@ -2,6 +2,7 @@ add_library(termole STATIC
   api/api.cpp
   common/win.cpp
   core/utf8.cpp
+  core/utf8_encode.c
   gui/gdi_render.c
   gui/cview.c
   ipc/local_transport_windows.cpp

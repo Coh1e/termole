@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 project(TermoleSdkConsumer LANGUAGES CXX)
 
 # This project is intentionally independent from the Termole source tree. It is
-# configured by tests/run_sdk_consumer.ps1 against an installed development
+# configured by tests/run_sdk_consumer.cmake against an installed development
 # package, so it can only consume the installed headers and libraries.
 if(NOT DEFINED TERMOLE_PACKAGE_ROOT)
   message(FATAL_ERROR "TERMOLE_PACKAGE_ROOT must point at the installed package")

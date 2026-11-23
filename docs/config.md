@@ -1,6 +1,6 @@
 # TOML 配置与 Profile
 
-Termole 的独立入口读取一个小型 TOML 子集；宿主嵌入不读取用户配置，也不会因配置错误弹窗或覆盖宿主布局。
+独立入口支持下列 TOML 配置。嵌入宿主通过 [SDK 选项](sdk.md#宿主责任与授权)传入设置。
 
 ## 文件位置与优先级
 
@@ -17,23 +17,23 @@ Termole 的独立入口读取一个小型 TOML 子集；宿主嵌入不读取用
 
 | 键 | 类型 | 说明 |
 | --- | --- | --- |
-| `font` | string | 字体族；缺省使用 Consolas 并回退 Courier New |
-| `font_size` | integer 8..96 | DIP 字号 |
+| `font` | 字符串 | 字体族；缺省使用 Consolas 并回退 Courier New |
+| `font_size` | 整数 8..96 | DIP 字号 |
 | `theme` | `"system"` / `"dark"` / `"light"` | 主题 |
-| `columns`, `rows` | integer 1..1000 | Applet 网格 |
-| `x`, `y` | integer | Applet 位置 |
-| `center` | boolean | 居中 |
-| `floating` | boolean | 置顶 |
-| `borderless` | boolean | 无边框 |
-| `opacity` | integer 10..100 | 透明度百分比 |
-| `title` | string | 窗口标题 |
-| `icon` | string | 图标文件 |
-| `program` | string | 未在 CLI 指定目标时使用的程序 |
-| `args` | string array | 目标参数 |
-| `cwd` | string | 工作目录 |
-| `env` | string array | `KEY=VALUE` 覆盖 |
-| `keep_window` | boolean | 目标退出后保留窗口 |
-| `close_on_exit` | boolean | 目标失败也关闭窗口 |
+| `columns`, `rows` | 整数 1..1000 | Applet 网格 |
+| `x`, `y` | 整数 | Applet 位置 |
+| `center` | 布尔值 | 居中 |
+| `floating` | 布尔值 | 置顶 |
+| `borderless` | 布尔值 | 无边框 |
+| `opacity` | 整数 10..100 | 透明度百分比 |
+| `title` | 字符串 | 窗口标题 |
+| `icon` | 字符串 | 图标文件 |
+| `program` | 字符串 | 未在 CLI 指定目标时使用的程序 |
+| `args` | 字符串数组 | 目标参数 |
+| `cwd` | 字符串 | 工作目录 |
+| `env` | 字符串数组 | `KEY=VALUE` 覆盖 |
+| `keep_window` | 布尔值 | 目标退出后保留窗口 |
+| `close_on_exit` | 布尔值 | 目标失败也关闭窗口 |
 
 Windows 路径建议使用单引号字面量，避免 TOML 基本字符串的反斜杠转义：
 
@@ -50,6 +50,12 @@ args = ['-NoProfile']
 cwd = 'D:\work'
 env = ['TERMOLE_PROFILE=work']
 ```
+
+## 窗口尺寸
+
+Windows 的 `[window]` 表使用上列窗口键。像素尺寸 `width` 接受 200..10000，`height` 接受 120..10000；`decorations = false` 等同于 `borderless = true`。定位用 `center` 或 `x`、`y`，置顶用 `floating`，透明度用整数百分比。显式 CLI 尺寸优先于配置中的同名尺寸。
+
+像素尺寸与字符网格可同时填写。普通 Windows GUI 在同时指定 `columns` 和 `rows` 时按字体度量换算窗口尺寸，此路径不使用配置中的像素宽高。C GUI 则用像素宽高创建窗口，用行列数初始化会话，再按客户区调整网格。两组数值不匹配不会触发独立入口的配置错误。
 
 ## Pipe 动作按键
 

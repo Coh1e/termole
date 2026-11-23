@@ -1,15 +1,7 @@
-# Domain docs
+# 领域文档
 
-采用单一领域结构：根目录 GLOSSARY.md 和 docs/adr/。
+本仓库采用单一领域结构，术语表位于仓库根目录，架构决策记录位于 `docs/adr/`。
 
-- 术语、上下文、不变量、状态机与验收示例见 [../domain-model.md](../domain-model.md)；
-  领域模型评审通过后才开始实现改动。
-- 探索代码、撰写规格或任务前，读取 GLOSSARY.md
-  及涉及当前工作的 ADR。
-- 使用术语表定义的名称。
-- 与既有 ADR 冲突时，明确指出冲突及理由。
-- 涉及外部程序、选择器、`-e`、`--stdio` 或 pipe 动作时，先读 ../adr/0006-terminal-selector-boundary.md。
-- 涉及 launcher、GUI 角色、默认等待或退出状态时，读 ../adr/0007-console-launcher-wait.md。
-- 已确认约束和后续修正见 ../design-decisions.md。
-- 技术验证结果见 ../technical-validation.md；
-  区分已验证能力、候选方案和未实现功能。
+- 探索代码、撰写规格或拆票前，读[术语表](../../GLOSSARY.md)、[当前规格索引](../README.md)和 [ADR 索引](../adr/README.md)中与当前工作有关的记录。相关记录缺失时，可以继续探索，等术语或决策明确后再补。
+- 在 Issue 标题、设计方案和测试名称中使用术语表定义的名称。遇到现有术语无法表达的概念时，记录待厘清的术语。
+- 方案与既有 ADR 冲突时，指出具体记录和冲突条款，并说明重新讨论该决定的理由。

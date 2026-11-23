@@ -1,25 +1,10 @@
-# Linux static core
+# Linux 静态核心与图形窗口
 
-From the repository root on Linux x86_64 or Ubuntu WSL, with CMake 3.28 or
-newer, GNU Make and a C/C++ compiler:
+在 Linux x86_64 或 Ubuntu WSL 中准备 CMake 3.28 或更新版本、GNU Make 和 C/C++ 编译器。按[跨平台构建指南](../docs/cross-platform-build.md#linux-静态-c-核心)从仓库根目录构建 C VT 适配器，运行 VT、POSIX 会话和交互式 PTY 测试。已有构建仍可使用 linux/ 目录中的独立预设。
 
-```bash
-cmake --preset linux-static
-cmake --build --preset linux-static --parallel
-ctest --preset linux-static
-```
+## SDL3 窗口
 
-This builds the C VT adapter and runs the VT, POSIX session, and interactive
-PTY tests. It uses the pinned Linux static libghostty-vt archive. See
-[the cross-platform build notes](../docs/cross-platform-build.md) for its
-provenance and build instructions.
-
-Existing builds configured from the `linux/` directory can still use the
-standalone preset there.
-
-## SDL3 window
-
-Install the X11 headers and a monospace TrueType font. On Ubuntu:
+在 Ubuntu 上安装 X11 开发头文件和等宽 TrueType 字体，再从仓库根目录运行构建命令。
 
 ```bash
 sudo apt-get install pkgconf fonts-dejavu-core libx11-dev libxext-dev \
@@ -31,9 +16,6 @@ ctest --preset linux-gui --output-on-failure
 .local/build/linux-gui/termole
 ```
 
-Use `TERMOLE_FONT=/path/to/font.ttf` to override the default font. From the
-repository root on macOS, use the `macos-static` preset in the same three CMake
-commands. It builds the same SDL3 window and uses the official Ghostty macOS
-static library slice.
+设置 `TERMOLE_FONT=/path/to/font.ttf` 可覆盖默认字体。macOS 使用相同的配置、构建和测试命令，将预设换为 `macos-static`。该预设使用 Ghostty 官方 macOS 静态库构建 SDL3 窗口。
 
-See [local sessions](../docs/local-sessions.md) for the server/client roles.
+服务端启动与客户端重连见[本地会话](../docs/cli.md#本地会话)。

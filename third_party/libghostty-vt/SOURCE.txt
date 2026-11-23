@@ -1,4 +1,4 @@
-libghostty-vt 1.0.1 (vendored)
+libghostty-vt 1.0.1
 
 Source: https://release.files.ghostty.org/libghostty-vt/1.0.1/
 Artifact: ghostty-vt-1.0.1-x86_64-windows-gnu.zip
@@ -6,11 +6,4 @@ SHA-256: 8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29
 Built for: x86_64-windows-gnu (static library)
 License: MPL-2.0 (see LICENSE)
 
-Contents kept:
-  include/                C headers (ghostty/vt.h and ghostty/vt/*.h)
-  lib/ghostty-vt-static.lib
-  LICENSE
-  README.md
-
-Not kept: bin/ghostty-vt.dll, import library, PDB, cmake/pkg-config files.
 The static library is linked with GHOSTTY_STATIC and ntdll.

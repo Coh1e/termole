@@ -31,9 +31,6 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-# FetchContent is the single dependency-acquisition path for all optional
-# sources. The product targets currently need no fetched dependency, so a
-# clean product configure performs no network access.
 option(TERMOLE_BUILD_C_GUI "Build the experimental C GUI role (Windows only)" ${WIN32})
 
 include(FetchContent)
@@ -44,8 +41,21 @@ include(CTest)
 include(cmake/TermoleBuild.cmake)
 include(cmake/TermoleQuickJS.cmake)
 
-# Vendored libghostty-vt (x86_64-windows-gnu static, MPL-2.0).
-set(TERMOLE_GHOSTTY_VT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libghostty-vt/1.0.1")
+# libghostty-vt (x86_64-windows-gnu static, MPL-2.0).
+set(TERMOLE_GHOSTTY_VT_ROOT "" CACHE PATH "Existing Windows libghostty-vt installation")
+if(NOT TERMOLE_GHOSTTY_VT_ROOT)
+  FetchContent_Declare(ghostty_windows
+    URL https://release.files.ghostty.org/libghostty-vt/1.0.1/ghostty-vt-1.0.1-x86_64-windows-gnu.zip
+    URL_HASH SHA256=8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29
+  )
+  FetchContent_MakeAvailable(ghostty_windows)
+  set(TERMOLE_GHOSTTY_VT_ROOT "${ghostty_windows_SOURCE_DIR}")
+endif()
+foreach(file IN ITEMS include/ghostty/vt.h lib/ghostty-vt-static.lib LICENSE)
+  if(NOT EXISTS "${TERMOLE_GHOSTTY_VT_ROOT}/${file}")
+    message(FATAL_ERROR "Incomplete Windows libghostty-vt installation: missing ${TERMOLE_GHOSTTY_VT_ROOT}/${file}")
+  endif()
+endforeach()
 add_library(ghostty_vt STATIC IMPORTED)
 set_target_properties(ghostty_vt PROPERTIES
   IMPORTED_LOCATION "${TERMOLE_GHOSTTY_VT_ROOT}/lib/ghostty-vt-static.lib"
@@ -76,11 +86,11 @@ if(TERMOLE_BUILD_APP)
     install(FILES "${TERMOLE_QUICKJS_ROOT}/LICENSE" DESTINATION licenses RENAME quickjs.txt)
   endif()
   install(DIRECTORY include/termole DESTINATION include)
-  install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
-  install(FILES docs/cli.md docs/config.md docs/host-api.md docs/sdk.md docs/picker.md
-    docs/t17-validation.md docs/t18-t19-validation.md docs/t20-resources.md
-    docs/t21-performance.md docs/t22-validation.md docs/t22-t23-validation.md
-    docs/t24-acceptance.md DESTINATION docs)
+  install(FILES README.md GLOSSARY.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
+  install(FILES docs/README.md docs/cli.md docs/config.md docs/sdk.md
+    docs/cross-platform-build.md DESTINATION docs)
+  install(DIRECTORY docs/adr DESTINATION docs FILES_MATCHING PATTERN "*.md")
+  install(FILES docs/agents/testing.md DESTINATION docs/agents)
   install(EXPORT termoleTargets
     FILE termoleTargets.cmake
     NAMESPACE Termole::

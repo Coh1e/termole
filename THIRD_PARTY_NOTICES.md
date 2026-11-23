@@ -2,18 +2,11 @@
 
 ## Product implementation
 
-The product targets (`src/`, `apps/`, `include/`) contain Termole-original
-source and link only Windows system components: Kernel32, User32, GDI32,
-Direct2D, DirectWrite. No third-party source code or runtime is bundled in the
-product DLL or executables. The static CRT is provided by the selected MSVC
-toolchain.
-
-The ConPTY setup in `src/session/session.cpp` follows Microsoft's documented
-pseudoconsole contract and the same public pattern as the MIT-licensed EchoCon
-sample below. The VT parser is original code written against public
-specifications; behavior references and scope are recorded in
-[docs/vt-core.md](docs/vt-core.md) and
-[docs/adr/0005-minimal-vt-core.md](docs/adr/0005-minimal-vt-core.md).
+Termole uses the libghostty-vt static library for terminal emulation. The
+Windows build uses MinGW-w64 and links Windows system libraries. The pinned
+Windows artifact, checksum and license are listed in the
+[dependency source record](https://github.com/Coh1e/termole/blob/main/third_party/libghostty-vt/SOURCE.txt). The optional
+QuickJS engine and the SDL3/FreeType window dependencies are listed below.
 
 ## Microsoft Terminal EchoCon (MIT)
 
@@ -60,9 +53,7 @@ commit `c0a193e031f01fb50bf6f7be4381990a3753f7cf`.
 
 The disabled-by-default `spikes/core` probe consumes original upstream Contour,
 libunicode, boxed-cpp and reflection-cpp (Apache-2.0), plus Microsoft GSL (MIT).
-It does not vendor their source or select them as product dependencies. Fixed
-commits and license review boundaries are recorded in
-[docs/core-validation.md](docs/core-validation.md). Any future redistribution
+It does not vendor their source or select them as product dependencies. The [probe CMake project](https://github.com/Coh1e/termole/blob/main/spikes/core/minimal/CMakeLists.txt) pins the source commits. Any future redistribution
 of their code or binaries must retain their actual licenses and notices,
 including Unicode data notices where applicable.
 
@@ -72,7 +63,7 @@ including Unicode data notices where applicable.
 - Artifact: `ghostty-vt-1.0.1-x86_64-windows-gnu.zip` (static library)
 - SHA-256: `8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29`
 - License: MPL-2.0; the unmodified license text is vendored at
-  `third_party/libghostty-vt/1.0.1/LICENSE`.
+  `third_party/libghostty-vt/LICENSE`.
 - Source: <https://release.files.ghostty.org/libghostty-vt/1.0.1/>
 - Usage: linked statically into the product; no upstream files are modified.
 

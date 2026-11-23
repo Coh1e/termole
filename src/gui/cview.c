@@ -1,4 +1,5 @@
 #include <termole/cview.h>
+#include "core/utf8_encode.h"
 
 #include "gui/gdi_render.h"
 #include <windowsx.h>
@@ -36,32 +37,12 @@ struct termole_cview {
     uint64_t paint_count;
 };
 
-static void append_utf8(char* out, size_t* length, uint32_t codepoint)
-{
-    if (codepoint > 0x10FFFF) codepoint = 0xFFFD;
-    if (codepoint <= 0x7F) {
-        out[(*length)++] = (char)codepoint;
-    } else if (codepoint <= 0x7FF) {
-        out[(*length)++] = (char)(0xC0 | (codepoint >> 6));
-        out[(*length)++] = (char)(0x80 | (codepoint & 0x3F));
-    } else if (codepoint <= 0xFFFF) {
-        out[(*length)++] = (char)(0xE0 | (codepoint >> 12));
-        out[(*length)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        out[(*length)++] = (char)(0x80 | (codepoint & 0x3F));
-    } else {
-        out[(*length)++] = (char)(0xF0 | (codepoint >> 18));
-        out[(*length)++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
-        out[(*length)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        out[(*length)++] = (char)(0x80 | (codepoint & 0x3F));
-    }
-}
-
 static void send_codepoint(termole_cview* view, uint32_t codepoint)
 {
-    char bytes[8];
-    size_t length = 0;
-    append_utf8(bytes, &length, codepoint);
-    if (length) (void)termole_session_write(view->session, bytes, length);
+    if (codepoint > 0x10FFFF) codepoint = 0xFFFD;
+    char bytes[4];
+    const size_t length = termole_utf8_encode(codepoint, bytes);
+    (void)termole_session_write(view->session, bytes, length);
 }
 
 static void send_key(termole_cview* view, WPARAM key)

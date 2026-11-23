@@ -1,39 +1,15 @@
-# ADR 0008：libghostty-vt + MinGW + C 核心
+# 共享 VT 核心与视图边界
 
-- 状态：accepted
-- 日期：2026-11-19
-- 取代：[ADR 0005](0005-minimal-vt-core.md)
-- 相关：ADR 0002（宿主能力）、ADR 0006（execute/stdio/pipe 边界）、ADR 0007（launcher）
+状态：已采纳（2026-11-19）。
 
-## 背景
+Applet 和轻量终端共用 libghostty-vt 处理 VT 控制序列，包括光标移动、屏幕切换和字符显示状态。复用同一引擎，让各平台按同一套终端语义运行 TUI。
 
-首版切片使用项目内最小 VT 核心（ADR 0005），后续需要 CJK/组合字符、备用屏幕、鼠标、bracketed paste、选择、回滚与更完整的 OSC/查询支持。继续扩展自研核心的成本已超过引入成熟实现。
+Termole 的 C 核心通过适配层读取引擎状态，向视图提供终端快照。视图读取快照并绘制窗口。对外提供最近最多 1000 行回滚历史。
 
-libghostty-vt 1.0.1 提供独立 C ABI、Windows x86_64 gnu 预编译静态库；它不依赖 GUI，适合本项目的 Win32 外壳。其静态库不能被 MSVC link.exe 链接，但可被 MinGW/clang 链接。
+核心接口见 [core.h](../../include/termole/core.h)，平台工具链和静态链接方式见[跨平台构建](../cross-platform-build.md)，固定依赖的来源、版本和校验值见[来源记录](https://github.com/Coh1e/termole/blob/main/third_party/libghostty-vt/SOURCE.txt)。
 
-## 决策
+## Windows C View 原型
 
-1. 使用 libghostty-vt 1.0.1（`ghostty-vt-1.0.1-x86_64-windows-gnu.zip`）作为终端语义引擎，vendored 到 `third_party/libghostty-vt/1.0.1/`，固定 SHA-256。
-2. 新增 C ABI `include/termole/core.h`（frame/cell/模式/标题/滚动/选择/文本/回调），实现位于 `src/vt/termole_vt.c`；C++ `NativeSession` 只作为适配层。
-3. 产品工具链改为 MinGW-w64 gcc/g++ 16；CMake 使用 **MSYS Makefiles**，不依赖 Ninja。
-4. 默认静态链接：`-static`、`-static-libgcc -static-libstdc++`；产品不随包分发 MinGW 运行库。
-5. 公共 `termole.h` ABI v3 保持不变；旧 `src/core/terminal.*` 删除，`Cell`/`Snapshot` 移至 `src/core/screen.h`。
-6. 回滚逻辑上限保持 1000 行：ghostty 后端设为 2000，适配层映射最近 1000 行，以吸收页面粒度。
+实验入口 `termole.exe --c-gui` 使用 C View，通过 Session C ABI 读取快照并交给 Win32 GDI 绘制。默认 `--gui` 使用 C++ View。[应用入口](https://github.com/Coh1e/termole/blob/main/apps/standalone/main.cpp) · [C View](https://github.com/Coh1e/termole/blob/main/src/gui/cview.c) · [GDI 渲染器](https://github.com/Coh1e/termole/blob/main/src/gui/gdi_render.c)
 
-## 后果
-
-- 终端行为由 libghostty-vt 提供；VT 单元测试改为 adapter contract + 集成/视觉测试。
-- C++ 仍承担 `NativeSession`、View/Renderer、apps；后续按计划继续 C 化。
-- 构建必须从 MSYS2 bash 运行；宿主 CMake ≥3.28。
-- libghostty-vt 以 MPL-2.0 分发，未修改上游源码；来源和校验记录在 `third_party/libghostty-vt/SOURCE.txt`。
-
-## 验证
-
-迁移完成时：
-
-```
-100% tests passed out of 33
-（visual 6/6；WSL 按宿主策略跳过）
-```
-
-C-only 宿主示例与 `termole.h` v3 ABI 测试通过。
+`gdi_render_contract` 和 `cview_contract` 检查渲染像素与 View 选区行为。`cgui_visual` 和 `cgui_config_visual` 检查实验入口的窗口像素、关闭退出和配置尺寸。切换默认 View 前，须与 C++ View 对照验证行为及像素，覆盖选区、剪贴板、IME、鼠标报告、回滚、调整尺寸及外观配置。[测试注册](https://github.com/Coh1e/termole/blob/main/tests/CMakeLists.txt) · [验证指南](../agents/testing.md)

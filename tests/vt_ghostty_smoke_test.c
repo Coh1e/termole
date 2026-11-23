@@ -1,5 +1,5 @@
 /*
- * Contract smoke test for the vendored libghostty-vt static library.
+ * Contract smoke test for the libghostty-vt static library.
  *
  * This is the first failing-test step of the VT migration: it proves the
  * headers and Windows gnu static library link under MinGW and that a minimal

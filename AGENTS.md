@@ -1,90 +1,38 @@
 # AGENTS.md
 
-# AGENTS.md
-
-## Task
-
-1. Read the project instructions that apply to the task.
-2. Identify the required result and the checks that can confirm it.
-3. For a request for information, give the findings without changing files.
-4. Ask the user when a missing decision changes the required result.
-5. Continue work within the agreed scope without repeated approval requests.
-
-## Changes
-
-1. Make only the changes necessary for the task.
-2. Use the existing project structure and tools.
-3. Preserve changes made by other people.
-4. Remove unused code that your changes cause.
-5. Ask before you change an existing interface or an agreed requirement.
-6. Get approval before you publish, spend money, change access rights, or delete user data.
-7. Use existing approval when it covers the proposed action.
-
-## Verification
-
-1. Use the project checks that apply to the changes.
-2. For a defect, reproduce the failure before the change when practical.
-3. Report checks that failed or could not run.
-4. State that the task is complete only when the results support this statement.
-
-## Communication
-
-1. Give the result first, then the necessary evidence and limits.
-2. Read the relevant skill or procedure when its stated conditions apply.
-
-## C++ rules
-
-- Match nearby code and the configured formatter. Keep unrelated edits out of the change.
-- Prefer simple control flow and existing abstractions. Add templates or layers only when they reduce real complexity.
-- Use RAII for resources. Make ownership and object lifetimes clear.
-- Prefer values and unique ownership. Use shared ownership only when required.
-- Use raw pointers and references for non-owning access. Document lifetime constraints when needed.
-- Initialize objects. Use `const` where mutation is not required.
-- Check bounds, conversions, overflow, and external input. Avoid undefined behavior.
-- Use types that match the contract. Use fixed-width types where binary width matters.
-- Follow the local error policy. Use assertions for internal invariants, not input validation.
-- Keep headers self-contained. Limit dependencies and public interface exposure.
-- Preserve supported compilers, platforms, and architectures. Isolate platform-specific code.
-- Explain non-obvious constraints in comments. Update documentation when behavior changes.
-- Measure before optimizing. Compare correctness and performance under the same conditions.
-
-## Verify
-
-1. Use the repository's documented commands and tool versions. Prefer project-local tools.
-2. Add or update tests for changed behavior. For a bug, reproduce the failure before the fix when practical.
-3. Test relevant boundary cases and failure paths. Use the existing test framework.
-4. Run formatting checks, the affected build, and relevant tests after the final code edit.
-5. Run wider checks when required by CI or by the change's impact.
-6. Inspect the final diff for unintended edits, secrets, generated output, and compatibility changes.
-
-Use sanitizers for relevant memory or concurrency risks when supported.
-For performance changes, record the workload, environment, baseline, and result.
-Run the project's required checks before declaring completion.
-If a check is unavailable, state why and what remains unverified.
-Never present a planned check as a completed check.
-
-## Finish
-
-Report the result, key changes, checks run with outcomes, and remaining limitations.
-Claim completion only when the evidence supports the agreed acceptance criteria.
-Keep the report concise. Include exact commands when they help reproduce verification.
-
-## Project workflow
+## Agent skills
 
 ### Issue tracker
 
-规格和任务使用 Coh1e/termole 的 GitHub Issues。
-操作前读取 docs/agents/issue-tracker.md。
+规格和任务记录在 Coh1e/termole 的 GitHub Issues。优先使用 GitHub 插件，操作前读 [Issue 跟踪说明](docs/agents/issue-tracker.md)。
 
 ### Triage labels
 
-使用标准任务标签（含 `verify`），映射见 docs/agents/triage-labels.md。
+标准分诊角色和项目的 `verify` 标签见[标签映射](docs/agents/triage-labels.md)。
 
-### Domain documentation
+### Domain docs
 
-Read the root GLOSSARY.md and relevant records in docs/adr/ when they exist.
+采用单一领域文档结构，阅读入口和规则见[领域文档说明](docs/agents/domain.md)。
 
-### Verification
+## 仓库规则
 
-改动 View、renderer、窗口或选择器行为前，读 docs/agents/testing.md。
-界面结论必须用截图/像素证据，不能只用 `screen_text`、`viewport_text`、`MainWindowHandle` 或 `paint_count`。
+- 信息查询只报告发现。改动限于约定范围，保留他人的修改，沿用仓库结构和工具，清理本次改动产生的无用代码。
+- 缺少会改变结果的决定时询问用户。变更既有接口或已约定需求前先确认。发布、支出、修改访问权限或删除用户数据前取得授权，已有授权覆盖的操作继续执行。
+- 技术选型优先跨平台 C。能用 C 实现的逻辑用 C，C++23/26 仅用于有明确语言优势的模块。保持 C 核心稳定，平台和语言差异留在可替换的外围。
+- 构建与依赖集成统一用 CMake。禁止引入 vcpkg、Conan 或同类依赖管理器。
+
+## 按任务阅读
+
+- 产品定位或交付范围：读 [产品基线](README.md#产品基线)。定位其他文档时查 [文档索引](docs/README.md)。
+- 领域术语或设计变更：核对[术语表](GLOSSARY.md)、[当前规格](docs/README.md)和[相关 ADR](docs/adr/README.md)。与既有决定冲突时说明条款和理由。
+- 技术选型、核心 ABI、平台边界或新增依赖：读 [跨平台 C 核心与 CMake](docs/adr/0016-portable-c-core.md)。
+- 规格或任务登记、操作 GitHub Issues：先读 [Issue 跟踪说明](docs/agents/issue-tracker.md)。标签按[标签映射](docs/agents/triage-labels.md)设置。
+- 修改或评审代码、更新行为声明：读 [编码标准](CODING_STANDARDS.md)。构建或测试前读 [构建说明](docs/cross-platform-build.md)和 [验证指南](docs/agents/testing.md)。
+- 修改 View、渲染器、窗口或选择器行为：改动前读 [验证指南](docs/agents/testing.md)。界面可见性结论必须有截图或像素证据。
+
+## 必做检查
+
+- 修改行为时用现有框架补充测试，覆盖相关边界和失败路径。修复缺陷前尽可能复现。
+- 最后一次代码改动后运行格式检查、受影响的构建和相关测试。按 CI 和影响范围扩大检查，提交前运行 [完整验证](docs/agents/testing.md#inner-loop)。
+- 内存或并发风险在工具支持时用 sanitizer 检查。性能改动记录同等条件下的工作负载、环境、基线和结果。
+- 检查最终 diff 中的无关改动、敏感信息、生成物和兼容性变化。先报告结果，再列出实际完成的检查和剩余限制。验收证据齐全后才报告完成。

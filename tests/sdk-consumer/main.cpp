@@ -410,11 +410,14 @@ int wmain(int argc, wchar_t** argv)
         if (SUCCEEDED(com_result)) ::CoUninitialize();
         return 1;
     }
-    ::ShowWindow(host, SW_SHOWNORMAL);
+    // A process runner can override the first ShowWindow call via STARTUPINFO.
+    ::SetWindowPos(host, nullptr, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ::UpdateWindow(host);
     ::SetForegroundWindow(host);
     ::SetActiveWindow(host);
     pump_messages();
+    check(::IsWindowVisible(host) != FALSE, "the external host window is visible");
 
     // ABI version and rejection rules are the first public contract the host
     // sees. A smaller options structure or a different major version must fail
