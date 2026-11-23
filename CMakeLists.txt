@@ -84,6 +84,8 @@ if(TERMOLE_BUILD_APP)
   install(FILES "${TERMOLE_GHOSTTY_VT_ROOT}/LICENSE" DESTINATION licenses RENAME libghostty-vt.txt)
   if(TERMOLE_WITH_QUICKJS)
     install(FILES "${TERMOLE_QUICKJS_ROOT}/LICENSE" DESTINATION licenses RENAME quickjs.txt)
+    install(FILES examples/markdown-quote.js examples/markdown-quote.toml
+      DESTINATION share/termole/examples)
   endif()
   install(DIRECTORY include/termole DESTINATION include)
   install(FILES README.md GLOSSARY.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)

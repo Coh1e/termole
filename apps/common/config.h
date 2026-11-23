@@ -56,6 +56,7 @@ struct ConfigValues {
 struct Config {
     ConfigValues root;
     std::map<std::wstring, ConfigValues> profiles;
+    std::vector<std::wstring> plugins;
 };
 
 struct ConfigLoadResult {

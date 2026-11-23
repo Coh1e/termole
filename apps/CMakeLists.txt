@@ -35,6 +35,10 @@ endfunction()
 # Shipped entry point: one console launcher + internal GUI role.
 add_termole_window_app(termole_app "termole" OFF ON
   standalone/main.cpp standalone/gui.cpp standalone/ipc_role.cpp)
+if(MINGW AND TERMOLE_WITH_QUICKJS)
+  # The portable Release executable does not need the COFF symbol table.
+  target_link_options(termole_app PRIVATE "$<$<CONFIG:Release>:-s>")
+endif()
 if(TERMOLE_BUILD_C_GUI AND WIN32)
   target_sources(termole_app PRIVATE cgui/main.c)
   target_compile_definitions(termole_app PRIVATE TERMOLE_CGUI_NO_ENTRY TERMOLE_C_GUI_ENABLED)

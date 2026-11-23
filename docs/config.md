@@ -13,6 +13,18 @@
 
 配置读取失败时，诊断包含文件路径和行号，Termole 继续使用默认值；CLI 参数错误仍然直接失败（退出码 2）。
 
+## 本地 QuickJS 插件
+
+Windows 标准包内置 QuickJS。解压后在 PowerShell 中运行：
+
+```powershell
+.\bin\termole.exe --config .\share\termole\examples\markdown-quote.toml
+```
+
+选中终端文字，打开视图的右键菜单并选择「复制为 Markdown 引用」，再粘贴到编辑器。示例会去掉跨行选区中非末行的末尾空格，再为每行添加 `> `。要停用插件，从配置中移除 `plugins` 项并重启 Termole。
+
+将 `plugins = ["markdown-quote.js"]` 放在配置文件的全局部分。相对路径以配置文件所在目录为基准，也可以使用绝对路径。只启用你信任的本地脚本。每个脚本在加载时用 `termole.registerCommand(label, callback)` 注册一个同步命令。回调可用 `termole.getSelection()` 读取打开菜单的视图选区，用 `termole.writeClipboard(text)` 写入剪贴板。回调成功返回后才提交剪贴板文本。
+
 ## 支持的键
 
 | 键 | 类型 | 说明 |
@@ -31,6 +43,7 @@
 | `program` | 字符串 | 未在 CLI 指定目标时使用的程序 |
 | `args` | 字符串数组 | 目标参数 |
 | `cwd` | 字符串 | 工作目录 |
+| `plugins` | 字符串数组 | Windows 独立终端启用的本地 `.js` 文件，所有 Profile 共用 |
 | `env` | 字符串数组 | `KEY=VALUE` 覆盖 |
 | `keep_window` | 布尔值 | 目标退出后保留窗口 |
 | `close_on_exit` | 布尔值 | 目标失败也关闭窗口 |

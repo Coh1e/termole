@@ -65,6 +65,7 @@
       "binaryDir": "${sourceDir}/.local/build/nmake-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "TERMOLE_WITH_QUICKJS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": true,
         "CMAKE_EXE_LINKER_FLAGS": "-static",

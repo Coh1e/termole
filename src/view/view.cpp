@@ -1,6 +1,7 @@
 #include "view/view.h"
 
 #include "core/utf8.h"
+#include "common/win.h"
 #include <cstdio>
 
 #include <windowsx.h>
@@ -39,39 +40,6 @@ std::wstring wide_from_utf8(std::string_view text)
     ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
                           static_cast<int>(text.size()), wide.data(), length);
     return wide;
-}
-
-bool write_clipboard(std::wstring_view text)
-{
-    bool opened = false;
-    for (int attempt = 0; attempt < 100 && !opened; ++attempt) {
-        opened = ::OpenClipboard(nullptr) != FALSE;
-        if (!opened) ::Sleep(2);
-    }
-    if (!opened) return false;
-    ::EmptyClipboard();
-    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
-    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if (!memory) {
-        ::CloseClipboard();
-        return false;
-    }
-    void* data = ::GlobalLock(memory);
-    if (!data) {
-        ::GlobalFree(memory);
-        ::CloseClipboard();
-        return false;
-    }
-    std::memcpy(data, text.data(), text.size() * sizeof(wchar_t));
-    static_cast<wchar_t*>(data)[text.size()] = L'\0';
-    ::GlobalUnlock(memory);
-    if (!::SetClipboardData(CF_UNICODETEXT, memory)) {
-        ::GlobalFree(memory);
-        ::CloseClipboard();
-        return false;
-    }
-    ::CloseClipboard();
-    return true;
 }
 
 std::wstring read_clipboard()
@@ -503,7 +471,7 @@ Result<void> NativeView::copy_selection()
 {
     const std::string text = selection_text();
     if (text.empty()) return {};
-    if (!write_clipboard(wide_from_utf8(text))) {
+    if (!win::write_clipboard(hwnd(), wide_from_utf8(text))) {
         return std::unexpected(win::system_error("SetClipboardData", ::GetLastError()));
     }
     return {};

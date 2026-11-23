@@ -7,11 +7,16 @@
 #include "common/exit_codes.h"
 #include "common/pipe.h"
 #include "common/smoke.h"
+#include "common/win.h"
+#include "script/plugin.h"
 #include "standalone/gui.h"
 
 #include <windows.h>
+#include <windowsx.h>
 
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <utility>
@@ -24,6 +29,9 @@ constexpr wchar_t kWindowClassName[] = L"TermoleStandaloneWindow";
 constexpr UINT_PTR kTimerId = 1;
 constexpr int kStatusHeight = 26;
 
+using Plugin = std::unique_ptr<termole_script, decltype(&termole_script_destroy)>;
+using ScriptText = std::unique_ptr<char, decltype(&termole_free)>;
+
 struct AppState {
     CliOptions cli;
     std::optional<termole::Session> session;
@@ -31,6 +39,7 @@ struct AppState {
     termole::app::SmokeProbe smoke;
     termole::app::PipeRunner pipe_runner;
     std::vector<termole::app::PipeBinding> pipe_bindings;
+    std::vector<Plugin> plugins;
     HWND status = nullptr;
     // Captured before any diagnostics attach to a console: the --stdio data
     // channel handles must not be disturbed by error reporting.
@@ -68,6 +77,91 @@ void report_error(AppState& state, const std::wstring& message)
     if (!termole::app::write_standard_error(text) && state.interactive_errors &&
         !automated_run()) {
         termole::app::show_message(text, true);
+    }
+}
+
+void load_plugins(AppState& state, const Config& config, const std::filesystem::path& config_path)
+{
+    constexpr size_t max_source_size = 1024 * 1024;
+    for (const auto& file : config.plugins) {
+        const auto path = config_path.parent_path() / file;
+        std::ifstream input(path, std::ios::binary);
+        if (!input) {
+            report_error(state, L"could not open plugin: " + path.wstring());
+            continue;
+        }
+        std::string source(max_source_size + 1, '\0');
+        input.read(source.data(), static_cast<std::streamsize>(source.size()));
+        const auto size = static_cast<size_t>(input.gcount());
+        if (input.bad() || size > max_source_size) {
+            report_error(state, L"could not read plugin (maximum 1 MiB): " + path.wstring());
+            continue;
+        }
+        termole_script* plugin = nullptr;
+        char* error = nullptr;
+        const auto name = win::wide_to_utf8(path.wstring());
+        const auto status = termole_plugin_load(name.c_str(), source.data(), size, &plugin, &error);
+        const ScriptText message(error, termole_free);
+        if (status == TERMOLE_STATUS_OK) {
+            state.plugins.emplace_back(Plugin(plugin, termole_script_destroy));
+        } else {
+            const auto detail = error ? utf8_to_wide(error) :
+                (status == TERMOLE_STATUS_UNSUPPORTED ? L"QuickJS is disabled" : L"load failed");
+            report_error(state, path.wstring() + L": " + detail);
+        }
+    }
+}
+
+std::wstring menu_label(const char* label)
+{
+    std::wstring escaped;
+    for (const wchar_t character : utf8_to_wide(label)) {
+        if (character == L'&') escaped += character;
+        escaped += character;
+    }
+    return escaped;
+}
+
+void show_selection_menu(AppState& state, HWND window, POINT point)
+{
+    const auto selection = state.view->selection_text();
+    if (!selection || selection->empty()) return;
+    if (point.x == -1 && point.y == -1) {
+        point = {};
+        ::ClientToScreen(state.view->hwnd(), &point);
+    }
+
+    const HMENU menu = ::CreatePopupMenu();
+    if (!menu) return;
+    constexpr UINT copy_id = 1;
+    constexpr UINT first_plugin_id = 2;
+    ::AppendMenuW(menu, MF_STRING, copy_id, L"Copy");
+    for (size_t index = 0; index < state.plugins.size(); ++index) {
+        const auto label = menu_label(termole_plugin_label(state.plugins[index].get()));
+        ::AppendMenuW(menu, MF_STRING, first_plugin_id + index, label.c_str());
+    }
+    const auto id = static_cast<UINT>(::TrackPopupMenu(
+        menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr));
+    ::DestroyMenu(menu);
+    if (state.closing || !id) return;
+    if (id == copy_id) {
+        if (!win::write_clipboard(window, utf8_to_wide(*selection))) {
+            report_error(state, L"could not write to the clipboard");
+        }
+        return;
+    }
+
+    char* clipboard = nullptr;
+    char* error = nullptr;
+    const auto status = termole_plugin_invoke(state.plugins[id - first_plugin_id].get(),
+                                              selection->data(), selection->size(),
+                                              &clipboard, &error);
+    const ScriptText output(clipboard, termole_free);
+    const ScriptText message(error, termole_free);
+    if (status != TERMOLE_STATUS_OK) {
+        report_error(state, error ? utf8_to_wide(error) : L"plugin command failed");
+    } else if (clipboard && !win::write_clipboard(window, utf8_to_wide(clipboard))) {
+        report_error(state, L"could not write to the clipboard");
     }
 }
 
@@ -370,6 +464,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         if (state) layout_view(*state, window);
         return 0;
 
+    case WM_CONTEXTMENU:
+        if (state && state->view && reinterpret_cast<HWND>(wparam) == state->view->hwnd()) {
+            show_selection_menu(*state, window, { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) });
+            return 0;
+        }
+        return ::DefWindowProcW(window, message, wparam, lparam);
+
     case WM_TIMER:
         if (state && wparam == kTimerId && state->session) {
             const auto smoke = state->smoke.poll(*state->session);
@@ -478,6 +579,7 @@ int run_gui(int argc, wchar_t** argv)
             } else {
                 termole::app::apply_config(state.cli, loaded.config, state.cli.profile);
                 state.pipe_bindings = termole::app::pipe_bindings(loaded.config);
+                load_plugins(state, loaded.config, path);
             }
         }
     }
