@@ -1,4 +1,4 @@
-# Fails if a build entry point mentions Ninja. Termole uses MSYS Makefiles.
+# Fails if a build entry point mentions Ninja. Termole uses NMake Makefiles.
 set(root "${CMAKE_CURRENT_LIST_DIR}/..")
 set(files
   "${root}/CMakeLists.txt"

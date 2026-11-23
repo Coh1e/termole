@@ -45,9 +45,10 @@
     },
     {
       "name": "windows-mingw",
-      "displayName": "Windows x64 MinGW (MSYS Makefiles, Debug)",
-      "generator": "MSYS Makefiles",
-      "binaryDir": "${sourceDir}/.local/build/mingw-debug",
+      "displayName": "Windows x64 MinGW (NMake Makefiles, Debug)",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/nmake-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
@@ -58,9 +59,10 @@
     },
     {
       "name": "windows-mingw-release",
-      "displayName": "Windows x64 MinGW (MSYS Makefiles, Release)",
-      "generator": "MSYS Makefiles",
-      "binaryDir": "${sourceDir}/.local/build/mingw-release",
+      "displayName": "Windows x64 MinGW (NMake Makefiles, Release)",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/.local/build/nmake-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",

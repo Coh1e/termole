@@ -1,19 +1,13 @@
 # MinGW-w64 toolchain for Termole.
 #
-# Run configure/build from an MSYS2 bash (msys2_shell.cmd) so that `make` and
-# `sh` are available to CMake's "MSYS Makefiles" generator.
-#
-#   cmake --preset windows-mingw
-#
-# The compiler prefix defaults to MINGW_PREFIX from the MSYS2 environment and
-# can be overridden with -DTERMOLE_MINGW_PREFIX=... . No drive letters here.
+# Set MINGW_PREFIX to the Windows MinGW-w64 installation before configuring.
 
 set(TERMOLE_MINGW_PREFIX "$ENV{MINGW_PREFIX}" CACHE PATH
     "MinGW-w64 prefix (contains bin/gcc.exe and bin/g++.exe)")
 
 if(NOT TERMOLE_MINGW_PREFIX)
   message(FATAL_ERROR
-    "MINGW_PREFIX is not set. Run from msys2_shell.cmd or pass "
+    "MINGW_PREFIX is not set. Set it to the MinGW-w64 installation or pass "
     "-DTERMOLE_MINGW_PREFIX=<path>.")
 endif()
 

@@ -29,7 +29,7 @@ Windows 优先验收。首个 Applet 由 PowerShell 冷启动 fzf 浮窗，支�
 
 ## 从源码构建
 
-如果从 Windows 源码仓库开始，先按[跨平台构建说明](docs/cross-platform-build.md#windows-构建)准备工具，配置好 MSYS2 工具链后，从项目根目录运行：
+如果从 Windows 源码仓库开始，先按[跨平台构建说明](docs/cross-platform-build.md#windows-构建)准备工具，配置好 NMake 和 MinGW-w64 后，从项目根目录运行：
 
 ~~~bash
 cmake --workflow --preset windows-mingw
@@ -38,7 +38,7 @@ cmake --workflow --preset windows-mingw
 构建完成后，在项目根目录的 PowerShell 中启动：
 
 ~~~powershell
-.\.local\build\mingw-debug\bin\termole.exe
+.\.local\build\nmake-debug\bin\termole.exe
 ~~~
 
 ## 文档

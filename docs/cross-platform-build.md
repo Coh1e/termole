@@ -112,23 +112,23 @@ macOS 提供。CI 运行核心、PTY、会话连接和 SDL3 像素用例。
 
 ## Windows 构建
 
-准备 MSYS2 的 MinGW-w64 GCC/G++ 工具链、GNU Make 和 CMake 3.28 或更新版本。Windows CI 使用 MSYS2 的 `MINGW64` 环境，安装 `make` 和 `mingw-w64-x86_64-gcc`。
+准备 CMake 3.28 或更新版本、Visual Studio Build Tools 的 NMake，以及 x64 MinGW-w64 GCC/G++ 和 windres。
 
-以默认安装位置为例，在 CMD 中设置工具路径后，从项目根目录运行：
+以默认安装位置为例，在 x64 Native Tools Command Prompt 中设置工具路径后，从项目根目录运行：
 
 ```bat
 set "MINGW_PREFIX=C:/msys64/mingw64"
-set "PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%"
+set "PATH=%MINGW_PREFIX%\bin;%PATH%"
 cmake --workflow --preset windows-mingw
 ```
 
-默认使用 `windows-mingw` 构建预设 和 MSYS Makefiles，启动程序位于 `.local/build/mingw-debug/bin/termole.exe`。Windows 安装包和静态 SDK 见 [SDK 参考](sdk.md)。
+默认使用 `windows-mingw` 构建预设 和 NMake Makefiles，启动程序位于 `.local/build/nmake-debug/bin/termole.exe`。Windows 安装包和静态 SDK 见 [SDK 参考](sdk.md)。
 
 生成 Windows Release ZIP 时，依次运行：
 
 ```bat
 cmake --preset windows-mingw-release
-cmake --build --preset windows-mingw-release --parallel
+cmake --build --preset windows-mingw-release
 ctest --preset windows-mingw-release
 cmake --build --preset windows-mingw-release --target package
 ```

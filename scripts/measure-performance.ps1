@@ -7,7 +7,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Build = "$PSScriptRoot/../.local/build/mingw-release",
+    [string] $Build = "$PSScriptRoot/../.local/build/nmake-release",
     [string] $Output = "$PSScriptRoot/../.local/t21-performance",
     [ValidateSet('normal', 'execute', 'throughput')]
     [string[]] $Kinds = @('normal', 'execute', 'throughput'),

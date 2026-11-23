@@ -1,11 +1,9 @@
 # SDK 宿主示例
 
-在解压后的 Termole 开发包根目录打开 MSYS2 MinGW 终端。
+在解压后的开发包根目录打开 x64 Native Tools Command Prompt，将 MinGW-w64 的 bin 目录加入 PATH。
 
-```sh
-cmake -S share/termole/examples/sdk-host -B .local/sdk-host -G 'MSYS Makefiles' \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS=-static \
-  -DCMAKE_PREFIX_PATH="$(cygpath -m "$PWD")"
+```bat
+cmake -S share/termole/examples/sdk-host -B .local/sdk-host -G "NMake Makefiles" -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS=-static "-DCMAKE_PREFIX_PATH=%CD%"
 cmake --build .local/sdk-host
 ```
 
