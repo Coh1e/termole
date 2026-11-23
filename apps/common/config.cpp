@@ -693,7 +693,26 @@ ConfigLoadResult load_config(const std::wstring& path, const std::optional<std::
             }
             continue;
         }
-        if (!assign(*current, key, value, value_error)) {
+        if (key == L"plugins") {
+            const auto base = std::filesystem::path(path).parent_path();
+            if (current != &result.config.root || value.kind != Value::Kind::StringArray ||
+                std::any_of(value.array.begin(), value.array.end(), [&](const std::wstring& file) {
+                    const auto resolved = base / file;
+                    const auto is_unc = [](std::wstring_view name) {
+                        return name.size() >= 2 && name.substr(0, 2).find_first_not_of(L"/\\") ==
+                            std::wstring_view::npos;
+                    };
+                    return file.empty() || file.find(L'\0') != std::wstring::npos ||
+                        resolved.extension() != L".js" || is_unc(file) ||
+                        is_unc(resolved.native());
+                })) {
+                result.ok = false;
+                result.error = path + L":" + std::to_wstring(line_number) +
+                    L": plugins must be a root array of local .js paths";
+                return result;
+            }
+            result.config.plugins = std::move(value.array);
+        } else if (!assign(*current, key, value, value_error)) {
             result.ok = false;
             result.error = path + L":" + std::to_wstring(line_number) + L": " + value_error;
             return result;

@@ -72,9 +72,26 @@ int main()
     const auto rejected = termole::app::load_config(bad.wstring(), std::nullopt);
     check(!rejected.ok, "out-of-range width is rejected");
 
+    const auto plugins = write_config("plugin-config-test.toml",
+                                      "plugins = [\"markdown-quote.js\"]\n");
+    const auto enabled = termole::app::load_config(plugins.wstring(), std::nullopt);
+    check(enabled.ok && enabled.config.plugins == std::vector<std::wstring>{L"markdown-quote.js"},
+          "global configuration opts in to the example plugin");
+    check(loaded.config.plugins.empty(), "plugins are disabled when the key is absent");
+    write_config("plugin-config-test.toml", "[profiles.demo]\nplugins = [\"x.js\"]\n");
+    check(!termole::app::load_config(plugins.wstring(), std::nullopt).ok,
+          "a profile cannot enable local plugins");
+    write_config("plugin-config-test.toml", "plugins = [\"x.exe\"]\n");
+    check(!termole::app::load_config(plugins.wstring(), std::nullopt).ok,
+          "plugin configuration requires .js paths");
+    write_config("plugin-config-test.toml", "plugins = ['//server/share/x.js']\n");
+    check(!termole::app::load_config(plugins.wstring(), std::nullopt).ok,
+          "plugin configuration rejects network share paths");
+
     std::error_code error;
     std::filesystem::remove(path, error);
     std::filesystem::remove(bad, error);
+    std::filesystem::remove(plugins, error);
 
     if (failures != 0) {
         std::cerr << failures << " window config check(s) failed\n";

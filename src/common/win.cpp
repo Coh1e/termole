@@ -2,8 +2,37 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace termole::win {
+
+bool write_clipboard(HWND owner, std::wstring_view text)
+{
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) return false;
+    void* data = ::GlobalLock(memory);
+    if (!data) {
+        ::GlobalFree(memory);
+        return false;
+    }
+    std::memcpy(data, text.data(), text.size() * sizeof(wchar_t));
+    static_cast<wchar_t*>(data)[text.size()] = L'\0';
+    ::GlobalUnlock(memory);
+    bool opened = false;
+    for (int attempt = 0; attempt < 100 && !opened; ++attempt) {
+        opened = ::OpenClipboard(owner) != FALSE;
+        if (!opened) ::Sleep(2);
+    }
+    if (!opened) {
+        ::GlobalFree(memory);
+        return false;
+    }
+    const bool written = ::EmptyClipboard() && ::SetClipboardData(CF_UNICODETEXT, memory);
+    if (!written) ::GlobalFree(memory);
+    ::CloseClipboard();
+    return written;
+}
 
 std::string wide_to_utf8(std::wstring_view text)
 {

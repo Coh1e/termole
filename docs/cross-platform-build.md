@@ -133,7 +133,7 @@ ctest --preset windows-mingw-release
 cmake --build --preset windows-mingw-release --target package
 ```
 
-- 可选 QuickJS 引擎通过 -DTERMOLE_WITH_QUICKJS=ON 启用，验证入口为 ctest --preset windows-mingw -R script_abi_stub。
+- Windows 标准包的 `windows-mingw-release` 预设显式启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。启用后的脚本和示例插件测试可用 `ctest --preset windows-mingw-release -R script_abi_stub` 运行。
 - 技术探针通过 -DTERMOLE_BUILD_SPIKES=ON 启用。fzf 相关测试按工具可用性注册，详见 [验证指南](agents/testing.md)。
 - Release 的动态依赖与体积由 conventions_static_deps 和 conventions_release_size 检查，启用 QuickJS 时另有 conventions_quickjs_size。
 - 下载缓存和构建产物放在项目的 .local。第三方来源见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
