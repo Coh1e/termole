@@ -1,0 +1,7 @@
+﻿{
+    "PowerShell":  "5.1.26100.10068",
+    "Windows":  "10.0.26300.0",
+    "Fzf":  "0.75.0 (c7bf2b8e)",
+    "TermoleSHA256":  "4E856B5F6E3C6AC5C03360BE076AEFA778A6BF18CFD1FBEE996BCF55550EA0AB",
+    "ExpectedPath":  "D:\\Projects\\termole\\.local\\a3-acceptance\\run-20261123-102716\\files\\中文目标.txt"
+}
