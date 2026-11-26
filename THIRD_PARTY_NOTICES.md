@@ -11,7 +11,7 @@ QuickJS engine and the SDL3/FreeType window dependencies are listed below.
 ## Microsoft Terminal EchoCon (MIT)
 
 The ConPTY initialization flow in `spikes/picker/picker_spike.cpp` and
-`src/session/session.cpp` is adapted from
+`src/platform/windows_pty.cpp` is adapted from
 [EchoCon.cpp](https://github.com/microsoft/terminal/blob/95142e6ebfcbce21da27c3f7eb5b87e8abdb2555/samples/ConPTY/EchoCon/EchoCon/EchoCon.cpp).
 
 Copyright (c) Microsoft Corporation. All rights reserved.

@@ -6,9 +6,9 @@
 
 - [T02 任意目标程序启动](t02-validation.md)：CLI 与公开宿主接口按逻辑 argv、cwd 和每会话环境启动目标；真实控制台子程序逐项核对空格、引号、空参数、Unicode、带路径程序、环境隔离，并覆盖 CMake/CMD/PowerShell/并行实例/无控制台启动。CTest 11/11 通过并连续复跑 5 次。
 - [T01 双入口最小终端](t01-validation.md)：同一 DLL 的 Session/View 在独立窗口和最小宿主中运行真实 Windows PowerShell；公开 C ABI/C++23 包装、子 HWND、输入、尺寸同步、VT 子集和进程树收尾均有实际测试证据。测试 3/3 通过并连续复跑 5 次；Windows PowerShell 回退路径已验证，PowerShell 7 优先路径未在本机端到端验证。
-- [核心验证](core-validation.md)：Contour 的 headless 核心在 MSVC/C++23/CMake/Ninja 下构建并通过文字、VT、alternate screen、字符输入和 CJK 宽度用例；仍牵连四个库，不自动采用为产品依赖。T01 按 [ADR 0005](adr/0005-minimal-vt-core.md) 使用项目内最小 VT 子集，而不是消费 Contour/libghostty-vt。
+- [核心验证](core-validation.md)：Contour 的 headless 核心在 MSVC/C++23/CMake/Ninja 下构建并通过文字、VT、alternate screen、字符输入和 CJK 宽度用例；仍牵连四个库，不自动采用为产品依赖。T01 按 [ADR 0005](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/adr/0005-minimal-vt-core.md) 使用项目内最小 VT 子集，而不是消费 Contour/libghostty-vt。
 - [选择器验证（历史）](picker-validation.md)：未修改 Windows fzf 通过八类真实 ConPTY/独立数据管道场景；该 picker 方向已被 ADR 0006 取代，只保留证据。
-- [宿主接口草案](host-api.md)：已细化操作、查询、事件、所有权和未来脚本绑定边界；T01 已实现首批 C ABI 子集，完整 ABI 尚未冻结。
+- [宿主接口草案](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/host-api.md)：已细化操作、查询、事件、所有权和未来脚本绑定边界；T01 已实现首批 C ABI 子集，完整 ABI 尚未冻结。
 - [原生界面基础验证](native-validation.md)：原生子 HWND、DirectWrite/Direct2D render target、离屏文字输出已实测；外部快照寿命与子窗口分离。T01 已把该基础扩展为真实 Session/View。
 - 尚未执行完整 terminal 兼容性、真实 IME/DPI、选择/剪贴板、便携包与全部 Windows 10/11 验收；不得把 T01 切片标为 MVP 完成。
 

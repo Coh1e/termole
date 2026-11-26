@@ -12,7 +12,7 @@
 - 命令执行：`%COMSPEC%`（缺失时 `cmd.exe`）以 `/d /s /c "<command>"` 运行，Termole 不解析命令语言。stdin 接管道，stdout/stderr 接 `NUL`；`CreateProcess` 用显式句柄列表，只继承管道读端和 `NUL`，不把 ConPTY/调用方句柄带进命令。
 - 文本固定 UTF-8，行分隔符 `\n`，不追加尾随换行。`pipe-visible` 复用 View 视口（去行尾空格、去末尾空行），`pipe-selected` 复用选区矩形（保留空格），`pipe-scrollback` 复用 Session 保留的回滚（最多 1000 行）。
 - 文本在后台线程写入管道，慢命令或不读 stdin 的命令不阻塞 UI；命令退出码不进入会话。只有 shell 进程无法启动时才通过现有诊断路径报错（`-e`/`--stdio` 写调用方 stderr，普通交互模式在无 stderr 时使用消息框）；命令内部失败（含工具缺失/语法错误）由命令退出码表示，Termole 不解析。
-- 按键在独立入口的应用层拦截：有 pipe 绑定时给 View 子窗口安装子类过程，匹配的和弦消费 `WM_KEYDOWN` 及其后的 `WM_CHAR`/`WM_SYSCHAR`；其他消息原样交给 View。没有配置时不安装拦截，默认终端行为不变。嵌入宿主按约定不读取用户配置，也不注册 pipe 热键；它通过 [host-api.md](host-api.md) 的公开查询自行组合文本和命令，本次不新增 C ABI。三个文本来源仍由同一 View/Session 定义，独立入口与宿主查询的边界一致。
+- 按键在独立入口的应用层拦截：有 pipe 绑定时给 View 子窗口安装子类过程，匹配的和弦消费 `WM_KEYDOWN` 及其后的 `WM_CHAR`/`WM_SYSCHAR`；其他消息原样交给 View。没有配置时不安装拦截，默认终端行为不变。嵌入宿主按约定不读取用户配置，也不注册 pipe 热键；它通过 [host-api.md](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/host-api.md) 的公开查询自行组合文本和命令，本次不新增 C ABI。三个文本来源仍由同一 View/Session 定义，独立入口与宿主查询的边界一致。
 
 ## 自动测试
 

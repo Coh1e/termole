@@ -66,7 +66,7 @@ Release 探针 exe 为 4,162,560 字节（最初通过版本）；vtbackend.lib 
 
 ## 后续决策所需证据
 
-T01 的实际选择见 [ADR 0005](adr/0005-minimal-vt-core.md)：未消费 Contour/libghostty-vt，而是按公开规范实现满足切片的 VT 子集。以下是当时保留的判断依据。
+T01 的实际选择见 [ADR 0005](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/adr/0005-minimal-vt-core.md)：未消费 Contour/libghostty-vt，而是按公开规范实现满足切片的 VT 子集。以下是当时保留的判断依据。
 
 可借鉴或选择性复用：Contour vtparser 的状态机、InputGenerator 的标准输入编码、Grid/Screen 的字符及滚屏模型；Microsoft Terminal 的 ConPTY 生命周期、DirectWrite/Atlas、IME 与输入路径。依赖仍太重时，应先解释这些实现的关键不变量，再实现明确需要的最小部分，保留出处和许可，不盲目逐行搬运内部架构。
 

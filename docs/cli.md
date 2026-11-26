@@ -57,7 +57,7 @@ termole.exe --cwd C:\repo --env TERM=1 -- git status
 termole.exe -e lazygit
 
 # 显式数据通道：候选 stdin，结果 stdout，等待并返回退出码
-Get-Content names.txt | termole.exe --stdio fzf --multi
+$picked = Get-Content names.txt | termole.exe --stdio fzf --multi
 
 # 结果进入下一条命令；控制台 启动器 使管道按顺序执行
 Get-Content names.txt | termole.exe --stdio fzf | ForEach-Object { "picked: $_" }
@@ -73,8 +73,8 @@ Windows 通过 ConPTY 承载终端交互。
 
 ## 等待与退出码
 
-- 普通模式：启动器 成功启动 GUI 后返回 `0`，不等待窗口关闭，也不回传 GUI 退出码；需要等待和退出状态时使用 `-e` / `--stdio`。
-- `-e` / `--stdio`：启动器 等待 GUI/程序结束。程序正常或失败退出时转交程序退出码；用户在程序退出前关闭窗口返回 `130`；程序启动失败返回 `1`；用法错误返回 `2`；Termole 基础设施失败返回 `125`。
+- 普通模式下，启动器成功启动 GUI 进程后返回 `0`。要等待程序结束并取得退出状态，请使用 `-e` 或 `--stdio`。
+- 使用 `-e` 或 `--stdio` 时，启动器等待并转交程序的退出码。程序结束前关窗返回 `130`，程序启动失败返回 `1`，用法错误返回 `2`，Termole 自身出错返回 `125`。
 - 不定义 picker 专用错误码，也不承诺 `130` 与任意程序自身退出码不冲突。
 - `--stdio` 要求调用方 stdin/stdout 是管道或文件重定向；任一是控制台时返回用法错误 `2`，避免把键盘输入当成候选。`-e` 不要求重定向。
 

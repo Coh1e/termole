@@ -24,9 +24,8 @@
 ## 按任务阅读
 
 - 产品定位或交付范围：读 [产品基线](README.md#产品基线)。定位其他文档时查 [文档索引](docs/README.md)。
-- 领域术语或设计变更：核对[术语表](GLOSSARY.md)、[当前规格](docs/README.md)和[相关 ADR](docs/adr/README.md)。与既有决定冲突时说明条款和理由。
+- 定位一项行为的实现与测试，从[程序设计与架构](docs/architecture.md)进入。调整术语或设计决定时按上方 Domain docs 指引处理。
 - 技术选型、核心 ABI、平台边界或新增依赖：读 [跨平台 C 核心与 CMake](docs/adr/0016-portable-c-core.md)。
-- 规格或任务登记、操作 GitHub Issues：先读 [Issue 跟踪说明](docs/agents/issue-tracker.md)。标签按[标签映射](docs/agents/triage-labels.md)设置。
 - 修改或评审代码、更新行为声明：读 [编码标准](CODING_STANDARDS.md)。构建或测试前读 [构建说明](docs/cross-platform-build.md)和 [验证指南](docs/agents/testing.md)。
 - 修改 View、渲染器、窗口或选择器行为：改动前读 [验证指南](docs/agents/testing.md)。界面可见性结论必须有截图或像素证据。
 

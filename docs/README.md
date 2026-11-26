@@ -3,12 +3,14 @@
 | 要找什么 | 从这里开始 |
 | --- | --- |
 | 产品与平台承诺 | [产品基线](../README.md#产品基线) |
+| 程序设计与架构 | [从 Shell 和文件选择读懂 Termole](architecture.md) |
 | 交付场景与验收 | [Windows TUI Applet](https://github.com/Coh1e/termole/issues/31) · [轻量独立终端](https://github.com/Coh1e/termole/issues/32) |
 | 轻量终端与 Applet 的公开入口 | [CLI](cli.md) · [TOML 与 Profile](config.md) |
 | 构建与贡献 | [跨平台构建](cross-platform-build.md) · [验证指南](agents/testing.md) · [平台入口](https://github.com/Coh1e/termole/tree/main/linux) · [仓库指引](https://github.com/Coh1e/termole/blob/main/AGENTS.md) · [编码标准](https://github.com/Coh1e/termole/blob/main/CODING_STANDARDS.md) |
 | 术语和设计决定 | [术语表](../GLOSSARY.md) · [跨平台 C 核心与 CMake](adr/0016-portable-c-core.md) · [终端数据通道](adr/0006-terminal-selector-boundary.md) · [VT 核心与 View](adr/0008-libghostty-vt-mingw-c-core.md) · [ADR 索引](adr/README.md) |
 | 问题与任务 | [GitHub Issues](https://github.com/Coh1e/termole/issues) · [跟踪器说明](https://github.com/Coh1e/termole/blob/main/docs/agents/issue-tracker.md) |
 | 第三方依赖与许可 | [第三方声明](../THIRD_PARTY_NOTICES.md) |
+| 历史验证 | [早期 Windows 探针与 T01–T26 记录](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/technical-validation.md)；复现当前构建请使用上面的构建手册。 |
 
 ## 兼容参考
 

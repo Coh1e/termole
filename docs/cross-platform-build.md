@@ -1,12 +1,13 @@
-# 跨平台静态构建笔记
+# 跨平台构建
 
 静态交付与 CMake 选型见 [ADR 0016](adr/0016-portable-c-core.md)。
 
 ## 各平台的构建输入
-- Windows：使用CMake 校验下载的 `ghostty-vt-static.lib`，`-static -static-libgcc -static-libstdc++`。
-- Linux：官方不提供预编译；从固定源码用 Zig 构建静态 `libghostty-vt.a`。
-- macOS：macos-static 构建预设 使用官方 XCFramework 静态库。
-- Linux 真正无 glibc 依赖需 musl 工具链；当前 WSL 验证使用 glibc 静态，仅作功能验证。
+
+- Windows 构建通过 CMake 校验包含 `ghostty-vt-static.lib` 的下载包，链接时使用 `-static -static-libgcc -static-libstdc++`。
+- Linux 上使用 Zig 从固定版本的源码构建静态库 `libghostty-vt.a`。
+- macOS 的 `macos-static` 预设使用官方 XCFramework 提供的静态库。
+- Linux 交付物要避免依赖 glibc，需使用 musl 工具链。当前 WSL 的 glibc 静态构建用于功能验证。
 
 Windows 可用 `-DTERMOLE_GHOSTTY_VT_ROOT=安装目录` 指向已有的 1.0.1 SDK。原生 x86_64 Linux 的 CMake 配置会获取源码、依赖包和 Zig 并编译静态库，也支持通过同一变量指定已安装的目标平台库。
 
@@ -19,7 +20,7 @@ Windows 可用 `-DTERMOLE_GHOSTTY_VT_ROOT=安装目录` 指向已有的 1.0.1 SD
 
 libghostty-vt 1.0.1 的 `build.zig` 要求 Zig **0.17.0**；0.15.x 会直接拒绝。
 
-## WSL 构建
+## 手工准备 Linux 依赖
 
 ```bash
 mkdir -p /tmp/termole-cross && cd /tmp/termole-cross
@@ -38,25 +39,6 @@ zig-out/lib/libghostty-vt.a
 zig-out/include/ghostty/...
 ```
 
-## POSIX PTY 静态验证（已通过）
-
-```bash
-# 从仓库根目录运行
-g++ -std=c++23 -static -static-libgcc -static-libstdc++ -I src \
-    src/platform/posix_pty.cpp tests/posix_pty_test.cpp -lutil \
-    -o /tmp/posix_pty_static
-/tmp/posix_pty_static
-```
-
-结果：
-
-```
-PASS: spawn posix pty
-PASS: child output arrives
-PASS: child exit code preserved
-PASS: posix pty
-```
-
 ## Linux 静态 C 核心
 
 从仓库根目录运行：
@@ -67,9 +49,9 @@ cmake --build --preset linux-static --parallel
 ctest --preset linux-static --output-on-failure
 ```
 
-Linux 构建预设 构建核心、PTY 和 Session 回归测试。Windows 和 Linux 各自的
+`linux-static` 预设构建核心、PTY 和 Session 回归测试。Windows 和 Linux 各自的
 PTY 与 Session 后端共用 PTY 契约测试和交互会话契约测试。两个共享测试覆盖
-启动、子进程输出与退出码，Session 测试也覆盖输入和 resize 调用。
+启动、子进程输出与退出码，Session 测试也覆盖输入和 `resize` 调用。
 
 在 WSL 上，源码和构建目录可位于 Windows 挂载盘。自动构建 Ghostty 时，
 Zig 本地缓存放在 `$XDG_CACHE_HOME/termole/ghostty-zig` 下，默认使用
@@ -101,14 +83,14 @@ ctest --preset linux-musl --output-on-failure
 readelf -d .local/build/linux-musl/session_ipc_linux
 ```
 
-该 构建预设 覆盖 无界面核心、PTY、Session 和 Unix socket。SDL3 的 Linux X11
-构建用静态链接的 SDL3 和 FreeType，通过系统 X11 库连接桌面。
+`linux-musl` 预设覆盖无界面核心、PTY、Session 和 Unix 域套接字。
+`linux-gui` 预设静态链接 SDL3 和 FreeType，通过系统 X11 库连接桌面。
 
 ### macOS 构建
 
-`macos-static` 构建预设 使用 [Ghostty 1.0.1 官方 XCFramework](https://release.files.ghostty.org/libghostty-vt/1.0.1/ghostty-vt-1.0.1.xcframework.zip)
+`macos-static` 使用 [Ghostty 1.0.1 官方 XCFramework](https://release.files.ghostty.org/libghostty-vt/1.0.1/ghostty-vt-1.0.1.xcframework.zip)
 中的 macOS 通用静态库。SDL3 和 FreeType 静态链接，Cocoa 等系统框架由
-macOS 提供。CI 运行核心、PTY、会话连接和 SDL3 像素用例。
+macOS 提供。在 macOS 上依次运行 `cmake --preset macos-static`、`cmake --build --preset macos-static` 和 `ctest --preset macos-static`。像素用例需要可用的图形桌面。
 
 ## Windows 构建
 
@@ -122,21 +104,24 @@ set "PATH=%MINGW_PREFIX%\bin;%PATH%"
 cmake --workflow --preset windows-mingw
 ```
 
-默认使用 `windows-mingw` 构建预设 和 NMake Makefiles，启动程序位于 `.local/build/nmake-debug/bin/termole.exe`。Windows 安装包和静态 SDK 见 [SDK 参考](sdk.md)。
+`windows-mingw` 预设使用 `NMake Makefiles` 生成器。启动程序位于 `.local/build/nmake-debug/bin/termole.exe`。Windows 安装包和静态 SDK 见 [SDK 参考](sdk.md)。
 
-生成 Windows Release ZIP 时，依次运行：
+### Windows 便携包验收
+
+在本机 Windows 11 x64 使用同一工具环境运行：
 
 ```bat
-cmake --preset windows-mingw-release
-cmake --build --preset windows-mingw-release
-ctest --preset windows-mingw-release
-cmake --build --preset windows-mingw-release --target package
+cmake --workflow --preset windows-mingw-release
 ```
 
-- Windows 标准包的 `windows-mingw-release` 预设显式启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。启用后的脚本和示例插件测试可用 `ctest --preset windows-mingw-release -R script_abi_stub` 运行。
-- 技术探针通过 -DTERMOLE_BUILD_SPIKES=ON 启用。fzf 相关测试按工具可用性注册，详见 [验证指南](agents/testing.md)。
-- Release 的动态依赖与体积由 conventions_static_deps 和 conventions_release_size 检查，启用 QuickJS 时另有 conventions_quickjs_size。
-- 下载缓存和构建产物放在项目的 .local。第三方来源见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
+工作流先构建和运行已注册的测试，再用 CPack 生成 ZIP 和 `.sha256`。最后一步校验摘要，把 ZIP 解压到含中文和空格的新目录，核对文件、文档链接、程序版本和文件选择脚本的空目录行为。命令输出给出本次解压目录。只复核已有 ZIP 可运行 `cmake --build --preset windows-verify-zip`。
+
+在输出的目录打开 Windows PowerShell 5.1，通过 README 的两条入口体验终端及真实 fzf 文件选择，按 [AV1](https://github.com/Coh1e/termole/issues/43) 逐项检查选择、预览、取消、并发、焦点、中文输入法和首次可输入耗时；通过[本地插件示例](config.md#本地-quickjs-插件)核对编辑器收到的文本与菜单截图。验收记录写明源提交、工作树改动、包名、SHA-256、系统与 fzf 版本、实测结果及未执行项。新包使用新的验收记录。
+
+- Windows 标准包启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。引擎及示例插件的契约测试为 `script_abi_stub`。
+- 技术探针通过 `-DTERMOLE_BUILD_SPIKES=ON` 启用。fzf 相关测试按工具可用性注册，详见[验证指南](agents/testing.md)。
+- `conventions_static_deps` 和 `conventions_release_size` 分别检查 Release 的动态依赖和体积。启用 QuickJS 时还会运行 `conventions_quickjs_size`。
+- 下载缓存和构建产物放在项目的 `.local/` 下。第三方来源见[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
 ## Windows ConPTY
 
