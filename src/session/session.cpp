@@ -1,4 +1,5 @@
 #include "session/session.h"
+#include "core/input.h"
 #include "core/utf8_encode.h"
 
 #include <algorithm>
@@ -282,61 +283,10 @@ Result<void> NativeSession::write_raw(std::string_view bytes)
 
 Result<void> NativeSession::send_key(termole_key key)
 {
-    const bool application = application_cursor();
-    const char* bytes = nullptr;
-    switch (key) {
-    case TERMOLE_KEY_ENTER:
-        bytes = "\r";
-        break;
-    case TERMOLE_KEY_TAB:
-        bytes = "\t";
-        break;
-    case TERMOLE_KEY_BACKSPACE:
-        bytes = "\x7f";
-        break;
-    case TERMOLE_KEY_ESCAPE:
-        bytes = "\x1b";
-        break;
-    case TERMOLE_KEY_ARROW_UP:
-        bytes = application ? "\x1bOA" : "\x1b[A";
-        break;
-    case TERMOLE_KEY_ARROW_DOWN:
-        bytes = application ? "\x1bOB" : "\x1b[B";
-        break;
-    case TERMOLE_KEY_ARROW_RIGHT:
-        bytes = application ? "\x1bOC" : "\x1b[C";
-        break;
-    case TERMOLE_KEY_ARROW_LEFT:
-        bytes = application ? "\x1bOD" : "\x1b[D";
-        break;
-    case TERMOLE_KEY_HOME:
-        bytes = application ? "\x1bOH" : "\x1b[H";
-        break;
-    case TERMOLE_KEY_END:
-        bytes = application ? "\x1bOF" : "\x1b[F";
-        break;
-    case TERMOLE_KEY_DELETE:
-        bytes = "\x1b[3~";
-        break;
-    case TERMOLE_KEY_INSERT:
-        bytes = "\x1b[2~";
-        break;
-    case TERMOLE_KEY_PAGE_UP:
-        bytes = "\x1b[5~";
-        break;
-    case TERMOLE_KEY_PAGE_DOWN:
-        bytes = "\x1b[6~";
-        break;
-    case TERMOLE_KEY_CTRL_C:
-        bytes = "\x03";
-        break;
-    case TERMOLE_KEY_CTRL_D:
-        bytes = "\x04";
-        break;
-    default:
-        return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "unknown key"));
-    }
-
+    const auto state = modes();
+    if (!state) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_STATE, "terminal modes unavailable"));
+    const char* bytes = termole_key_sequence(key, state->application_cursor);
+    if (!bytes) return std::unexpected(make_error(TERMOLE_STATUS_INVALID_ARGUMENT, "unknown key"));
     return write_raw(bytes);
 }
 
@@ -467,11 +417,11 @@ std::optional<SessionFrame> NativeSession::frame_after(uint64_t revision) const
                          { frame->cells, frame->cells + count } };
 }
 
-termole_modes NativeSession::modes() const
+std::optional<termole_modes> NativeSession::modes() const
 {
     std::lock_guard lock(mutex_);
     termole_modes result{};
-    if (vt_) (void)termole_vt_modes(vt_, &result);
+    if (termole_vt_modes(vt_, &result) != TERMOLE_CORE_OK) return std::nullopt;
     return result;
 }
 
@@ -566,34 +516,17 @@ std::wstring NativeSession::title() const
 
 uint8_t NativeSession::mouse_mode() const
 {
-    std::lock_guard lock(mutex_);
-    termole_modes modes;
-    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return 0;
-    return modes.mouse_tracking;
+    return modes().value_or(termole_modes{}).mouse_tracking;
 }
 
 bool NativeSession::sgr_mouse() const
 {
-    std::lock_guard lock(mutex_);
-    termole_modes modes;
-    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
-    return modes.mouse_sgr != 0;
+    return modes().value_or(termole_modes{}).mouse_sgr != 0;
 }
 
 bool NativeSession::bracketed_paste() const
 {
-    std::lock_guard lock(mutex_);
-    termole_modes modes;
-    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
-    return modes.bracketed_paste != 0;
-}
-
-bool NativeSession::application_cursor() const
-{
-    std::lock_guard lock(mutex_);
-    termole_modes modes;
-    if (!vt_ || termole_vt_modes(vt_, &modes) != TERMOLE_CORE_OK) return false;
-    return modes.application_cursor != 0;
+    return modes().value_or(termole_modes{}).bracketed_paste != 0;
 }
 
 } // namespace termole

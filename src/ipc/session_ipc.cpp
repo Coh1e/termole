@@ -154,8 +154,9 @@ bool serve_connection(LocalHandle fd, Session& session)
                                 static_cast<uint16_t>(get(input, 4)), error);
             break;
         case TERMOLE_IPC_MODES: {
-            const auto modes = session.modes();
-            output = { modes.application_cursor, modes.bracketed_paste };
+            const std::optional<termole_modes> modes = session.modes();
+            if (!modes) { error = "terminal modes unavailable"; break; }
+            output = { modes->application_cursor, modes->bracketed_paste };
             break;
         }
         case TERMOLE_IPC_EXIT_STATUS:
@@ -276,7 +277,7 @@ int run_server(std::string_view name, const ServerSessionOptions& options)
     struct ServerSession {
         NativeSession& session;
         std::optional<SessionFrame> frame_after(uint64_t revision) { return session.frame_after(revision); }
-        termole_modes modes() const { return session.modes(); }
+        std::optional<termole_modes> modes() const { return session.modes(); }
         bool running() const { return session.running(); }
         int wait() const { return session.exit_code().value_or(-1); }
         void write(std::string_view bytes, std::string& error) {

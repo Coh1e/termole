@@ -1,5 +1,6 @@
 #include <termole/cview.h>
 #include "core/utf8_encode.h"
+#include "core/input.h"
 
 #include "gui/gdi_render.h"
 #include "session/viewport.h"
@@ -115,18 +116,20 @@ static void paste_clipboard(termole_cview* view)
         if (text) {
             const int bytes = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
             if (bytes > 1) {
-                char* utf8 = (char*)malloc((size_t)bytes);
+                termole_modes modes;
+                const int bracketed =
+                    termole_session_get_modes(view->session, &modes) == TERMOLE_STATUS_OK &&
+                    modes.bracketed_paste != 0;
+                char* utf8 = (char*)malloc((size_t)bytes + (bracketed ? TERMOLE_PASTE_OVERHEAD : 0));
                 if (utf8) {
-                    WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, bytes, NULL, NULL);
-                    termole_modes modes;
-                    const int bracketed =
-                        termole_session_get_modes(view->session, &modes) == TERMOLE_STATUS_OK &&
-                        modes.bracketed_paste != 0;
-                    if (bracketed)
-                        (void)termole_session_write(view->session, "\x1b[200~", 6);
-                    (void)termole_session_write(view->session, utf8, (size_t)bytes - 1);
-                    if (bracketed)
-                        (void)termole_session_write(view->session, "\x1b[201~", 6);
+                    if (WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, bytes, NULL, NULL)) {
+                        size_t length = (size_t)bytes - 1;
+                        if (bracketed) {
+                            termole_bracket_paste(utf8, length);
+                            length += TERMOLE_PASTE_OVERHEAD;
+                        }
+                        (void)termole_session_write(view->session, utf8, length);
+                    }
                     free(utf8);
                 }
             }

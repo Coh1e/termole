@@ -103,25 +103,6 @@ typedef struct termole_event {
 #define TERMOLE_EVENT_INIT \
     { sizeof(termole_event), TERMOLE_EVENT_NONE, 0, NULL, 0 }
 
-typedef enum termole_key {
-    TERMOLE_KEY_ENTER = 1,
-    TERMOLE_KEY_TAB = 2,
-    TERMOLE_KEY_BACKSPACE = 3,
-    TERMOLE_KEY_ESCAPE = 4,
-    TERMOLE_KEY_ARROW_UP = 5,
-    TERMOLE_KEY_ARROW_DOWN = 6,
-    TERMOLE_KEY_ARROW_LEFT = 7,
-    TERMOLE_KEY_ARROW_RIGHT = 8,
-    TERMOLE_KEY_HOME = 9,
-    TERMOLE_KEY_END = 10,
-    TERMOLE_KEY_DELETE = 11,
-    TERMOLE_KEY_INSERT = 12,
-    TERMOLE_KEY_PAGE_UP = 13,
-    TERMOLE_KEY_PAGE_DOWN = 14,
-    TERMOLE_KEY_CTRL_C = 15,
-    TERMOLE_KEY_CTRL_D = 16
-} termole_key;
-
 typedef struct termole_session_options {
     /* sizeof(termole_session_options) as compiled by the caller. */
     uint32_t size;
@@ -227,7 +208,7 @@ termole_session_send_key(termole_session* session, termole_key key);
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_get_size(termole_session* session, uint16_t* out_columns, uint16_t* out_rows);
 
-/* Terminal modes mirrored from the VT core. */
+/* Terminal modes mirrored from the VT core. On failure out_modes is unchanged. */
 TERMOLE_API termole_status TERMOLE_CALL
 termole_session_get_modes(termole_session* session, termole_modes* out_modes);
 /* Copies the viewport snapshot in full-screen coordinates (0 = oldest

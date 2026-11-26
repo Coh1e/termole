@@ -74,6 +74,26 @@ void termole_vt_free(termole_vt* vt);
 termole_core_status termole_vt_feed(termole_vt* vt, const void* data, size_t size);
 termole_core_status termole_vt_resize(termole_vt* vt, uint16_t columns, uint16_t rows);
 
+/* Logical keys shared by the native views and the Windows SDK. */
+typedef enum termole_key {
+    TERMOLE_KEY_ENTER = 1,
+    TERMOLE_KEY_TAB = 2,
+    TERMOLE_KEY_BACKSPACE = 3,
+    TERMOLE_KEY_ESCAPE = 4,
+    TERMOLE_KEY_ARROW_UP = 5,
+    TERMOLE_KEY_ARROW_DOWN = 6,
+    TERMOLE_KEY_ARROW_LEFT = 7,
+    TERMOLE_KEY_ARROW_RIGHT = 8,
+    TERMOLE_KEY_HOME = 9,
+    TERMOLE_KEY_END = 10,
+    TERMOLE_KEY_DELETE = 11,
+    TERMOLE_KEY_INSERT = 12,
+    TERMOLE_KEY_PAGE_UP = 13,
+    TERMOLE_KEY_PAGE_DOWN = 14,
+    TERMOLE_KEY_CTRL_C = 15,
+    TERMOLE_KEY_CTRL_D = 16
+} termole_key;
+
 typedef struct termole_modes {
     uint8_t mouse_tracking;
     uint8_t mouse_sgr;
@@ -93,7 +113,8 @@ typedef struct termole_vt_callbacks {
 termole_core_status termole_vt_set_callbacks(termole_vt* vt,
                                              const termole_vt_callbacks* callbacks);
 
-/* Queries the terminal modes mirrored from libghostty-vt. */
+/* Queries the terminal modes mirrored from libghostty-vt. On failure the
+ * caller's output is unchanged. */
 termole_core_status termole_vt_modes(termole_vt* vt, termole_modes* out_modes);
 
 /* Copies the OSC 0/2 title as UTF-8. Returns OUT_OF_SPACE with required size. */

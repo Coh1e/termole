@@ -337,29 +337,34 @@ termole_core_status termole_vt_cell(termole_vt* vt, int32_t row, int32_t column,
                                         &out_cell->background_is_default);
     return TERMOLE_CORE_OK;
 }
-static int query_mode(termole_vt* vt, GhosttyMode mode)
+static bool query_mode(termole_vt* vt, GhosttyMode mode, uint8_t* value)
 {
     GhosttyTerminalModeConfig config = { .mode = mode, .value = false };
     if (ghostty_terminal_get(vt->terminal, GHOSTTY_TERMINAL_DATA_MODE, &config) != GHOSTTY_SUCCESS)
-        return 0;
-    return config.value ? 1 : 0;
+        return false;
+    *value = config.value;
+    return true;
 }
 
 termole_core_status termole_vt_modes(termole_vt* vt, termole_modes* out_modes)
 {
     if (!vt || !out_modes) return TERMOLE_CORE_INVALID_ARGUMENT;
-    memset(out_modes, 0, sizeof(*out_modes));
-    if (query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_NORMAL)) out_modes->mouse_tracking = 1;
-    else if (query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_BUTTON)) out_modes->mouse_tracking = 2;
-    else if (query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_ANY)) out_modes->mouse_tracking = 3;
-    out_modes->mouse_sgr = (uint8_t)query_mode(vt, GHOSTTY_MODE_MOUSE_FORMAT_SGR);
-    out_modes->bracketed_paste = (uint8_t)query_mode(vt, GHOSTTY_MODE_BRACKETED_PASTE);
-    out_modes->application_cursor = (uint8_t)query_mode(vt, GHOSTTY_MODE_CURSOR_KEYS);
+    termole_modes result = {0};
+    uint8_t normal, button, any;
     GhosttyTerminalScreen screen;
-    if (ghostty_terminal_get(vt->terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen) !=
-        GHOSTTY_SUCCESS)
+    if (!query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_NORMAL, &normal) ||
+        !query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_BUTTON, &button) ||
+        !query_mode(vt, GHOSTTY_MODE_MOUSE_EVENT_ANY, &any) ||
+        !query_mode(vt, GHOSTTY_MODE_MOUSE_FORMAT_SGR, &result.mouse_sgr) ||
+        !query_mode(vt, GHOSTTY_MODE_BRACKETED_PASTE, &result.bracketed_paste) ||
+        !query_mode(vt, GHOSTTY_MODE_CURSOR_KEYS, &result.application_cursor) ||
+        ghostty_terminal_get(vt->terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen) != GHOSTTY_SUCCESS)
         return TERMOLE_CORE_INVALID_STATE;
-    out_modes->alternate_screen = screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
+    if (normal) result.mouse_tracking = 1;
+    else if (button) result.mouse_tracking = 2;
+    else if (any) result.mouse_tracking = 3;
+    result.alternate_screen = screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
+    *out_modes = result;
     return TERMOLE_CORE_OK;
 }
 

@@ -1,5 +1,6 @@
 #include "platform/posix_session.h"
 #include "ipc/session_ipc.h"
+#include "core/input.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -153,32 +154,36 @@ template<class Session>
 void send_key(Session& session, const SDL_KeyboardEvent& key)
 {
     std::string error;
-    std::string_view bytes;
-    char control = '\0';
-    const bool application = session.modes().application_cursor != 0;
+    termole_key logical;
     switch (key.key) {
-    case SDLK_RETURN: case SDLK_KP_ENTER: bytes = "\r"; break;
-    case SDLK_ESCAPE: bytes = "\x1b"; break;
-    case SDLK_TAB: bytes = key.mod & SDL_KMOD_SHIFT ? "\x1b[Z" : "\t"; break;
-    case SDLK_BACKSPACE: bytes = "\x7f"; break;
-    case SDLK_UP: bytes = application ? "\x1bOA" : "\x1b[A"; break;
-    case SDLK_DOWN: bytes = application ? "\x1bOB" : "\x1b[B"; break;
-    case SDLK_RIGHT: bytes = application ? "\x1bOC" : "\x1b[C"; break;
-    case SDLK_LEFT: bytes = application ? "\x1bOD" : "\x1b[D"; break;
-    case SDLK_HOME: bytes = "\x1b[H"; break;
-    case SDLK_END: bytes = "\x1b[F"; break;
-    case SDLK_INSERT: bytes = "\x1b[2~"; break;
-    case SDLK_DELETE: bytes = "\x1b[3~"; break;
-    case SDLK_PAGEUP: bytes = "\x1b[5~"; break;
-    case SDLK_PAGEDOWN: bytes = "\x1b[6~"; break;
+    case SDLK_RETURN: case SDLK_KP_ENTER: logical = TERMOLE_KEY_ENTER; break;
+    case SDLK_ESCAPE: logical = TERMOLE_KEY_ESCAPE; break;
+    case SDLK_TAB:
+        if (key.mod & SDL_KMOD_SHIFT) {
+            (void)session.write("\x1b[Z", error);
+            return;
+        }
+        logical = TERMOLE_KEY_TAB;
+        break;
+    case SDLK_BACKSPACE: logical = TERMOLE_KEY_BACKSPACE; break;
+    case SDLK_UP: logical = TERMOLE_KEY_ARROW_UP; break;
+    case SDLK_DOWN: logical = TERMOLE_KEY_ARROW_DOWN; break;
+    case SDLK_RIGHT: logical = TERMOLE_KEY_ARROW_RIGHT; break;
+    case SDLK_LEFT: logical = TERMOLE_KEY_ARROW_LEFT; break;
+    case SDLK_HOME: logical = TERMOLE_KEY_HOME; break;
+    case SDLK_END: logical = TERMOLE_KEY_END; break;
+    case SDLK_INSERT: logical = TERMOLE_KEY_INSERT; break;
+    case SDLK_DELETE: logical = TERMOLE_KEY_DELETE; break;
+    case SDLK_PAGEUP: logical = TERMOLE_KEY_PAGE_UP; break;
+    case SDLK_PAGEDOWN: logical = TERMOLE_KEY_PAGE_DOWN; break;
     default:
         if ((key.mod & SDL_KMOD_CTRL) && key.key >= SDLK_A && key.key <= SDLK_Z) {
-            control = static_cast<char>(key.key - SDLK_A + 1);
-            bytes = { &control, 1 };
+            const char control = static_cast<char>(key.key - SDLK_A + 1);
+            (void)session.write({ &control, 1 }, error);
         }
-        break;
+        return;
     }
-    if (!bytes.empty()) (void)session.write(bytes, error);
+    (void)session.write(termole_key_sequence(logical, session.modes().application_cursor), error);
 }
 
 bool save_probe(SDL_Renderer* renderer, const char* path)
@@ -289,9 +294,9 @@ int show_window(Session& terminal, const char* probe_path)
                                (event.key.mod & SDL_KMOD_SHIFT)) {
                         std::unique_ptr<char, decltype(&SDL_free)> text(SDL_GetClipboardText(), SDL_free);
                         if (text && *text) {
-                            const bool bracketed = terminal.modes().bracketed_paste != 0;
-                            (void)terminal.write(bracketed ? "\x1b[200~" + std::string(text.get()) +
-                                                                   "\x1b[201~" : text.get(), error);
+                            std::string bytes(text.get());
+                            if (terminal.modes().bracketed_paste) termole::bracket_paste(bytes);
+                            (void)terminal.write(bytes, error);
                         }
                     } else {
                         send_key(terminal, event.key);

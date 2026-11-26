@@ -47,7 +47,7 @@ public:
     [[nodiscard]] Snapshot snapshot(int scroll_offset = 0) const;
     termole_status read_viewport(int scroll_offset, termole_viewport& out) const;
     [[nodiscard]] std::optional<SessionFrame> frame_after(uint64_t revision) const;
-    [[nodiscard]] termole_modes modes() const;
+    [[nodiscard]] std::optional<termole_modes> modes() const;
     [[nodiscard]] std::pair<uint16_t, uint16_t> size() const;
     [[nodiscard]] std::string screen_text() const;
     [[nodiscard]] std::string selection_text(int start_row, int start_column, int end_row,
@@ -58,7 +58,6 @@ public:
     [[nodiscard]] uint8_t mouse_mode() const;
     [[nodiscard]] bool sgr_mouse() const;
     [[nodiscard]] bool bracketed_paste() const;
-    [[nodiscard]] bool application_cursor() const;
     [[nodiscard]] bool running() const noexcept { return running_.load(std::memory_order_acquire); }
     [[nodiscard]] HANDLE data_event() const noexcept { return data_event_.get(); }
     Result<int32_t> exit_code() const;

@@ -1,6 +1,7 @@
 #include "view/view.h"
 
 #include "core/utf8.h"
+#include "core/input.h"
 #include "common/win.h"
 #include <cstdio>
 
@@ -482,12 +483,7 @@ Result<void> NativeView::paste()
     const std::wstring text = read_clipboard();
     if (text.empty()) return {};
     std::string bytes = win::wide_to_utf8(text);
-    if (session_->bracketed_paste()) {
-        std::string wrapped = "\x1b[200~";
-        wrapped += bytes;
-        wrapped += "\x1b[201~";
-        return send_text(wrapped);
-    }
+    if (session_->bracketed_paste()) bracket_paste(bytes);
     return send_text(bytes);
 }
 

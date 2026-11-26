@@ -80,7 +80,7 @@ int wmain(int argc, wchar_t** argv)
         return 1;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
-    (void)session->write(utf8(command + L" " + file.wstring()));
+    (void)session->write(utf8(L"\"" + command + L"\" \"" + file.wstring() + L"\""));
     (void)session->send_key(termole::Key::Enter);
     std::this_thread::sleep_for(std::chrono::milliseconds(1400));
     (void)session->write("iHELLO-SHELL");

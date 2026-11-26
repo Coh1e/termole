@@ -2,6 +2,7 @@
 
 #include "common/diagnostics.h"
 #include "common/exit_codes.h"
+#include "core/input.h"
 #include "ipc/session_ipc.h"
 #include "view/renderer.h"
 
@@ -71,22 +72,21 @@ struct ClientWindow {
 
     bool key(WPARAM value)
     {
-        const char* normal = nullptr;
-        const char* application = nullptr;
+        termole_key logical;
         switch (value) {
-        case VK_UP: normal = "\x1b[A"; application = "\x1bOA"; break;
-        case VK_DOWN: normal = "\x1b[B"; application = "\x1bOB"; break;
-        case VK_RIGHT: normal = "\x1b[C"; application = "\x1bOC"; break;
-        case VK_LEFT: normal = "\x1b[D"; application = "\x1bOD"; break;
-        case VK_HOME: normal = "\x1b[H"; break;
-        case VK_END: normal = "\x1b[F"; break;
-        case VK_INSERT: normal = "\x1b[2~"; break;
-        case VK_DELETE: normal = "\x1b[3~"; break;
-        case VK_PRIOR: normal = "\x1b[5~"; break;
-        case VK_NEXT: normal = "\x1b[6~"; break;
+        case VK_UP: logical = TERMOLE_KEY_ARROW_UP; break;
+        case VK_DOWN: logical = TERMOLE_KEY_ARROW_DOWN; break;
+        case VK_RIGHT: logical = TERMOLE_KEY_ARROW_RIGHT; break;
+        case VK_LEFT: logical = TERMOLE_KEY_ARROW_LEFT; break;
+        case VK_HOME: logical = TERMOLE_KEY_HOME; break;
+        case VK_END: logical = TERMOLE_KEY_END; break;
+        case VK_INSERT: logical = TERMOLE_KEY_INSERT; break;
+        case VK_DELETE: logical = TERMOLE_KEY_DELETE; break;
+        case VK_PRIOR: logical = TERMOLE_KEY_PAGE_UP; break;
+        case VK_NEXT: logical = TERMOLE_KEY_PAGE_DOWN; break;
         default: return false;
         }
-        write(application && session->modes().application_cursor ? application : normal);
+        write(termole_key_sequence(logical, session->modes().application_cursor));
         return true;
     }
 
@@ -152,8 +152,8 @@ struct ClientWindow {
         }
         ::CloseClipboard();
         if (!pasted.empty()) {
-            const bool bracketed = session->modes().bracketed_paste != 0;
-            write(bracketed ? "\x1b[200~" + pasted + "\x1b[201~" : pasted);
+            if (session->modes().bracketed_paste) bracket_paste(pasted);
+            write(pasted);
         }
     }
 

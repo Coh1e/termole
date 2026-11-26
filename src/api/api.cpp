@@ -233,7 +233,9 @@ termole_status TERMOLE_CALL termole_session_get_modes(termole_session* session,
         if (!session || !session->implementation)
             return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
         if (!out_modes) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_modes is null");
-        *out_modes = session->implementation->modes();
+        const auto modes = session->implementation->modes();
+        if (!modes) return fail(TERMOLE_STATUS_INVALID_STATE, "terminal modes unavailable");
+        *out_modes = *modes;
         return TERMOLE_STATUS_OK;
     });
 }

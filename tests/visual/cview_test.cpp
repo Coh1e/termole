@@ -135,6 +135,8 @@ static void check_viewport_resizes(termole_session* session)
 
 int main(void)
 {
+    const HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    check(SUCCEEDED(com), "initialize the PNG encoder");
     WNDCLASSEXW window_class;
     memset(&window_class, 0, sizeof(window_class));
     window_class.cbSize = sizeof(window_class);
@@ -171,18 +173,12 @@ int main(void)
         check(wait_for_text(session, "C-VIEW-ROW-60"), "child has filled the primary scrollback");
         RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
         check(termole_cview_paint_count(view) > 0, "C view painted");
-        HDC dc = GetDC(window);
-        int ink = 0;
-        if (dc) {
-            for (int y = 0; y < 96; y += 3) {
-                for (int x = 0; x < 140; x += 3) {
-                    const COLORREF pixel = GetPixel(dc, x, y);
-                    if (pixel != CLR_INVALID && GetRValue(pixel) > 64) ++ink;
-                }
-            }
-            ReleaseDC(window, dc);
-        }
-        check(ink > 20, "C view draws text pixels");
+        capture::Stats pixels;
+        std::string error;
+        check(capture::window(window, "primary-text.png", pixels, error) &&
+                  pixels.strong_pixels >= 500,
+              "C view draws text pixels in primary-text.png");
+        if (!error.empty()) fprintf(stderr, "%s\n", error.c_str());
         termole_cview_set_selection(view, 0, 0, 23, 79);
         char* selected = NULL;
         size_t selected_size = 0;
@@ -197,8 +193,6 @@ int main(void)
         const int cell_height = (int)termole_gdi_cell_height(metrics);
         termole_gdi_destroy(metrics);
         check(cell_width > 0 && cell_height > 0, "measure the configured GDI font");
-        const HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        check(SUCCEEDED(com), "initialize the PNG encoder");
 
         SendMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
         RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -220,7 +214,6 @@ int main(void)
         drag(window, 2, cell_height + 2, 2 * cell_width + 2, cell_height + 2);
         check_selection_text(view, "ALT", "dragging on the second alternate-screen row selects ALT");
         check_selection_pixels(window, "alternate-selection.png", 2, cell_height + 2, 2);
-        if (SUCCEEDED(com)) CoUninitialize();
         termole_cview_clear_selection(view);
         check(termole_cview_get_selection_text(view, &selected, &selected_size) ==
                   TERMOLE_STATUS_INVALID_STATE,
@@ -240,17 +233,19 @@ int main(void)
     if (light_view) {
         RedrawWindow(termole_cview_hwnd(light_view), NULL, NULL,
                      RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-        HDC dc = GetDC(termole_cview_hwnd(light_view));
-        if (dc) {
-            const COLORREF corner = GetPixel(dc, 2, 2);
-            ReleaseDC(termole_cview_hwnd(light_view), dc);
-            check(corner == RGB(250, 250, 250), "C view light theme background");
-        }
+        capture::Sample corner[] = { { 2, 2 } };
+        capture::Stats pixels;
+        std::string error;
+        check(capture::window(termole_cview_hwnd(light_view), "light-background.png",
+                              pixels, error, corner) && corner[0].color == RGB(250, 250, 250),
+              "C view light theme background in light-background.png");
+        if (!error.empty()) fprintf(stderr, "%s\n", error.c_str());
         termole_cview_destroy(light_view);
     }
 
     termole_session_destroy(session);
     DestroyWindow(parent);
+    if (SUCCEEDED(com)) CoUninitialize();
 
     if (failures != 0) {
         fprintf(stderr, "%d C view check(s) failed\n", failures);

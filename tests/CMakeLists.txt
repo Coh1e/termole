@@ -145,13 +145,13 @@ endif()
 if(TERMOLE_NVIM OR TERMOLE_HELIX)
   add_executable(termole_editor_test editor_test.cpp)
   target_link_libraries(termole_editor_test PRIVATE termole termole_build_options)
+  add_executable(termole_editor_shell_test editor_shell_test.cpp)
+  target_link_libraries(termole_editor_shell_test PRIVATE termole termole_build_options)
   if(TERMOLE_NVIM)
     add_test(NAME t18_nvim COMMAND termole_editor_test "${TERMOLE_NVIM}" nvim)
     set_tests_properties(t18_nvim PROPERTIES TIMEOUT 60
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    add_executable(termole_editor_shell_test editor_shell_test.cpp)
-    target_link_libraries(termole_editor_shell_test PRIVATE termole termole_build_options)
-    add_test(NAME t18_nvim_shell COMMAND termole_editor_shell_test nvim nvim)
+    add_test(NAME t18_nvim_shell COMMAND termole_editor_shell_test "${TERMOLE_NVIM}" nvim)
     set_tests_properties(t18_nvim_shell PROPERTIES TIMEOUT 60
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
   endif()
@@ -159,17 +159,9 @@ if(TERMOLE_NVIM OR TERMOLE_HELIX)
     add_test(NAME t18_helix COMMAND termole_editor_test "${TERMOLE_HELIX}" helix)
     set_tests_properties(t18_helix PROPERTIES TIMEOUT 60
       WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    if(TARGET termole_editor_shell_test)
-      add_test(NAME t18_helix_shell COMMAND termole_editor_shell_test hx helix)
-      set_tests_properties(t18_helix_shell PROPERTIES TIMEOUT 60
-        WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    else()
-      add_executable(termole_editor_shell_test editor_shell_test.cpp)
-      target_link_libraries(termole_editor_shell_test PRIVATE termole termole_build_options)
-      add_test(NAME t18_helix_shell COMMAND termole_editor_shell_test hx helix)
-      set_tests_properties(t18_helix_shell PROPERTIES TIMEOUT 60
-        WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    endif()
+    add_test(NAME t18_helix_shell COMMAND termole_editor_shell_test "${TERMOLE_HELIX}" helix)
+    set_tests_properties(t18_helix_shell PROPERTIES TIMEOUT 60
+      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
   endif()
 endif()
 if(TERMOLE_WSL)
@@ -504,9 +496,14 @@ foreach(_t IN LISTS _termole_wmain_targets)
   endif()
 endforeach()
 # Pure-C consumer characterization: links termole statically and verifies the
-# defensive ABI behavior plus one real ConPTY session without any C++ runtime.
+# defensive ABI behavior plus one real ConPTY session from C source.
 add_executable(termole_c_abi_characterization_test c_abi_characterization_test.c)
 target_link_libraries(termole_c_abi_characterization_test PRIVATE termole termole_build_options)
+if(MINGW AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  target_compile_definitions(termole_c_abi_characterization_test PRIVATE TERMOLE_TEST_GHOSTTY_FAILURE)
+  target_link_libraries(termole_c_abi_characterization_test PRIVATE ghostty_vt)
+  target_link_options(termole_c_abi_characterization_test PRIVATE "LINKER:--wrap=ghostty_terminal_get")
+endif()
 add_test(NAME c_abi_characterization COMMAND termole_c_abi_characterization_test)
 set_tests_properties(c_abi_characterization PROPERTIES
   TIMEOUT 60

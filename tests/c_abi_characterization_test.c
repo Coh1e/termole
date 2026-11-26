@@ -1,9 +1,7 @@
 /*
  * C-only characterization test for the public ABI.
  *
- * Purpose: prove that a pure-C consumer can link and use termole without any
- * C++ runtime, and lock the defensive behavior of the ABI before the
- * libghostty-vt migration changes the implementation.
+ * Exercises the installed C interface without using the C++ wrapper.
  */
 #include <termole/termole.h>
 
@@ -14,6 +12,21 @@
 #include <string.h>
 
 static int failures = 0;
+
+#ifdef TERMOLE_TEST_GHOSTTY_FAILURE
+#include <ghostty/vt.h>
+
+/* Fail only the querying thread, leaving the ConPTY reader and real VT live. */
+static _Thread_local int fail_active_screen;
+GhosttyResult __real_ghostty_terminal_get(GhosttyTerminal, GhosttyTerminalData, void*);
+GhosttyResult __wrap_ghostty_terminal_get(GhosttyTerminal terminal, GhosttyTerminalData data,
+                                          void* out)
+{
+    if (fail_active_screen && data == GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN)
+        return GHOSTTY_INVALID_VALUE;
+    return __real_ghostty_terminal_get(terminal, data, out);
+}
+#endif
 
 static void check(int condition, const char* what)
 {
@@ -82,6 +95,16 @@ int main(void)
     if (session) {
         check(termole_session_is_running(session, &(int){ 0 }) == TERMOLE_STATUS_OK,
               "running query succeeds");
+#ifdef TERMOLE_TEST_GHOSTTY_FAILURE
+        const termole_modes sentinel = { 9, 8, 7, 6, 5 };
+        termole_modes incomplete = sentinel;
+        fail_active_screen = 1;
+        check(termole_session_get_modes(session, &incomplete) == TERMOLE_STATUS_INVALID_STATE &&
+                  memcmp(&incomplete, &sentinel, sizeof(sentinel)) == 0 &&
+                  strlen(termole_last_error()) != 0,
+              "failed active-screen query reports an error and preserves all output fields");
+        fail_active_screen = 0;
+#endif
         termole_modes modes;
         check(wait_for_text(session, "PRIMARY-READY"), "child is on its primary screen");
         check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK &&

@@ -53,6 +53,24 @@ int wmain(int argc, wchar_t** argv)
 {
     ::SetConsoleOutputCP(CP_UTF8);
 
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--navigation") {
+        const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
+        if (!::SetConsoleMode(input, ENABLE_VIRTUAL_TERMINAL_INPUT)) return 3;
+        for (const bool application : { true, false }) {
+            if (!write_stdout(application ? "\x1b[?1h" : "\x1b[?1l") ||
+                !write_frame(application ? "30;55;220" : "220;30;55",
+                             application ? "APPLICATION" : "NORMAL")) return 3;
+            const std::string_view expected = application ? "a\x1bOH\x1bOF" : "q\x1b[H\x1b[F";
+            for (const char want : expected) {
+                char byte{};
+                DWORD read = 0;
+                if (!::ReadFile(input, &byte, 1, &read, nullptr) || read != 1 || byte != want)
+                    return 4;
+            }
+        }
+        return 0;
+    }
+
     if (argc == 2 && std::wstring_view(argv[1]) == L"--latency") {
         // No echo or line buffering: one View WM_CHAR produces one new frame.
         const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);

@@ -97,7 +97,7 @@ int wmain(int argc, wchar_t** argv)
                                            &limits, sizeof(limits))) return 1;
     const std::wstring name = L"visual-" + std::to_wstring(::GetCurrentProcessId());
     const auto server = launch(job.get(), argv[1],
-        L"--server --pipe " + name + L" -- \"" + argv[2] + L"\" --latency");
+        L"--server --pipe " + name + L" -- \"" + argv[2] + L"\" --navigation");
     if (!server) return 1;
 
     unique_handle client;
@@ -118,10 +118,15 @@ int wmain(int argc, wchar_t** argv)
         std::fputs("The remote client did not render the initial blue frame.\n", stderr);
         return 1;
     }
-    if (!::PostMessageW(window, WM_CHAR, 'a', 1) || !wait_color(window, true)) {
-        std::fputs("Remote input did not produce a visible red frame.\n", stderr);
+    const auto type_navigation = [window](char marker) {
+        return ::PostMessageW(window, WM_CHAR, marker, 1) &&
+               ::PostMessageW(window, WM_KEYDOWN, VK_HOME, 1) &&
+               ::PostMessageW(window, WM_KEYDOWN, VK_END, 1);
+    };
+    if (!type_navigation('a') || !wait_color(window, true)) {
+        std::fputs("Remote child did not receive application Home/End (ESC OH, ESC OF).\n", stderr);
         return 1;
     }
-    return ::PostMessageW(window, WM_CHAR, 'q', 1) && succeeded(client.get()) &&
+    return type_navigation('q') && succeeded(client.get()) &&
         succeeded(server.get()) ? 0 : 1;
 }
