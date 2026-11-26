@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <string>
 #include <thread>
@@ -135,7 +136,9 @@ int main(int argc, char** argv)
     check(session->write("exit 7\r\n", error), "write exit to posix session");
     check(session->wait() == 7, "interactive shell exit code");
 
-    options.arguments = { "/bin/sh", "-c", R"sh(
+    PosixSessionOptions reply_options;
+    check(reply_options.max_queued_reply_bytes == 1024 * 1024, "default reply queue budget is one MiB");
+    reply_options.arguments = { "/bin/sh", "-c", R"sh(
         stty -echo -icanon min 0 time 10 || exit 1
         printf '\033[7;12H\033[6n'
         reply=$(dd bs=1 count=7 2>/dev/null)
@@ -144,12 +147,24 @@ int main(int argc, char** argv)
         printf '%s' "$reply" | od -An -tx1
         exit 1
     )sh" };
-    auto reporter = PosixSession::create(options, error);
+    // ESC [ 7 ; 1 2 R is exactly seven bytes. One callback delivers the
+    // whole report, so the writer's scheduling cannot change either outcome.
+    reply_options.max_queued_reply_bytes = 7;
+    auto reporter = PosixSession::create(reply_options, error);
     check(reporter != nullptr, "start cursor report child");
     if (reporter) {
         const int status = reporter->wait();
         if (status != 0) std::fprintf(stderr, "%s\n", reporter->text().c_str());
         check(status == 0, "child receives the cursor position at row 7, column 12 through stdin");
+    }
+
+    reply_options.max_queued_reply_bytes = 6;
+    auto overflow = PosixSession::create(reply_options, error);
+    check(overflow != nullptr, "start child with a reply budget smaller than the cursor report");
+    if (overflow) {
+        check(overflow->wait() == 128 + SIGKILL, "reply overflow terminates and reaps the child");
+        check(!overflow->running() && !overflow->write("x", error), "closed session rejects input");
+        overflow.reset();
     }
 
     check(duplex_session(argv[0]), "child can finish output before reading a paste and ordered cursor reports");

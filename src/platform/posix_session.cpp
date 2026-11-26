@@ -5,7 +5,7 @@ namespace termole::platform {
 std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& options,
                                                     std::string& error)
 {
-    std::unique_ptr<PosixSession> session(new PosixSession());
+    std::unique_ptr<PosixSession> session(new PosixSession(options.max_queued_reply_bytes));
     session->pty_ = Pty::spawn(
         PtyOptions{ options.arguments, options.working_directory, options.columns, options.rows },
         error);
@@ -20,8 +20,7 @@ std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& op
         [](void* userdata, const void* data, size_t size) noexcept {
             auto& session = *static_cast<PosixSession*>(userdata);
             // An unresponsive child must not grow the reply queue indefinitely.
-            constexpr size_t max_queued_replies = 1024 * 1024;
-            if (size > max_queued_replies - session.replies_.size()) {
+            if (size > session.max_queued_reply_bytes_ - session.replies_.size()) {
                 session.pty_->close();
                 return;
             }
