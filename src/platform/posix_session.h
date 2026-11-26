@@ -21,7 +21,7 @@ struct PosixSessionOptions {
     std::string working_directory;
     unsigned short columns = 80;
     unsigned short rows = 24;
-    // Terminate this session if unread VT replies exceed the queue budget.
+    // Limit queued VT replies plus bytes the writer has yet to send to the PTY.
     size_t max_queued_reply_bytes = 1024 * 1024;
 };
 
@@ -50,7 +50,7 @@ public:
 private:
     explicit PosixSession(size_t max_queued_reply_bytes)
         : max_queued_reply_bytes_(max_queued_reply_bytes) {}
-    bool write_all(std::string_view bytes);
+    bool write_all(std::string_view bytes, bool is_reply);
     void write_replies();
     void read_loop();
     void stop();
@@ -59,6 +59,7 @@ private:
     termole_vt* vt_ = nullptr;
     mutable std::mutex mutex_;
     const size_t max_queued_reply_bytes_;
+    size_t pending_reply_bytes_ = 0; // Includes the batch held by the writer.
     std::string replies_;
     std::condition_variable replies_ready_;
     std::mutex input_mutex_;

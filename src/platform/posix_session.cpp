@@ -20,12 +20,13 @@ std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& op
         [](void* userdata, const void* data, size_t size) noexcept {
             auto& session = *static_cast<PosixSession*>(userdata);
             // An unresponsive child must not grow the reply queue indefinitely.
-            if (size > session.max_queued_reply_bytes_ - session.replies_.size()) {
+            if (size > session.max_queued_reply_bytes_ - session.pending_reply_bytes_) {
                 session.pty_->close();
                 return;
             }
             try {
                 session.replies_.append(static_cast<const char*>(data), size);
+                session.pending_reply_bytes_ += size;
                 session.replies_ready_.notify_one();
             } catch (...) {
                 // The C callback cannot report allocation failure.
@@ -79,16 +80,20 @@ void PosixSession::write_replies()
         // A child may fill its output while waiting to read an in-flight paste.
         // Only writers serialize here. The PTY reader must keep draining output.
         std::lock_guard lock(input_mutex_);
-        if (!write_all(bytes)) return;
+        if (!write_all(bytes, true)) return;
         bytes.clear();
     }
 }
 
-bool PosixSession::write_all(std::string_view bytes)
+bool PosixSession::write_all(std::string_view bytes, bool is_reply)
 {
     while (!bytes.empty()) {
         const ssize_t written = pty_->write(bytes.data(), bytes.size());
         if (written <= 0) return false;
+        if (is_reply) {
+            std::lock_guard lock(mutex_);
+            pending_reply_bytes_ -= static_cast<size_t>(written);
+        }
         bytes.remove_prefix(static_cast<size_t>(written));
     }
     return true;
@@ -97,7 +102,7 @@ bool PosixSession::write_all(std::string_view bytes)
 bool PosixSession::write(std::string_view bytes, std::string& error)
 {
     std::lock_guard lock(input_mutex_);
-    if (!write_all(bytes)) {
+    if (!write_all(bytes, false)) {
         error = "PTY write failed";
         return false;
     }

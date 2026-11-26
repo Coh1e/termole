@@ -38,13 +38,17 @@ static int duplex_child()
 
     // The paste is in progress. Produce more output than the PTY can buffer
     // before consuming the rest of the paste and both cursor reports.
-    constexpr char queries[] = "\x1b[7;12H\x1b[6n\x1b[2;3H\x1b[6n";
-    if (::write(STDOUT_FILENO, queries, sizeof(queries) - 1) != sizeof(queries) - 1) return 3;
     std::array<char, 4096> buffer{};
-    for (size_t remaining = paste_size; remaining;) {
-        const auto n = ::write(STDOUT_FILENO, buffer.data(), std::min(remaining, buffer.size()));
-        if (n <= 0) return 4;
-        remaining -= static_cast<size_t>(n);
+    for (std::string_view query : { "\x1b[7;12H\x1b[6n", "\x1b[2;3H\x1b[6n" }) {
+        if (::write(STDOUT_FILENO, query.data(), query.size()) != static_cast<ssize_t>(query.size()))
+            return 3;
+        // Force the reader to consume each query while the paste still owns
+        // the input channel. The reports cannot have been sent to the PTY.
+        for (size_t remaining = paste_size; remaining;) {
+            const auto n = ::write(STDOUT_FILENO, buffer.data(), std::min(remaining, buffer.size()));
+            if (n <= 0) return 4;
+            remaining -= static_cast<size_t>(n);
+        }
     }
     for (size_t remaining = paste_size - 1; remaining;) {
         const auto n = ::read(STDIN_FILENO, buffer.data(), std::min(remaining, buffer.size()));
@@ -59,12 +63,13 @@ static int duplex_child()
     return 0;
 }
 
-static bool duplex_session(const char* executable)
+static bool duplex_session(const char* executable, size_t reply_budget, int expected_exit)
 {
     using namespace std::chrono_literals;
     std::string error;
     termole::platform::PosixSessionOptions options;
     options.arguments = { executable, "--duplex-child" };
+    options.max_queued_reply_bytes = reply_budget;
     auto session = termole::platform::PosixSession::create(options, error);
     if (!session) return false;
     const auto deadline = std::chrono::steady_clock::now() + 2s;
@@ -74,7 +79,7 @@ static bool duplex_session(const char* executable)
     }
     const bool written = session->write(std::string(paste_size, 'p'), error);
     const int status = session->wait();
-    if (!written || status != 0) {
+    if (written != (expected_exit == 0) || status != expected_exit) {
         std::fprintf(stderr, "duplex child exit=%d, paste written=%d %s\n", status, written, error.c_str());
         return false;
     }
@@ -140,12 +145,15 @@ int main(int argc, char** argv)
     check(reply_options.max_queued_reply_bytes == 1024 * 1024, "default reply queue budget is one MiB");
     reply_options.arguments = { "/bin/sh", "-c", R"sh(
         stty -echo -icanon min 0 time 10 || exit 1
-        printf '\033[7;12H\033[6n'
-        reply=$(dd bs=1 count=7 2>/dev/null)
-        [ "$reply" = "$(printf '\033[7;12R')" ] && exit 0
-        printf 'Unexpected cursor report (hex): '
-        printf '%s' "$reply" | od -An -tx1
-        exit 1
+        for query in 1 2; do
+            printf '\033[7;12H\033[6n'
+            reply=$(dd bs=1 count=7 2>/dev/null)
+            if [ "$reply" != "$(printf '\033[7;12R')" ]; then
+                printf 'Unexpected cursor report (hex): '
+                printf '%s' "$reply" | od -An -tx1
+                exit 1
+            fi
+        done
     )sh" };
     // ESC [ 7 ; 1 2 R is exactly seven bytes. One callback delivers the
     // whole report, so the writer's scheduling cannot change either outcome.
@@ -155,7 +163,7 @@ int main(int argc, char** argv)
     if (reporter) {
         const int status = reporter->wait();
         if (status != 0) std::fprintf(stderr, "%s\n", reporter->text().c_str());
-        check(status == 0, "child receives the cursor position at row 7, column 12 through stdin");
+        check(status == 0, "child receives row 7, column 12 twice and reuses the reply budget");
     }
 
     reply_options.max_queued_reply_bytes = 6;
@@ -167,7 +175,10 @@ int main(int argc, char** argv)
         overflow.reset();
     }
 
-    check(duplex_session(argv[0]), "child can finish output before reading a paste and ordered cursor reports");
+    // The two reports contain seven and six bytes, respectively.
+    check(duplex_session(argv[0], 13, 0), "child receives the paste and both ordered reports at the budget");
+    check(duplex_session(argv[0], 12, 128 + SIGKILL),
+          "closing an over-budget session interrupts a blocked paste and reaps the child");
 
     options.arguments = { "/bin/sh", "-c", "trap '' HUP; printf 'SESSION-ACTIVE'; sleep 60" };
     auto active = PosixSession::create(options, error);
