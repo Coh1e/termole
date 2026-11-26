@@ -115,6 +115,7 @@ if(TERMOLE_BUILD_APP)
   )
   install(FILES examples/select-file.ps1 examples/preview-file.ps1 DESTINATION share/termole/examples)
   install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
+  install(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/InstallRevision.cmake")
   set(CPACK_GENERATOR ZIP)
   set(CPACK_PACKAGE_CHECKSUM SHA256)
   set(CPACK_PACKAGE_NAME "Termole")
@@ -128,11 +129,19 @@ if(TERMOLE_BUILD_APP)
       COMMAND "${CMAKE_COMMAND}"
         "-DArchive=${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_FILE_NAME}.zip"
         "-DVersion=${PROJECT_VERSION}" "-DPowerShell=${TERMOLE_POWERSHELL}"
+        "-DFzf=${TERMOLE_FZF}" "-DObjdump=${CMAKE_OBJDUMP}"
+        "-DGenerator=${CMAKE_GENERATOR}" "-DMakeProgram=${CMAKE_MAKE_PROGRAM}"
+        "-DCc=${CMAKE_C_COMPILER}" "-DCxx=${CMAKE_CXX_COMPILER}"
         "-DEvidence=${CMAKE_BINARY_DIR}/tests/release-zip"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_release_zip.cmake"
       VERBATIM)
   endif()
+  # Source packages export committed files at packaging time. An empty
+  # directory list disables CPack's default walk of the whole checkout.
+  set(CPACK_SOURCE_INSTALLED_DIRECTORIES "")
   include(CPack)
+  file(APPEND "${CPACK_SOURCE_OUTPUT_CONFIG_FILE}"
+    "\nset(CPACK_INSTALL_SCRIPTS [[${CMAKE_CURRENT_SOURCE_DIR}/cmake/InstallGitSources.cmake]])\n")
 endif()
 
 if(TERMOLE_BUILD_SPIKES)

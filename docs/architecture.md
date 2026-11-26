@@ -37,7 +37,7 @@ flowchart LR
 1. **读取输出。** Windows 的 `WindowsPty` 为进程连接 ConPTY，`NativeSession::read_loop` 从输出管道读取字节。Linux/macOS 的 `spawn_posix_pty` 建立主从端，把子程序的标准流接到从端。父进程的 `PosixSession::read_loop` 经主端读取字节。两条路径都在会话锁内调用 `termole_vt_feed`。
 2. **形成画面。** 共享 VT 核心处理文本和控制序列，维护字符、颜色、光标、主屏与备用屏以及回滚历史。Windows 的 `NativeSession::snapshot` 按视图的回滚位置取出一屏，包括宽字符及其后续单元格。默认视图在 `NativeView::paint_client` 中叠加选区，再由 `Renderer::paint` 绘制。POSIX 的 `PosixSession::frame_after` 在版本变化时复制当前帧，SDL 窗口读取该副本并用 FreeType 绘制字形。
 3. **确定状态归属。** 回滚的内容属于会话的 VT。Windows 默认视图持有自己的 `scroll_offset_` 和选区端点，向上浏览历史不会改变子程序的光标。SDL 窗口用 `FrameSelection` 保存当前帧上的选区。可用的历史行和用户此刻看到的行是两个不同的值。
-4. **送回输入。** 用户按方向键时，Windows 的 `NativeSession::send_key` 和 SDL 窗口的按键处理都会读取应用光标键模式，再向 PTY 写入对应字节。粘贴读取系统剪贴板，按程序设置的括号粘贴模式决定是否加入起止序列。终端对查询序列的自动应答也走 PTY 的写入方向，核心通过 `termole_vt_callbacks.write_pty` 将应答交给会话。POSIX 会话的读线程继续排空子程序输出，写线程将排队的应答送回子程序。加入应答会使队列超过 1 MiB，或为应答分配内存失败时，会话关闭 PTY 并结束子程序。
+4. **送回输入。** 用户按方向键时，Windows 的 `NativeSession::send_key` 和 SDL 窗口的按键处理都会读取应用光标键模式，再向 PTY 写入对应字节。Windows 默认窗口、IPC 客户端与 SDL 将逻辑键交给 `src/core/input.c` 编码。方向键和 Home/End 根据应用光标模式选择序列。各视图读取平台剪贴板后，复用同一段 C 逻辑为括号粘贴加上起止序列。终端对查询序列的自动应答也走 PTY 的写入方向，核心通过 `termole_vt_callbacks.write_pty` 将应答交给会话。POSIX 会话的读线程继续排空子程序输出，写线程将排队的应答送回子程序。会话将排队的应答和写线程尚未送入 PTY 的字节合计限于 1 MiB。新应答使总量超限或分配内存失败时，会话关闭 PTY 并结束子程序。
 
 **实验 C 视图如何画准选区？** `src/gui/cview.c` 每次绘制调用一次私有接口 `termole_session_read_viewport`（`src/session/viewport.h`）。会话在同一把锁内复制网格尺寸、单元格、光标和当前视口的文档行范围。视图拥有这份副本，后续输出和缩放不会改变正在绘制的帧。
 
@@ -111,7 +111,7 @@ sequenceDiagram
 
 **核对基准。** 在提交 `adbc611ece92` 中，Windows 默认视图已通过 `NativeView::paste` 处理括号粘贴，实验 C 视图通过 `termole_session_snapshot` 读取单元格，再单独查询光标。可以在该提交的 `src/view/view.cpp`、`src/gui/cview.c` 核对这两条调用链。后续提交 `7bc9468` 接通 POSIX 终端应答，`f2ed36b` 为 Windows 实验视图增加同帧读取，并修正备用屏状态查询。
 
-**工作树来源。** 此次审阅时，Windows 默认视图的单击清除选区、输入法提交和选区背景对齐还包含未提交的改动。对照 `src/view/view.cpp`、`src/view/view.h`、`src/view/renderer.cpp` 与基准提交可见其实现差异，对照 `docs/config.md`、`tests/host_api_test.cpp`、`tests/visual/visual_test.cpp` 和 `scripts/capture-window.ps1` 可见相应说明与验证方法。
+**默认视图的输入与绘制。** 提交 `64fbbc6` 固定了单击清除选区、由 Windows 默认窗口过程提交输入法字符、选区背景对齐设备像素的实现。消息转发由 `t01_host_api` 验证，Ctrl+C 的去向和跨行选区颜色由 `visual_input_interaction`、`visual_input_standalone` 检查。真实输入法选词和焦点依照 [#53](https://github.com/Coh1e/termole/issues/53) 另行记录。
 
 历史记录 `docs/fzf-blank-validation.md` 对应 2026-10-31 的 Windows 11 x64、MSVC Release、150% 缩放、fzf 0.74.5，保留了当时的截图及候选行和指针行的像素统计。当前包的验收需对应其实际构建和测试产物。[历史像素记录与截图](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/fzf-blank-validation.md)
 

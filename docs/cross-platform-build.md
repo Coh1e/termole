@@ -114,15 +114,17 @@ cmake --workflow --preset windows-mingw
 cmake --workflow --preset windows-mingw-release
 ```
 
-工作流先构建和运行已注册的测试，再用 CPack 生成 ZIP 和 `.sha256`。最后一步校验摘要，把 ZIP 解压到含中文和空格的新目录，并检查随包文件、文档链接和程序版本。它通过包内文件选择脚本核对空目录、无效目录和缺少 fzf 时的标准流与退出码。命令输出给出本次解压目录。复核已有 ZIP 可运行 `cmake --build --preset windows-verify-zip`。
+正式候选从干净提交构建。使用已解锁的 Windows 11 x64 交互桌面，将 `fzf.exe` 加入 PATH，预留系统剪贴板给窗口测试。使用上述 MinGW 工具链时，从全 ASCII 路径的仓库运行，测试会为含中文和空格的包路径创建 SDK 目录联接。[SDK 路径说明](sdk.md#构建外部宿主)
 
-在输出的解压目录打开 Windows PowerShell 5.1，按 [README 快速开始](../README.md#快速开始)打开默认 Shell 和文件选择窗口。随后完成以下桌面检查。
+工作流依次完成构建、CTest、CPack、SHA-256 校验，再将最终 ZIP 解压到新目录。验证程序读取包内许可证、文档链接、版本、依赖和源码修订号，从包内 SDK 编译运行纯 C 宿主，再运行以下窗口场景。
 
-1. 在测试目录准备 `中文目标.txt` 和 `alpha.txt`，从前台 PowerShell 运行随包 `select-file.ps1 -Directory <测试目录>`。直接用中文输入法键入 `zhongwen`，选词“中文”，查看预览并按 Enter。核对返回的完整中文路径和 `$LASTEXITCODE`。从后台召出窗口时，记录窗口可见、点击后能输入的过程。保留候选窗和提交后的画面。
-2. 在预览运行时分别用 Esc 和关窗取消，检查脚本输出、退出码和子进程回收。并发打开两个选择器，取消其中一个，再从另一个选回文件。冷启动使用固定的候选和窗口设置，从调用脚本计时至首个按键产生预期选择。预览边界和各情境的预期结果见 [Applet 规格](https://github.com/Coh1e/termole/issues/31)及 [AV1 验收](https://github.com/Coh1e/termole/issues/43)。
-3. 启用随包 QuickJS 示例，选中两行中英文，执行菜单命令并粘贴到编辑器。用两个窗口确认命令读取打开菜单的视图，再停用插件并重启，检查菜单项消失。[配置示例](config.md#本地-quickjs-插件) · [菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
+- 启动默认 Shell，检查子进程与窗口像素。
+- 使用真实 fzf 检查选择、预览、取消、并发实例的独立性、标准流和子进程回收。五次冷启动分别记录第一个有效按键的耗时。[AV1 验收](https://github.com/Coh1e/termole/issues/43)
+- 从当前视图的右键菜单执行 QuickJS 命令，核对粘贴到编辑器的文字、双窗口选区和停用后的菜单。[菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
 
-验收记录写明源提交、工作树改动、包名、SHA-256、系统与 fzf 版本、实测结果及未执行项。新包使用新的验收记录。
+控制台输出本次证据目录。成功记录位于 `<build>/tests/release-zip/<SHA-256>/<run>/acceptance.txt`，同目录保存每项的日志与截图。包内 `share/termole/source-revision.txt` 记录安装时的提交和工作树状态。从无 Git 元数据的源码构建时记录为 `unknown`。在同一构建目录复核已有 ZIP，运行 `cmake --build --preset windows-verify-zip`。
+
+人工项沿用 [#53 交接](https://github.com/Coh1e/termole/issues/53)。提供当次 ZIP 摘要和解压路径，由验收者回填真实输入法选词、前后台焦点和首次阅读 README 的结果。
 
 - Windows 标准包启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。引擎及示例插件的契约测试为 `script_abi_stub`。
 - 技术探针通过 `-DTERMOLE_BUILD_SPIKES=ON` 启用。fzf 相关测试按工具可用性注册，详见[验证指南](agents/testing.md)。
@@ -134,3 +136,7 @@ cmake --workflow --preset windows-mingw-release
 `WindowsPty` 统一负责进程启动、环境、ConPTY、重定向和进程树生命周期。
 `NativeSession` 通过它操作终端设备，继续负责 VT 状态与通知。
 文件重定向、直接 stdio 句柄和纯终端三种路径仍由现有产品测试覆盖。
+
+## Windows 源码归档
+
+在已配置的 Git 检出目录运行 `cmake --build --preset windows-mingw-release --target package_source`。CPack 从当前 `HEAD` 导出文件，产物位于构建目录的 `package/`。制作源码归档需要 Git。解压后可按前述 Windows 构建命令编译程序和 SDK。

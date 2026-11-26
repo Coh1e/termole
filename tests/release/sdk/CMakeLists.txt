@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.28)
+project(TermolePackageConsumer LANGUAGES C CXX)
+find_package(Termole CONFIG REQUIRED PATHS "${Package}" NO_DEFAULT_PATH)
+add_executable(abi3 ../../c_abi_characterization_test.c)
+target_link_libraries(abi3 PRIVATE Termole::termole)

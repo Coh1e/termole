@@ -54,4 +54,4 @@ powershell -NoProfile -File scripts\capture-window.ps1 -Hwnd 0x1234 -OutputPath 
 
 `t22_sdk_consumer` 先把 SDK 安装到 `<build>/tests/sdk-consumer/package` 并检查已安装文档的相对链接和标题锚点。独立构建的 `tests/sdk-consumer` 和随包示例 `share/termole/examples/sdk-host` 通过 `find_package(Termole CONFIG REQUIRED)` 链接安装后的 SDK。测试宿主驱动真实 CMD 和 ConPTY，检查 ABI、资源所有权及错误处理，并将宿主和嵌入视图的 PNG、统计值写入 `<build>/tests/sdk-consumer/artifacts/`。
 
-交付候选包时运行 `cmake --workflow --preset windows-mingw-release`。记录输出的 ZIP 摘要和解压目录，在该目录按便携包说明验收真实选择、预览、取消、输入法、焦点与首次可输入耗时。[Windows 便携包验收](../cross-platform-build.md#windows-便携包验收)
+交付候选包时在交互桌面运行 `cmake --workflow --preset windows-mingw-release`。从输出的证据目录核对 ZIP 摘要、包内源码修订号和各项结果。将同一份候选的摘要与解压路径填入人工交接单。[Windows 便携包验收](../cross-platform-build.md#windows-便携包验收)

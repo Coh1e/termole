@@ -11,7 +11,8 @@ endif()
 
 get_filename_component(stem "${Archive}" NAME_WLE)
 string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef run)
-set(root "${Evidence}/${digest}/${run}/便携 验收")
+set(record "${Evidence}/${digest}/${run}")
+set(root "${record}/便携 验收")
 file(MAKE_DIRECTORY "${root}")
 file(ARCHIVE_EXTRACT INPUT "${Archive}" DESTINATION "${root}")
 set(package "${root}/${stem}")
@@ -22,11 +23,19 @@ foreach(path IN ITEMS bin/termole.exe LICENSE THIRD_PARTY_NOTICES.md licenses/qu
     share/termole/examples/preview-file.ps1 share/termole/examples/markdown-quote.js
     share/termole/examples/markdown-quote.toml include/termole/termole.h
     lib/termole.a lib/ghostty-vt-static.lib lib/cmake/termole/termoleConfig.cmake
-    share/termole/examples/sdk-host/CMakeLists.txt)
+    share/termole/source-revision.txt share/termole/examples/sdk-host/CMakeLists.txt)
   if(NOT EXISTS "${package}/${path}")
     message(FATAL_ERROR "${filename} lacks ${path}")
   endif()
 endforeach()
+file(READ "${package}/share/termole/source-revision.txt" revision)
+string(STRIP "${revision}" revision)
+file(STRINGS "${package}/licenses/libghostty-vt.txt" license LIMIT_COUNT 1)
+if(NOT license STREQUAL "MIT License")
+  message(FATAL_ERROR "Unexpected license in the packaged Ghostty SDK: ${license}")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" "-DEXE=${app}" "-DOBJDUMP=${Objdump}"
+  -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/CheckDeps.cmake" COMMAND_ERROR_IS_FATAL ANY)
 
 execute_process(COMMAND "${PowerShell}" -NoProfile -ExecutionPolicy Bypass -File
     "${CMAKE_CURRENT_LIST_DIR}/check_package_markdown.ps1" -Root "${package}"
@@ -50,8 +59,34 @@ function(check_preflight directory code expected_diagnostic)
   endif()
 endfunction()
 file(MAKE_DIRECTORY "${root}/empty")
+check_preflight("" 2 "Invalid directory")
 check_preflight("${root}/empty" 1 "No files in directory")
 check_preflight("${root}/missing" 2 "Invalid directory")
+check_preflight("${package}/README.md" 2 "Invalid directory")
 check_preflight("${package}" 2 "fzf.exe was not found on PATH")
-message(STATUS "Verified ${filename} SHA-256 ${digest}")
-message(STATUS "Use this extracted candidate for interactive acceptance: ${package}")
+
+if(NOT EXISTS "${Fzf}")
+  message(FATAL_ERROR "Install fzf.exe on PATH and reconfigure to run the portable ZIP acceptance.")
+endif()
+function(run_check name)
+  set(log "${record}/${name}.log")
+  execute_process(COMMAND "${PowerShell}" -NoProfile -STA -ExecutionPolicy Bypass
+    -File "${CMAKE_CURRENT_LIST_DIR}/release/${name}.ps1" -Package "${package}"
+    -Evidence "${record}/${name}" ${ARGN} WORKING_DIRECTORY "${package}"
+    RESULT_VARIABLE result OUTPUT_FILE "${log}" ERROR_FILE "${log}" TIMEOUT 300)
+  if(NOT result STREQUAL "0")
+    file(READ "${log}" output)
+    message(FATAL_ERROR "${name} failed (${result}). Evidence: ${record}\n${output}")
+  endif()
+  message(STATUS "Passed ${name}: ${log}")
+endfunction()
+run_check(sdk -Cmake "${CMAKE_COMMAND}" -Generator "${Generator}"
+  -MakeProgram "${MakeProgram}" -Cc "${Cc}" -Cxx "${Cxx}")
+run_check(default-shell)
+run_check(fzf -Fzf "${Fzf}")
+run_check(plugin-menu)
+file(WRITE "${record}/acceptance.txt"
+  "${filename}\nSHA-256: ${digest}\nSource: ${revision}\nPackage: ${package}\n"
+  "Passed: archive checksum, license, imports, documents, CLI preflight, SDK ABI 3, default shell, fzf, QuickJS menus\n"
+  "Human handoff: #53 (IME, foreground/background focus, first-time README use)\n")
+message(STATUS "Verified ${filename} SHA-256 ${digest} from ${revision}. Evidence: ${record}")
