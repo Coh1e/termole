@@ -1,5 +1,10 @@
 #include "platform/posix_session.h"
 
+#include <termios.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <string>
@@ -16,8 +21,68 @@ static void check(bool condition, const char* what)
     }
 }
 
-int main()
+static constexpr size_t paste_size = 128 * 1024;
+
+static int duplex_child()
 {
+    // Bound both directions even when the session stops draining the PTY.
+    ::alarm(5);
+    termios mode{};
+    if (::tcgetattr(STDIN_FILENO, &mode) < 0) return 1;
+    ::cfmakeraw(&mode);
+    if (::tcsetattr(STDIN_FILENO, TCSANOW, &mode) < 0) return 1;
+    if (::write(STDOUT_FILENO, "DUPLEX-READY", 12) != 12) return 1;
+    char first;
+    if (::read(STDIN_FILENO, &first, 1) != 1 || first != 'p') return 2;
+
+    // The paste is in progress. Produce more output than the PTY can buffer
+    // before consuming the rest of the paste and both cursor reports.
+    constexpr char queries[] = "\x1b[7;12H\x1b[6n\x1b[2;3H\x1b[6n";
+    if (::write(STDOUT_FILENO, queries, sizeof(queries) - 1) != sizeof(queries) - 1) return 3;
+    std::array<char, 4096> buffer{};
+    for (size_t remaining = paste_size; remaining;) {
+        const auto n = ::write(STDOUT_FILENO, buffer.data(), std::min(remaining, buffer.size()));
+        if (n <= 0) return 4;
+        remaining -= static_cast<size_t>(n);
+    }
+    for (size_t remaining = paste_size - 1; remaining;) {
+        const auto n = ::read(STDIN_FILENO, buffer.data(), std::min(remaining, buffer.size()));
+        if (n <= 0 || !std::all_of(buffer.begin(), buffer.begin() + n, [](char c) { return c == 'p'; }))
+            return 5;
+        remaining -= static_cast<size_t>(n);
+    }
+    for (char expected : std::string_view("\x1b[7;12R\x1b[2;3R")) {
+        char received;
+        if (::read(STDIN_FILENO, &received, 1) != 1 || received != expected) return 6;
+    }
+    return 0;
+}
+
+static bool duplex_session(const char* executable)
+{
+    using namespace std::chrono_literals;
+    std::string error;
+    termole::platform::PosixSessionOptions options;
+    options.arguments = { executable, "--duplex-child" };
+    auto session = termole::platform::PosixSession::create(options, error);
+    if (!session) return false;
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (session->text().find("DUPLEX-READY") == std::string::npos) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::sleep_for(5ms);
+    }
+    const bool written = session->write(std::string(paste_size, 'p'), error);
+    const int status = session->wait();
+    if (!written || status != 0) {
+        std::fprintf(stderr, "duplex child exit=%d, paste written=%d %s\n", status, written, error.c_str());
+        return false;
+    }
+    return true;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc == 2 && std::string_view(argv[1]) == "--duplex-child") return duplex_child();
     using namespace termole::platform;
     PosixSessionOptions options;
     options.arguments = { "/bin/sh" };
@@ -86,6 +151,8 @@ int main()
         if (status != 0) std::fprintf(stderr, "%s\n", reporter->text().c_str());
         check(status == 0, "child receives the cursor position at row 7, column 12 through stdin");
     }
+
+    check(duplex_session(argv[0]), "child can finish output before reading a paste and ordered cursor reports");
 
     options.arguments = { "/bin/sh", "-c", "trap '' HUP; printf 'SESSION-ACTIVE'; sleep 60" };
     auto active = PosixSession::create(options, error);

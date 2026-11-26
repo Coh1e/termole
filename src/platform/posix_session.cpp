@@ -1,8 +1,5 @@
 #include "platform/posix_session.h"
 
-#include <cerrno>
-#include <utility>
-
 namespace termole::platform {
 
 std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& options,
@@ -22,8 +19,15 @@ std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& op
         session.get(),
         [](void* userdata, const void* data, size_t size) noexcept {
             auto& session = *static_cast<PosixSession*>(userdata);
+            // An unresponsive child must not grow the reply queue indefinitely.
+            constexpr size_t max_queued_replies = 1024 * 1024;
+            if (size > max_queued_replies - session.replies_.size()) {
+                session.pty_->close();
+                return;
+            }
             try {
                 session.replies_.append(static_cast<const char*>(data), size);
+                session.replies_ready_.notify_one();
             } catch (...) {
                 // The C callback cannot report allocation failure.
                 session.pty_->close();
@@ -33,6 +37,7 @@ std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& op
     };
     (void)termole_vt_set_callbacks(session->vt_, &callbacks);
     session->reader_ = std::thread([raw = session.get()] { raw->read_loop(); });
+    session->writer_ = std::thread([raw = session.get()] { raw->write_replies(); });
     return session;
 }
 
@@ -51,37 +56,39 @@ void PosixSession::read_loop()
     for (;;) {
         const ssize_t read = pty_ ? pty_->read(buffer, sizeof(buffer)) : 0;
         if (read <= 0) break;
-        std::unique_lock lock(mutex_);
+        std::lock_guard lock(mutex_);
         if (vt_) (void)termole_vt_feed(vt_, buffer, static_cast<size_t>(read));
         ++revision_;
-        flush_replies(std::move(lock));
     }
     const int code = pty_ ? pty_->wait() : -1;
     std::lock_guard lock(mutex_);
     exit_code_ = code;
     stopped_ = true;
+    replies_ready_.notify_one();
 }
 
-void PosixSession::flush_replies(std::unique_lock<std::mutex> state_lock)
+void PosixSession::write_replies()
 {
-    if (replies_.empty()) return;
-    // Collect feed and resize replies in VT order. A slow PTY writer must
-    // never hold the VT lock needed by frame readers.
-    state_lock.unlock();
-    std::lock_guard input_lock(input_mutex_);
-    state_lock.lock();
     std::string bytes;
-    bytes.swap(replies_);
-    state_lock.unlock();
-    (void)write_all(bytes);
+    for (;;) {
+        {
+            std::unique_lock lock(mutex_);
+            replies_ready_.wait(lock, [&] { return stopped_ || !replies_.empty(); });
+            if (stopped_) return;
+            bytes.swap(replies_);
+        }
+        // A child may fill its output while waiting to read an in-flight paste.
+        // Only writers serialize here. The PTY reader must keep draining output.
+        std::lock_guard lock(input_mutex_);
+        if (!write_all(bytes)) return;
+        bytes.clear();
+    }
 }
 
 bool PosixSession::write_all(std::string_view bytes)
 {
     while (!bytes.empty()) {
-        errno = 0; // A closed Pty can return -1 without issuing a system call.
         const ssize_t written = pty_->write(bytes.data(), bytes.size());
-        if (written < 0 && errno == EINTR) continue;
         if (written <= 0) return false;
         bytes.remove_prefix(static_cast<size_t>(written));
     }
@@ -106,13 +113,12 @@ bool PosixSession::resize(unsigned short columns, unsigned short rows, std::stri
     }
     if (!pty_) { error = "PTY is closed"; return false; }
     if (!pty_->resize(columns, rows, error)) return false;
-    std::unique_lock lock(mutex_);
+    std::lock_guard lock(mutex_);
     if (termole_vt_resize(vt_, columns, rows) != TERMOLE_CORE_OK) {
         error = "could not resize the terminal core";
         return false;
     }
     ++revision_;
-    flush_replies(std::move(lock));
     return true;
 }
 
@@ -159,6 +165,7 @@ std::string PosixSession::text() const
 int PosixSession::wait()
 {
     if (reader_.joinable()) reader_.join();
+    if (writer_.joinable()) writer_.join();
     std::lock_guard lock(mutex_);
     return exit_code_;
 }
@@ -167,6 +174,7 @@ void PosixSession::stop()
 {
     if (pty_) pty_->close();
     if (reader_.joinable()) reader_.join();
+    if (writer_.joinable()) writer_.join();
 }
 
 } // namespace termole::platform

@@ -5,6 +5,7 @@
 #include "core/frame.h"
 #include "platform/pty.h"
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -47,7 +48,7 @@ public:
 private:
     PosixSession() = default;
     bool write_all(std::string_view bytes);
-    void flush_replies(std::unique_lock<std::mutex> state_lock);
+    void write_replies();
     void read_loop();
     void stop();
 
@@ -55,8 +56,10 @@ private:
     termole_vt* vt_ = nullptr;
     mutable std::mutex mutex_;
     std::string replies_;
+    std::condition_variable replies_ready_;
     std::mutex input_mutex_;
     std::thread reader_;
+    std::thread writer_;
     bool stopped_ = false;
     int exit_code_ = -1;
     uint64_t revision_ = 1;

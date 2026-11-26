@@ -54,29 +54,37 @@ public:
                 return false;
             }
         }
-        return spawn_posix_pty(PosixPtyOptions{ options.arguments, options.working_directory,
-                                                 options.columns, options.rows },
-                               pty_, error);
+        if (!spawn_posix_pty(PosixPtyOptions{ options.arguments, options.working_directory,
+                                              options.columns, options.rows }, pty_, error))
+            return false;
+        const int flags = ::fcntl(pty_.master, F_GETFL);
+        if (flags < 0 || ::fcntl(pty_.master, F_SETFL, flags | O_NONBLOCK) < 0) {
+            error = std::string("fcntl: ") + std::strerror(errno);
+            return false;
+        }
+        return true;
     }
 
     ssize_t read(void* buffer, size_t capacity) override
     {
-        while (!closed_.load()) {
-            pollfd sources[]{ { cancel_[0], POLLIN, 0 }, { pty_.master, POLLIN, 0 } };
-            const int ready = ::poll(sources, 2, -1);
-            if (ready < 0 && errno == EINTR) continue;
-            if (ready <= 0) return -1;
-            if (sources[0].revents) return 0;
+        for (;;) {
+            const int events = wait_for(POLLIN);
+            if (events <= 0) return events;
             const auto bytes = read_posix_pty(pty_, buffer, capacity);
-            if (bytes < 0 && errno == EINTR) continue;
+            if (bytes < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
             return bytes < 0 && errno == EIO ? 0 : bytes;
         }
-        return 0;
     }
     ssize_t write(const void* data, size_t size) override
     {
-        if (closed_.load()) return -1;
-        return write_posix_pty(pty_, data, size);
+        if (size == 0) return 0;
+        for (;;) {
+            const int events = wait_for(POLLOUT);
+            if (events <= 0 || (events & (POLLERR | POLLHUP | POLLNVAL))) return -1;
+            const auto bytes = write_posix_pty(pty_, data, size);
+            if (bytes < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+            return bytes;
+        }
     }
     bool resize(unsigned short columns, unsigned short rows, std::string& error) override
     {
@@ -108,7 +116,9 @@ public:
     {
         if (closed_.exchange(true)) return;
         const char canceled = 1;
-        if (cancel_[1] >= 0) (void)::write(cancel_[1], &canceled, sizeof(canceled));
+        if (cancel_[1] >= 0) {
+            while (::write(cancel_[1], &canceled, sizeof(canceled)) < 0 && errno == EINTR) {}
+        }
         std::lock_guard lock(child_mutex_);
         if (pty_.child <= 0) return;
         // The PTY master stays valid until the reader observes cancellation.
@@ -121,6 +131,21 @@ public:
     }
 
 private:
+    int wait_for(short events)
+    {
+        // Leave the cancellation byte unread so it wakes both directions.
+        pollfd sources[]{ { cancel_[0], POLLIN, 0 }, { pty_.master, events, 0 } };
+        while (!closed_.load()) {
+            if (::poll(sources, 2, -1) < 0) {
+                if (errno == EINTR) continue;
+                return -1;
+            }
+            if (sources[0].revents) return 0;
+            if (sources[1].revents) return sources[1].revents;
+        }
+        return 0;
+    }
+
     PosixPty pty_;
     int cancel_[2]{ -1, -1 };
     std::atomic<bool> closed_{ false };
