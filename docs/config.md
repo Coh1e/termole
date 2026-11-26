@@ -100,6 +100,7 @@ fzf/fuzzel 等交互程序需要自己的终端。pipe 命令本身没有控制�
 - 基础键：`a`–`z`、`0`–`9`、`f1`–`f24`、`insert`、`delete`、`home`、`end`、`pageup`、`pagedown`、`up`、`down`、`left`、`right`、`space`、`tab`、`enter`、`escape`、`backspace`。
 - 同一按键不能绑定到两个动作；按键冲突、未知修饰键或未知基础键都是配置错误，诊断包含文件路径和行号。
 - 内置快捷键 `ctrl+c`、`ctrl+v`、`ctrl+shift+c`、`ctrl+shift+v` 和 `shift+insert` 不能被 pipe 绑定覆盖，配置会报冲突。
+- Windows 视图有选区时，`ctrl+c` 复制选区。单击视图可取消本地选区，此时 `ctrl+c` 会传给终端程序。
 - 配置的 pipe 按键优先于终端输入；不要覆盖其他常用终端快捷键。
 
 ### `command`

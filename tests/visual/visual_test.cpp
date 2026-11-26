@@ -189,6 +189,7 @@ struct CaptureStats {
     long long band_strong = 0;
     double ink_ratio = 0.0;
     std::string background;
+    std::string column_color;
 };
 
 std::optional<CaptureStats> read_stats(const std::filesystem::path& path)
@@ -208,12 +209,13 @@ std::optional<CaptureStats> read_stats(const std::filesystem::path& path)
     stats.band_strong = std::atoll(line_value(text, "bandStrongPixels").c_str());
     stats.ink_ratio = std::atof(line_value(text, "inkRatio").c_str());
     stats.background = line_value(text, "background");
+    stats.column_color = line_value(text, "columnColor");
     return stats;
 }
 
 bool run_capture_script(const Options& options, HWND window, const std::wstring& name,
                         const std::filesystem::path& artifacts, CaptureStats& stats,
-                        int band_top = -1, int band_bottom = -1)
+                        int band_top = -1, int band_bottom = -1, int sample_column = -1)
 {
     std::error_code error;
     const std::filesystem::path png = artifacts / (name + L".png");
@@ -236,6 +238,7 @@ bool run_capture_script(const Options& options, HWND window, const std::wstring&
         band = L" -BandTop " + std::to_wstring(band_top) + L" -BandBottom " +
             std::to_wstring(band_bottom);
     }
+    if (sample_column >= 0) band += L" -SampleColumn " + std::to_wstring(sample_column);
     const std::wstring command = quote(options.powershell) +
         L" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quote(options.capture) +
         L" -Hwnd " + std::to_wstring(reinterpret_cast<uintptr_t>(window)) + L" -Width " +
@@ -1646,19 +1649,18 @@ bool raw_input_contains(const std::string& log, std::string_view bytes)
     return collect_raw_input(log).find(bytes) != std::string::npos;
 }
 
-bool open_system_clipboard()
+bool open_system_clipboard(HWND owner = nullptr)
 {
     for (int attempt = 0; attempt < 100; ++attempt) {
-        if (::OpenClipboard(nullptr)) return true;
+        if (::OpenClipboard(owner)) return true;
         ::Sleep(5);
     }
     return false;
 }
 
-bool set_clipboard(std::wstring_view text)
+bool set_clipboard(HWND owner, std::wstring_view text)
 {
-    if (!open_system_clipboard()) return false;
-    ::EmptyClipboard();
+    if (!open_system_clipboard(owner)) return false;
     HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t));
     if (!memory) {
         ::CloseClipboard();
@@ -1673,9 +1675,10 @@ bool set_clipboard(std::wstring_view text)
     std::copy(text.begin(), text.end(), data);
     data[text.size()] = L'\0';
     ::GlobalUnlock(memory);
-    ::SetClipboardData(CF_UNICODETEXT, memory);
+    const bool written = ::EmptyClipboard() && ::SetClipboardData(CF_UNICODETEXT, memory);
+    if (!written) ::GlobalFree(memory);
     ::CloseClipboard();
-    return true;
+    return written;
 }
 
 std::wstring get_clipboard()
@@ -1852,6 +1855,15 @@ bool capture_input(const InputTarget& target, const std::wstring& name, CaptureS
 {
     force_paint(target.top, target.view);
     return run_capture_script(*target.options, target.top, name, target.options->artifacts, stats);
+}
+
+bool continuous_selection_background(const InputTarget& target, int x, int first_y, int last_y)
+{
+    CaptureStats stats;
+    force_paint(target.top, target.view);
+    return run_capture_script(*target.options, target.top, L"17-multiline-selection",
+                              target.options->artifacts, stats, first_y, last_y, x) &&
+        stats.column_color == "#264f78";
 }
 
 bool capture_input_band(const InputTarget& target, const std::wstring& name, int line,
@@ -2186,7 +2198,7 @@ int run_input_phases(InputTarget& target)
     // ---- local selection with Shift while mouse reporting is on ----
     check(apply_input_modes(target, "1002,1006,2004", "1002,1006,2004"),
           "re-enabled ?1002/?1006/?2004 for the selection phase");
-    check(set_clipboard(L""), "cleared the clipboard before copy");
+    check(set_clipboard(target.top, L""), "cleared the clipboard before copy");
     CaptureStats selection_before;
     const bool selection_before_captured =
         capture_input_band(target, L"10-selection-before", kInputRowAlpha, selection_before);
@@ -2238,7 +2250,7 @@ int run_input_phases(InputTarget& target)
     // ---- Shift+Insert uses the real key chord and the same paste path ----
     const std::wstring shift_insert_text = L"shift-insert-line-one\r\nshift-insert-line-two";
     const std::string shift_insert_utf8 = "shift-insert-line-one\r\nshift-insert-line-two";
-    check(set_clipboard(shift_insert_text), "set the clipboard for Shift+Insert");
+    check(set_clipboard(target.top, shift_insert_text), "set the clipboard for Shift+Insert");
     check(send_shift_insert(target), "sent a real Shift+Insert key chord");
     check(wait_for_log(
               target.log,
@@ -2258,7 +2270,7 @@ int run_input_phases(InputTarget& target)
     check(apply_input_modes(target, "1002,1006", "1002,1006"),
           "disabled ?2004 for the plain-paste phase");
     const std::string plain_paste = "plain-paste-one\r\nplain-paste-two";
-    check(set_clipboard(std::wstring(plain_paste.begin(), plain_paste.end())),
+    check(set_clipboard(target.top, std::wstring(plain_paste.begin(), plain_paste.end())),
           "set the clipboard for a plain paste");
     const size_t paste_events_before = count_occurrences(read_file(target.log), "PASTE|");
     post_input_char(target, 0x16);
@@ -2294,7 +2306,7 @@ int run_input_phases(InputTarget& target)
     check(apply_input_modes(target, "OFF", "OFF"),
           "disabled all mouse and paste modes");
     const size_t mouse_events_before = count_occurrences(read_file(target.log), "EVENT|");
-    check(set_clipboard(L""), "cleared the clipboard before the local-selection copy");
+    check(set_clipboard(target.top, L""), "cleared the clipboard before the local-selection copy");
     CaptureStats local_before;
     const bool local_before_captured =
         capture_input_band(target, L"16-local-selection-before", kInputRowBeta, local_before);
@@ -2322,6 +2334,26 @@ int run_input_phases(InputTarget& target)
     post_input_char(target, 0x03);
     check(wait_for_clipboard(std::wstring(local_expected.begin(), local_expected.end()), 5000),
           "Ctrl+C copied the mouse-off local selection");
+
+    check(input_click(target, input_cell_x(target, 0), local_y),
+          "clicked a cell to dismiss the local selection");
+    post_input_char(target, 0x03);
+    check(wait_for_log(target.log,
+                       [](const std::string& log) {
+                           return raw_input_contains(log, "\x03");
+                       },
+                       2000),
+          "Ctrl+C reached the terminal program after the click");
+    check(get_clipboard() == std::wstring(local_expected.begin(), local_expected.end()),
+          "Ctrl+C after the click left the clipboard unchanged");
+
+    const int blank_x = input_cell_x(target, 60);
+    const int alpha_y = input_cell_y(target, kInputRowAlpha);
+    check(input_drag(target, blank_x, alpha_y, input_cell_x(target, 62), local_y, false),
+          "selected blank cells across a row boundary");
+    check(continuous_selection_background(target, input_cell_x(target, 61), alpha_y, local_y),
+          "the selection background is solid across the row boundary");
+    check(input_click(target, blank_x, local_y), "dismissed the multiline selection");
 
     // ---- mouse modes off: wheel scrolls the View locally ----
     post_input_text(target, "~HISTORY~");

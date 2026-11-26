@@ -3,6 +3,7 @@
 #include "common/limits.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -297,10 +298,12 @@ bool Renderer::paint(HDC device, const RECT& client, const Snapshot& snapshot, b
         uint32_t background_color = 0;
         const auto flush_background = [&](int end) {
             if (background_start < 0) return;
-            const float left = static_cast<float>(background_start) * cell_width_;
-            const float right = static_cast<float>(end) * cell_width_;
+            const float left = std::round(static_cast<float>(background_start) * cell_width_);
+            const float right = std::round(static_cast<float>(end) * cell_width_);
+            // Shared edges must land on the same device pixel in adjacent runs.
+            const float bottom = std::round(static_cast<float>(row + 1) * cell_height_);
             brush_->SetColor(D2D1::ColorF(background_color, 1.0f));
-            target_->FillRectangle(D2D1::RectF(left, top, right, top + cell_height_), brush_.get());
+            target_->FillRectangle(D2D1::RectF(left, std::round(top), right, bottom), brush_.get());
             background_start = -1;
         };
 

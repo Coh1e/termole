@@ -17,6 +17,7 @@ statistics that a test can assert on:
   inkRatio        inkPixels / (width * height)
   strongPixels    pixels whose strongest channel differs by >= 96
   bandStrongPixels strong pixels inside the optional row band
+  columnColor      RGB value when the sampled column is uniform across the row band
 
 "ink" deliberately tolerates font antialiasing, theme colours and DPI: it
 counts a pixel as text/foreground when its strongest channel differs from the
@@ -50,6 +51,7 @@ param(
     [string]$StatsPath,
     [int]$BandTop = -1,
     [int]$BandBottom = -1,
+    [int]$SampleColumn = -1,
     [string]$TempPath,
     [switch]$Quiet
 )
@@ -266,6 +268,18 @@ try {
     }
     if (-not $captured) { throw "PrintWindow failed for $Hwnd" }
     $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $columnColor = ''
+    if ($SampleColumn -ge 0 -and $SampleColumn -lt $Width -and
+        $BandTop -ge 0 -and $BandBottom -ge $BandTop -and $BandBottom -lt $Height) {
+        $color = $bitmap.GetPixel($SampleColumn, $BandTop).ToArgb()
+        $columnColor = '#{0:x6}' -f ($color -band 0xffffff)
+        for ($y = $BandTop + 1; $y -le $BandBottom; ++$y) {
+            if ($bitmap.GetPixel($SampleColumn, $y).ToArgb() -ne $color) {
+                $columnColor = ''
+                break
+            }
+        }
+    }
 }
 finally {
     $bitmap.Dispose()
@@ -288,6 +302,7 @@ $stats = [ordered]@{
     bandInkPixels = $analysis.BandInk
     strongPixels  = $analysis.Strong
     bandStrongPixels = $analysis.BandStrong
+    columnColor   = $columnColor
 }
 
 if ($StatsPath) {

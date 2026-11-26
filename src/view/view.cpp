@@ -311,7 +311,7 @@ LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPA
         return ::DefWindowProcW(window, message, wparam, lparam);
     case WM_IME_COMPOSITION:
         position_ime();
-        on_ime_composition(lparam);
+        // Default IME handling delivers committed text through WM_CHAR.
         return ::DefWindowProcW(window, message, wparam, lparam);
     case WM_IME_ENDCOMPOSITION:
         ::InvalidateRect(window, nullptr, FALSE);
@@ -579,8 +579,13 @@ void NativeView::on_left_button_up(int x, int y)
         return;
     }
     if (!selecting_) return;
+    on_mouse_move(x, y);
     selecting_ = false;
     ::ReleaseCapture();
+    if (selection_anchor_row_ == selection_focus_row_ &&
+        selection_anchor_column_ == selection_focus_column_) {
+        clear_selection();
+    }
 }
 
 void NativeView::on_mouse_move(int x, int y)
@@ -637,23 +642,6 @@ void NativeView::position_ime()
     candidate.ptCurrentPos = point;
     ::ImmSetCandidateWindow(context, &candidate);
     ::ImmReleaseContext(window, context);
-}
-
-void NativeView::on_ime_composition(LPARAM flags)
-{
-    if ((flags & GCS_RESULTSTR) == 0) return;
-    const HWND window = window_.load(std::memory_order_acquire);
-    if (!window) return;
-    HIMC context = ::ImmGetContext(window);
-    if (!context) return;
-    const LONG length = ::ImmGetCompositionStringW(context, GCS_RESULTSTR, nullptr, 0);
-    if (length > 0) {
-        std::wstring text(static_cast<size_t>(length) / sizeof(wchar_t), L'\0');
-        ::ImmGetCompositionStringW(context, GCS_RESULTSTR, text.data(), length);
-        (void)send_text(win::wide_to_utf8(text));
-    }
-    ::ImmReleaseContext(window, context);
-    ::InvalidateRect(window, nullptr, FALSE);
 }
 
 void NativeView::on_character(wchar_t character)

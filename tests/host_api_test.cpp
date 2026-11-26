@@ -200,6 +200,19 @@ int wmain()
           "view Backspace and Enter edit and execute a real command");
     if (failures != 0) std::cerr << "screen after backspace command:\n" << screen << '\n';
 
+    // The default Unicode window procedure forwards IME characters to WM_CHAR.
+    // Compare the full committed string so extra characters also fail the check.
+    type_through_view(view.hwnd(), L"if ('");
+    for (const wchar_t character : std::wstring_view{ L"\u4f60\u597dnihao" }) {
+        ::SendMessageW(view.hwnd(), WM_IME_CHAR, static_cast<WPARAM>(character), 1);
+    }
+    pump_messages();
+    type_through_view(view.hwnd(),
+                      L"' -ceq '\u4f60\u597dnihao') { 'ime-' + 'once' } else { 'ime-' + 'wrong' }\r");
+    check(wait_for_text(session, "ime-once", 5000, &screen),
+          "view forwards Unicode and ASCII IME characters exactly once");
+    if (failures != 0) std::cerr << "screen after IME command:\n" << screen << '\n';
+
     const auto before = session.size();
     check(before.has_value(), "session size query works");
     if (before) {
