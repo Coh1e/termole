@@ -85,12 +85,19 @@ try {
     foreach ($dir in $firstDir, $secondDir) {
         foreach ($leaf in 'alpha.txt','beta.txt') { [IO.File]::WriteAllText("$dir/$leaf", $leaf) }
     }
+    # Only the survivor's beta has the text rendered in the target reference above.
+    [IO.File]::WriteAllText("$secondDir/beta.txt", 'CURRENT PREVIEW')
     $first = Start-Applet $firstDir 'escape'
     $survivor = Start-Applet $secondDir 'survivor'
     Test-AppletCancel $first 'escape'
     foreach ($char in 'beta'.ToCharArray()) { Send-AppletMessage $survivor.View 258 ([int]$char) }
-    Start-Sleep -Seconds 2
-    $null = Save-AppletView $survivor survivor
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $png = Save-AppletView $survivor survivor
+        if ([AppletWindow]::PreviewSignature($png) -ceq $signatures['target']) { break }
+        if ($deadline.Elapsed.TotalSeconds -ge 10) { throw "Surviving picker did not preview its own beta.txt: $png" }
+        Start-Sleep -Milliseconds 250
+    } while ($true)
     Send-AppletMessage $survivor.View 256 13
     Test-AppletResult $survivor 0 ((Join-Path $secondDir 'beta.txt') + "`r`n")
     Test-AppletCancel (Start-Applet $firstDir 'close') 'close'

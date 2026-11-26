@@ -17,7 +17,6 @@ file(MAKE_DIRECTORY "${root}")
 file(ARCHIVE_EXTRACT INPUT "${Archive}" DESTINATION "${root}")
 set(package "${root}/${stem}")
 set(app "${package}/bin/termole.exe")
-set(examples "${package}/share/termole/examples")
 foreach(path IN ITEMS bin/termole.exe LICENSE THIRD_PARTY_NOTICES.md licenses/quickjs.txt
     licenses/libghostty-vt.txt docs/architecture.md share/termole/examples/select-file.ps1
     share/termole/examples/preview-file.ps1 share/termole/examples/markdown-quote.js
@@ -30,6 +29,18 @@ foreach(path IN ITEMS bin/termole.exe LICENSE THIRD_PARTY_NOTICES.md licenses/qu
 endforeach()
 file(READ "${package}/share/termole/source-revision.txt" revision)
 string(STRIP "${revision}" revision)
+get_filename_component(source "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+if(NOT EXISTS "${source}/.git")
+  message(FATAL_ERROR "Release acceptance requires the candidate's Git checkout.")
+endif()
+find_program(git NAMES git REQUIRED)
+execute_process(COMMAND "${git}" -C "${source}" rev-parse --verify HEAD
+  OUTPUT_VARIABLE head OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${git}" -C "${source}" status --porcelain
+  OUTPUT_VARIABLE changes OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+if(changes OR NOT head STREQUAL revision)
+  message(FATAL_ERROR "Use a clean checkout matching the packaged revision '${revision}'. Current HEAD: ${head}")
+endif()
 file(STRINGS "${package}/licenses/libghostty-vt.txt" license LIMIT_COUNT 1)
 if(NOT license STREQUAL "MIT License")
   message(FATAL_ERROR "Unexpected license in the packaged Ghostty SDK: ${license}")
@@ -46,25 +57,6 @@ if(NOT version STREQUAL "Termole ${Version}")
   message(FATAL_ERROR "Unexpected packaged executable version: ${version}")
 endif()
 
-# The documented preflight errors return before launching fzf. Give this child
-# an empty search path so a developer's installed fzf cannot mask the last case.
-function(check_preflight directory code expected_diagnostic)
-  execute_process(COMMAND "${CMAKE_COMMAND}" -E env "PATH=" --
-      "${PowerShell}" -NoProfile -ExecutionPolicy Bypass -File
-      "${examples}/select-file.ps1" -Directory "${directory}"
-    WORKING_DIRECTORY "${package}" RESULT_VARIABLE status OUTPUT_VARIABLE output
-    ERROR_VARIABLE diagnostic TIMEOUT 15)
-  if(NOT status STREQUAL code OR NOT output STREQUAL "" OR NOT diagnostic MATCHES "${expected_diagnostic}")
-    message(FATAL_ERROR "Unexpected selection result for ${directory}: ${status} [${output}] [${diagnostic}]")
-  endif()
-endfunction()
-file(MAKE_DIRECTORY "${root}/empty")
-check_preflight("" 2 "Invalid directory")
-check_preflight("${root}/empty" 1 "No files in directory")
-check_preflight("${root}/missing" 2 "Invalid directory")
-check_preflight("${package}/README.md" 2 "Invalid directory")
-check_preflight("${package}" 2 "fzf.exe was not found on PATH")
-
 if(NOT EXISTS "${Fzf}")
   message(FATAL_ERROR "Install fzf.exe on PATH and reconfigure to run the portable ZIP acceptance.")
 endif()
@@ -80,6 +72,7 @@ function(run_check name)
   endif()
   message(STATUS "Passed ${name}: ${log}")
 endfunction()
+run_check(preflight)
 run_check(sdk -Cmake "${CMAKE_COMMAND}" -Generator "${Generator}"
   -MakeProgram "${MakeProgram}" -Cc "${Cc}" -Cxx "${Cxx}")
 run_check(default-shell)

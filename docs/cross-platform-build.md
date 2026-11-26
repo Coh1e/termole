@@ -122,7 +122,7 @@ cmake --workflow --preset windows-mingw-release
 - 使用真实 fzf 检查选择、预览、取消、并发实例的独立性、标准流和子进程回收。五次冷启动分别记录第一个有效按键的耗时。[AV1 验收](https://github.com/Coh1e/termole/issues/43)
 - 从当前视图的右键菜单执行 QuickJS 命令，核对粘贴到编辑器的文字、双窗口选区和停用后的菜单。[菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
 
-控制台输出本次证据目录。成功记录位于 `<build>/tests/release-zip/<SHA-256>/<run>/acceptance.txt`，同目录保存每项的日志与截图。包内 `share/termole/source-revision.txt` 记录安装时的提交和工作树状态。从无 Git 元数据的源码构建时记录为 `unknown`。在同一构建目录复核已有 ZIP，运行 `cmake --build --preset windows-verify-zip`。
+控制台输出本次证据目录。成功记录位于 `<build>/tests/release-zip/<SHA-256>/<run>/acceptance.txt`，同目录保存每项的日志与截图。包内 `share/termole/source-revision.txt` 记录安装时的提交和工作树状态。验收会检查干净工作树的 HEAD 与包内修订号一致。无 Git 元数据的源码仍可构建和打包，修订号为 `unknown`。在相应提交的构建目录复核已有 ZIP，运行 `cmake --build --preset windows-verify-zip`。
 
 人工项沿用 [#53 交接](https://github.com/Coh1e/termole/issues/53)。提供当次 ZIP 摘要和解压路径，由验收者回填真实输入法选词、前后台焦点和首次阅读 README 的结果。
 

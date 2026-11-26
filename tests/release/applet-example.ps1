@@ -84,7 +84,7 @@ try {
         @{ Query = 'failure'; Code = 2; Reason = 'exit code 71'; Args = @($folder) },
         @{ Query = 'invalid'; Code = 2; Reason = 'invalid selection'; Args = @($folder) },
         @{ Query = 'multi'; Code = 2; Reason = 'invalid selection'; Args = @($folder) },
-        @{ Query = 'descendant'; Args = @($folder); Expected = $null },
+        @{ Query = 'descendant.txt'; Args = @($folder); Expected = $null },
         @{ Query = 'nested'; Args = @($folder); Expected = $null },
         @{ Query = $localName; Args = @($folder); Expected = $null }
     )) {
