@@ -4,10 +4,13 @@
 #include "gui/gdi_render.h"
 #include "session/viewport.h"
 
+#include <algorithm>
 #include <objbase.h>
+#include <span>
 #include <stdio.h>
 #include <string.h>
 #include <thread>
+#include <vector>
 
 static int failures = 0;
 
@@ -76,28 +79,61 @@ static bool has_selection_color(COLORREF pixel)
     return pixel != CLR_INVALID && GetBValue(pixel) > GetRValue(pixel) + 32;
 }
 
+static bool wait_for_pixels(HWND window, const char* file, std::span<capture::Sample> samples,
+                            auto matches)
+{
+    capture::Stats pixels;
+    std::string error;
+    const ULONGLONG deadline = GetTickCount64() + 3000;
+    // PrintWindow can return the preceding composed frame after a synchronous paint.
+    // The PNG on disk is the same frame the predicate checks, including on timeout.
+    do {
+        pump();
+        if (!capture::window(window, file, pixels, error, samples)) {
+            fprintf(stderr, "%s: %s\n", file, error.c_str());
+            return false;
+        }
+        if (matches()) return true;
+        Sleep(20);
+    } while (GetTickCount64() < deadline);
+    fprintf(stderr, "%s: timed out waiting for expected pixels\n", file);
+    return false;
+}
+
+static void check_primary_text_pixels(HWND window, int cell_width, int cell_height)
+{
+    // Row two contains C-VIEW-ROW-<n>. Sample its glyphs beyond the cursor column
+    // and a blank cell beyond the text. A cursor-only first paint has no glyphs here.
+    std::vector<capture::Sample> samples{ { 20 * cell_width, cell_height + 2 } };
+    for (int y = cell_height; y < 2 * cell_height; y += 2) {
+        for (int x = 2 * cell_width; x < 10 * cell_width; x += 2) {
+            samples.push_back({ x, y });
+        }
+    }
+    int glyph_pixels = 0;
+    const bool found = wait_for_pixels(window, "primary-text.png", samples, [&] {
+        glyph_pixels = static_cast<int>(std::count_if(samples.begin() + 1, samples.end(),
+            [](const capture::Sample& sample) {
+                return sample.color != CLR_INVALID && GetGValue(sample.color) >= 12 + 96;
+            }));
+        return samples.front().color == RGB(12, 12, 12) && glyph_pixels >= 20;
+    });
+    if (!found) fprintf(stderr, "primary text: background=%#lx, glyph pixels=%d\n",
+                        samples.front().color, glyph_pixels);
+    check(found, "C view draws a row of text in primary-text.png");
+}
+
 static void check_selection_pixels(HWND window, const char* file, int x, int selected_y,
                                    int outside_y)
 {
     capture::Sample samples[] = { { x, selected_y }, { x, outside_y } };
-    capture::Stats pixels;
-    std::string error;
-    const ULONGLONG deadline = GetTickCount64() + 3000;
-    // Window composition can still show the preceding paint. Sample the same
-    // bitmap we save to disk and keep the final capture if the test fails.
-    do {
-        pump();
-        if (!capture::window(window, file, pixels, error, samples)) break;
-        if (has_selection_color(samples[0].color) && samples[1].color != CLR_INVALID &&
-            !has_selection_color(samples[1].color)) {
-            check(true, "captured highlight is on the selected row and clear on the adjacent row");
-            return;
-        }
-        Sleep(20);
-    } while (GetTickCount64() < deadline);
-    fprintf(stderr, "%s: selected=%#lx, adjacent=%#lx %s\n",
-            file, samples[0].color, samples[1].color, error.c_str());
-    check(false, "capture the selected row and its unselected neighbor");
+    const bool found = wait_for_pixels(window, file, samples, [&] {
+        return has_selection_color(samples[0].color) && samples[1].color != CLR_INVALID &&
+               !has_selection_color(samples[1].color);
+    });
+    if (!found) fprintf(stderr, "%s: selected=%#lx, adjacent=%#lx\n",
+                        file, samples[0].color, samples[1].color);
+    check(found, "captured highlight is on the selected row and clear on the adjacent row");
 }
 
 static void check_viewport_resizes(termole_session* session)
@@ -173,12 +209,13 @@ int main(void)
         check(wait_for_text(session, "C-VIEW-ROW-60"), "child has filled the primary scrollback");
         RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
         check(termole_cview_paint_count(view) > 0, "C view painted");
-        capture::Stats pixels;
-        std::string error;
-        check(capture::window(window, "primary-text.png", pixels, error) &&
-                  pixels.strong_pixels >= 500,
-              "C view draws text pixels in primary-text.png");
-        if (!error.empty()) fprintf(stderr, "%s\n", error.c_str());
+        termole_gdi_renderer* metrics = termole_gdi_create(view_options.font_family,
+                                                           view_options.font_size, view_options.theme);
+        const int cell_width = (int)termole_gdi_cell_width(metrics);
+        const int cell_height = (int)termole_gdi_cell_height(metrics);
+        termole_gdi_destroy(metrics);
+        check(cell_width > 0 && cell_height > 0, "measure the configured GDI font");
+        check_primary_text_pixels(window, cell_width, cell_height);
         termole_cview_set_selection(view, 0, 0, 23, 79);
         char* selected = NULL;
         size_t selected_size = 0;
@@ -187,12 +224,6 @@ int main(void)
                   selected && selected_size > 0,
               "C view selection text");
         termole_free(selected);
-        termole_gdi_renderer* metrics = termole_gdi_create(view_options.font_family,
-                                                           view_options.font_size, view_options.theme);
-        const int cell_width = (int)termole_gdi_cell_width(metrics);
-        const int cell_height = (int)termole_gdi_cell_height(metrics);
-        termole_gdi_destroy(metrics);
-        check(cell_width > 0 && cell_height > 0, "measure the configured GDI font");
 
         SendMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
         RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -234,12 +265,12 @@ int main(void)
         RedrawWindow(termole_cview_hwnd(light_view), NULL, NULL,
                      RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
         capture::Sample corner[] = { { 2, 2 } };
-        capture::Stats pixels;
-        std::string error;
-        check(capture::window(termole_cview_hwnd(light_view), "light-background.png",
-                              pixels, error, corner) && corner[0].color == RGB(250, 250, 250),
-              "C view light theme background in light-background.png");
-        if (!error.empty()) fprintf(stderr, "%s\n", error.c_str());
+        const bool light = wait_for_pixels(termole_cview_hwnd(light_view), "light-background.png",
+                                           corner, [&] {
+            return corner[0].color == RGB(250, 250, 250);
+        });
+        if (!light) fprintf(stderr, "light theme: corner=%#lx\n", corner[0].color);
+        check(light, "C view light theme background in light-background.png");
         termole_cview_destroy(light_view);
     }
 
