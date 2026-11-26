@@ -41,7 +41,7 @@ include(CTest)
 include(cmake/TermoleBuild.cmake)
 include(cmake/TermoleQuickJS.cmake)
 
-# libghostty-vt (x86_64-windows-gnu static, MPL-2.0).
+# libghostty-vt (x86_64-windows-gnu static).
 set(TERMOLE_GHOSTTY_VT_ROOT "" CACHE PATH "Existing Windows libghostty-vt installation")
 if(NOT TERMOLE_GHOSTTY_VT_ROOT)
   FetchContent_Declare(ghostty_windows

@@ -62,7 +62,7 @@ including Unicode data notices where applicable.
 - Version: 1.0.1
 - Artifact: `ghostty-vt-1.0.1-x86_64-windows-gnu.zip` (static library)
 - SHA-256: `8e2eb9e1822e85d786b456c8beb86f49d09c318c91f0c2913f91e7ffa12cda29`
-- License: MPL-2.0; the unmodified license text is vendored at
+- License: MIT; the upstream license text is vendored at
   `third_party/libghostty-vt/LICENSE`.
 - Source: <https://release.files.ghostty.org/libghostty-vt/1.0.1/>
 - Usage: linked statically into the product; no upstream files are modified.
