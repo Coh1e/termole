@@ -6,8 +6,13 @@ if(NOT DEFINED OBJDUMP OR OBJDUMP STREQUAL "")
   message(FATAL_ERROR "CheckDeps: OBJDUMP is not configured")
 endif()
 
+get_filename_component(executable "${EXE}" ABSOLUTE)
+get_filename_component(directory "${executable}" DIRECTORY)
+get_filename_component(filename "${executable}" NAME)
+# MinGW objdump accepts the executable name when its working directory contains Unicode.
 execute_process(
-  COMMAND "${OBJDUMP}" -p "${EXE}"
+  COMMAND "${OBJDUMP}" -p "${filename}"
+  WORKING_DIRECTORY "${directory}"
   OUTPUT_VARIABLE output
   RESULT_VARIABLE result
 )
