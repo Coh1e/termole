@@ -46,12 +46,16 @@ public:
 
 private:
     PosixSession() = default;
+    bool write_all(std::string_view bytes);
+    void flush_replies(std::unique_lock<std::mutex> state_lock);
     void read_loop();
     void stop();
 
     std::unique_ptr<Pty> pty_;
     termole_vt* vt_ = nullptr;
     mutable std::mutex mutex_;
+    std::string replies_;
+    std::mutex input_mutex_;
     std::thread reader_;
     bool stopped_ = false;
     int exit_code_ = -1;

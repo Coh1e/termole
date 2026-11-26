@@ -70,6 +70,23 @@ int main()
     check(session->write("exit 7\r\n", error), "write exit to posix session");
     check(session->wait() == 7, "interactive shell exit code");
 
+    options.arguments = { "/bin/sh", "-c", R"sh(
+        stty -echo -icanon min 0 time 10 || exit 1
+        printf '\033[7;12H\033[6n'
+        reply=$(dd bs=1 count=7 2>/dev/null)
+        [ "$reply" = "$(printf '\033[7;12R')" ] && exit 0
+        printf 'Unexpected cursor report (hex): '
+        printf '%s' "$reply" | od -An -tx1
+        exit 1
+    )sh" };
+    auto reporter = PosixSession::create(options, error);
+    check(reporter != nullptr, "start cursor report child");
+    if (reporter) {
+        const int status = reporter->wait();
+        if (status != 0) std::fprintf(stderr, "%s\n", reporter->text().c_str());
+        check(status == 0, "child receives the cursor position at row 7, column 12 through stdin");
+    }
+
     options.arguments = { "/bin/sh", "-c", "trap '' HUP; printf 'SESSION-ACTIVE'; sleep 60" };
     auto active = PosixSession::create(options, error);
     check(active != nullptr, "create a session while testing shutdown");
