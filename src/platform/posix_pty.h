@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/pty.h"
+
 #include <sys/types.h>
 
 #include <string>
@@ -17,6 +19,16 @@ struct PosixPtyOptions {
 struct PosixPty {
     int master = -1;
     pid_t child = -1;
+};
+
+// POSIX sessions can wait for output space without holding the VT lock,
+// then write and account for accepted bytes in one critical section.
+class PollablePty : public Pty {
+public:
+    static std::unique_ptr<PollablePty> spawn(const PtyOptions& options, std::string& error);
+    virtual bool wait_writable() = 0;
+    // A nonempty write returns 0 on transient backpressure, -1 on failure.
+    virtual ssize_t try_write(const void* data, size_t size) = 0;
 };
 
 bool spawn_posix_pty(const PosixPtyOptions& options, PosixPty& pty, std::string& error);

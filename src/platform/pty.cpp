@@ -1,7 +1,5 @@
 #include "platform/pty.h"
 
-#include "platform/posix_pty.h"
-
 #if defined(_WIN32)
 #include "platform/windows_pty.h"
 
@@ -12,6 +10,8 @@ std::unique_ptr<Pty> Pty::spawn(const PtyOptions& options, std::string& error)
 }
 } // namespace termole::platform
 #else
+#include "platform/posix_pty.h"
+
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -29,7 +29,7 @@ namespace termole::platform {
 
 namespace {
 
-class PosixPtyBackend final : public Pty {
+class PosixPtyBackend final : public PollablePty {
 public:
     PosixPtyBackend() = default;
 
@@ -78,13 +78,23 @@ public:
     ssize_t write(const void* data, size_t size) override
     {
         if (size == 0) return 0;
-        for (;;) {
-            const int events = wait_for(POLLOUT);
-            if (events <= 0 || (events & (POLLERR | POLLHUP | POLLNVAL))) return -1;
-            const auto bytes = write_posix_pty(pty_, data, size);
-            if (bytes < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-            return bytes;
+        while (wait_writable()) {
+            const auto bytes = try_write(data, size);
+            if (bytes != 0) return bytes;
         }
+        return -1;
+    }
+    bool wait_writable() override
+    {
+        const int events = wait_for(POLLOUT);
+        return events > 0 && !(events & (POLLERR | POLLHUP | POLLNVAL));
+    }
+    ssize_t try_write(const void* data, size_t size) override
+    {
+        if (closed_.load()) return -1;
+        const auto bytes = write_posix_pty(pty_, data, size);
+        if (bytes < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
+        return bytes;
     }
     bool resize(unsigned short columns, unsigned short rows, std::string& error) override
     {
@@ -156,6 +166,11 @@ private:
 } // namespace
 
 std::unique_ptr<Pty> Pty::spawn(const PtyOptions& options, std::string& error)
+{
+    return PollablePty::spawn(options, error);
+}
+
+std::unique_ptr<PollablePty> PollablePty::spawn(const PtyOptions& options, std::string& error)
 {
     auto pty = std::make_unique<PosixPtyBackend>();
     if (!pty->start(options, error)) return nullptr;

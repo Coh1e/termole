@@ -6,7 +6,7 @@ std::unique_ptr<PosixSession> PosixSession::create(const PosixSessionOptions& op
                                                     std::string& error)
 {
     std::unique_ptr<PosixSession> session(new PosixSession(options.max_queued_reply_bytes));
-    session->pty_ = Pty::spawn(
+    session->pty_ = PollablePty::spawn(
         PtyOptions{ options.arguments, options.working_directory, options.columns, options.rows },
         error);
     if (!session->pty_) return nullptr;
@@ -80,31 +80,31 @@ void PosixSession::write_replies()
         // A child may fill its output while waiting to read an in-flight paste.
         // Only writers serialize here. The PTY reader must keep draining output.
         std::lock_guard lock(input_mutex_);
-        if (!write_all(bytes, true)) return;
+        std::string_view pending(bytes);
+        while (!pending.empty()) {
+            if (!pty_->wait_writable()) return;
+            // Publish the write and its budget credit together. A child can
+            // issue its next query immediately after consuming this reply.
+            std::lock_guard state(mutex_);
+            const ssize_t written = pty_->try_write(pending.data(), pending.size());
+            if (written < 0) return;
+            pending_reply_bytes_ -= static_cast<size_t>(written);
+            pending.remove_prefix(static_cast<size_t>(written));
+        }
         bytes.clear();
     }
-}
-
-bool PosixSession::write_all(std::string_view bytes, bool is_reply)
-{
-    while (!bytes.empty()) {
-        const ssize_t written = pty_->write(bytes.data(), bytes.size());
-        if (written <= 0) return false;
-        if (is_reply) {
-            std::lock_guard lock(mutex_);
-            pending_reply_bytes_ -= static_cast<size_t>(written);
-        }
-        bytes.remove_prefix(static_cast<size_t>(written));
-    }
-    return true;
 }
 
 bool PosixSession::write(std::string_view bytes, std::string& error)
 {
     std::lock_guard lock(input_mutex_);
-    if (!write_all(bytes, false)) {
-        error = "PTY write failed";
-        return false;
+    while (!bytes.empty()) {
+        const ssize_t written = pty_->write(bytes.data(), bytes.size());
+        if (written <= 0) {
+            error = "PTY write failed";
+            return false;
+        }
+        bytes.remove_prefix(static_cast<size_t>(written));
     }
     return true;
 }

@@ -24,14 +24,40 @@ static void check(bool condition, const char* what)
 
 static constexpr size_t paste_size = 128 * 1024;
 
+static bool raw_input()
+{
+    termios mode{};
+    if (::tcgetattr(STDIN_FILENO, &mode) < 0) return false;
+    ::cfmakeraw(&mode);
+    return ::tcsetattr(STDIN_FILENO, TCSANOW, &mode) == 0;
+}
+
+static int report_child()
+{
+    ::alarm(5);
+    if (!raw_input()) return 1;
+    constexpr std::string_view query = "\x1b[7;12H\x1b[6n";
+    constexpr std::string_view expected = "\x1b[7;12R";
+    for (int i = 0; i < 256; ++i) {
+        if (::write(STDOUT_FILENO, query.data(), query.size()) != static_cast<ssize_t>(query.size()))
+            return 2;
+        char report[expected.size()];
+        size_t used = 0;
+        while (used < sizeof(report)) {
+            const auto count = ::read(STDIN_FILENO, report + used, sizeof(report) - used);
+            if (count <= 0) return 3;
+            used += static_cast<size_t>(count);
+        }
+        if (std::string_view(report, used) != expected) return 4;
+    }
+    return 0;
+}
+
 static int duplex_child()
 {
     // Bound both directions even when the session stops draining the PTY.
     ::alarm(5);
-    termios mode{};
-    if (::tcgetattr(STDIN_FILENO, &mode) < 0) return 1;
-    ::cfmakeraw(&mode);
-    if (::tcsetattr(STDIN_FILENO, TCSANOW, &mode) < 0) return 1;
+    if (!raw_input()) return 1;
     if (::write(STDOUT_FILENO, "DUPLEX-READY", 12) != 12) return 1;
     char first;
     if (::read(STDIN_FILENO, &first, 1) != 1 || first != 'p') return 2;
@@ -89,6 +115,7 @@ static bool duplex_session(const char* executable, size_t reply_budget, int expe
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string_view(argv[1]) == "--duplex-child") return duplex_child();
+    if (argc == 2 && std::string_view(argv[1]) == "--report-child") return report_child();
     using namespace termole::platform;
     PosixSessionOptions options;
     options.arguments = { "/bin/sh" };
@@ -143,18 +170,7 @@ int main(int argc, char** argv)
 
     PosixSessionOptions reply_options;
     check(reply_options.max_queued_reply_bytes == 1024 * 1024, "default reply queue budget is one MiB");
-    reply_options.arguments = { "/bin/sh", "-c", R"sh(
-        stty -echo -icanon min 0 time 10 || exit 1
-        for query in 1 2; do
-            printf '\033[7;12H\033[6n'
-            reply=$(dd bs=1 count=7 2>/dev/null)
-            if [ "$reply" != "$(printf '\033[7;12R')" ]; then
-                printf 'Unexpected cursor report (hex): '
-                printf '%s' "$reply" | od -An -tx1
-                exit 1
-            fi
-        done
-    )sh" };
+    reply_options.arguments = { argv[0], "--report-child" };
     // ESC [ 7 ; 1 2 R is exactly seven bytes. One callback delivers the
     // whole report, so the writer's scheduling cannot change either outcome.
     reply_options.max_queued_reply_bytes = 7;
@@ -162,8 +178,8 @@ int main(int argc, char** argv)
     check(reporter != nullptr, "start cursor report child");
     if (reporter) {
         const int status = reporter->wait();
-        if (status != 0) std::fprintf(stderr, "%s\n", reporter->text().c_str());
-        check(status == 0, "child receives row 7, column 12 twice and reuses the reply budget");
+        if (status != 0) std::fprintf(stderr, "cursor report child exit=%d\n", status);
+        check(status == 0, "each delivered cursor report frees the budget for the next immediate query");
     }
 
     reply_options.max_queued_reply_bytes = 6;

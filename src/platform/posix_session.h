@@ -3,7 +3,7 @@
 #include <termole/core.h>
 
 #include "core/frame.h"
-#include "platform/pty.h"
+#include "platform/posix_pty.h"
 
 #include <condition_variable>
 #include <memory>
@@ -50,12 +50,11 @@ public:
 private:
     explicit PosixSession(size_t max_queued_reply_bytes)
         : max_queued_reply_bytes_(max_queued_reply_bytes) {}
-    bool write_all(std::string_view bytes, bool is_reply);
     void write_replies();
     void read_loop();
     void stop();
 
-    std::unique_ptr<Pty> pty_;
+    std::unique_ptr<PollablePty> pty_;
     termole_vt* vt_ = nullptr;
     mutable std::mutex mutex_;
     const size_t max_queued_reply_bytes_;
