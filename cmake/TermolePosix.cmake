@@ -55,11 +55,9 @@ endif()
 
 find_package(Threads REQUIRED)
 
-add_library(termole_core_${termole_platform} STATIC "${termole_root}/src/vt/termole_vt.c")
-target_include_directories(termole_core_${termole_platform} PUBLIC
-  "${termole_root}/include" "${termole_root}/src")
-target_compile_features(termole_core_${termole_platform} PRIVATE c_std_11)
-target_link_libraries(termole_core_${termole_platform} PUBLIC ghostty_vt m Threads::Threads)
+include("${CMAKE_CURRENT_LIST_DIR}/TermoleVT.cmake")
+termole_add_vt(termole_core_${termole_platform} STATIC)
+target_link_libraries(termole_core_${termole_platform} PUBLIC m Threads::Threads)
 
 add_library(termole_posix_pty STATIC
   "${termole_root}/src/platform/posix_pty.cpp"

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -374,38 +375,87 @@ void NativeSession::detach_view() noexcept
     view_attached_.store(false, std::memory_order_release);
 }
 
+namespace {
+
+// The Session mutex protects the borrowed active frame and its scrollback.
+struct BorrowedViewport {
+    termole_frame frame;
+    int first_document_row;
+    int document_rows;
+    int history_rows_in_frame;
+
+    template<class CellType, class Convert>
+    void copy_cells(termole_vt* vt, CellType* dest, Convert convert) const
+    {
+        for (int row = 0; row < history_rows_in_frame; ++row) {
+            for (int column = 0; column < frame.columns; ++column) {
+                termole_cell cell{};
+                if (termole_vt_cell(vt, first_document_row + row, column, &cell) != TERMOLE_CORE_OK) {
+                    // Ghostty omits trailing blanks on some scrollback rows.
+                    cell.width = 1;
+                    cell.foreground_is_default = cell.background_is_default = 1;
+                }
+                *dest++ = convert(cell);
+            }
+        }
+        const size_t live_cells =
+            static_cast<size_t>(frame.rows - history_rows_in_frame) * frame.columns;
+        std::transform(frame.cells, frame.cells + live_cells, dest, convert);
+    }
+};
+
+std::optional<BorrowedViewport> borrow_viewport(termole_vt* vt, int scroll_offset)
+{
+    const termole_frame* frame = nullptr;
+    uint32_t history = 0;
+    if (termole_vt_frame(vt, &frame) != TERMOLE_CORE_OK ||
+        termole_vt_history_rows(vt, &history) != TERMOLE_CORE_OK) return std::nullopt;
+    const int offset = std::clamp(scroll_offset, 0, static_cast<int>(history));
+    BorrowedViewport viewport{ *frame, static_cast<int>(history) - offset,
+                               static_cast<int>(history) + frame->rows,
+                               std::min<int>(offset, frame->rows) };
+    if (offset) viewport.frame.cursor_visible = 0;
+    return viewport;
+}
+
+} // namespace
+
 Snapshot NativeSession::snapshot(int scroll_offset) const
 {
     std::lock_guard lock(mutex_);
     Snapshot result;
-    if (!vt_) return result;
-    const termole_frame* frame = nullptr;
-    if (termole_vt_frame(vt_, &frame) != TERMOLE_CORE_OK || !frame) return result;
-    uint32_t history = 0;
-    (void)termole_vt_history_rows(vt_, &history);
-    result.columns = frame->columns;
-    result.rows = frame->rows;
-    result.cells.assign(static_cast<size_t>(frame->columns) * frame->rows, Cell{});
-    const int offset = std::clamp(scroll_offset, 0, static_cast<int>(history));
-    for (int row = 0; row < frame->rows; ++row) {
-        for (int column = 0; column < frame->columns; ++column) {
-            const size_t index = static_cast<size_t>(row) * frame->columns + column;
-            if (row >= offset) {
-                result.cells[index] = cell_from_c(frame->cells[
-                    static_cast<size_t>(row - offset) * frame->columns + column]);
-                continue;
-            }
-            termole_cell cell;
-            if (termole_vt_cell(vt_, static_cast<int>(history) - offset + row, column, &cell) ==
-                TERMOLE_CORE_OK) {
-                result.cells[index] = cell_from_c(cell);
-            }
-        }
-    }
-    result.cursor_column = frame->cursor_column;
-    result.cursor_row = frame->cursor_row;
-    result.cursor_visible = offset == 0 && frame->cursor_visible != 0;
+    const auto viewport = borrow_viewport(vt_, scroll_offset);
+    if (!viewport) return result;
+    const auto& frame = viewport->frame;
+    result.columns = frame.columns;
+    result.rows = frame.rows;
+    result.cells.resize(static_cast<size_t>(frame.columns) * frame.rows);
+    viewport->copy_cells(vt_, result.cells.data(), cell_from_c);
+    result.cursor_column = frame.cursor_column;
+    result.cursor_row = frame.cursor_row;
+    result.cursor_visible = frame.cursor_visible != 0;
     return result;
+}
+
+termole_status NativeSession::read_viewport(int scroll_offset, termole_viewport& out) const
+{
+    std::lock_guard lock(mutex_);
+    const auto viewport = borrow_viewport(vt_, scroll_offset);
+    if (!viewport) return TERMOLE_STATUS_INVALID_STATE;
+    const auto& frame = viewport->frame;
+    const size_t count = static_cast<size_t>(frame.columns) * frame.rows;
+    auto* cells = out.frame.cells;
+    if (count > out.capacity) {
+        cells = static_cast<termole_cell*>(std::realloc(cells, count * sizeof(*cells)));
+        if (!cells) return TERMOLE_STATUS_OUT_OF_MEMORY;
+        out.capacity = count;
+    }
+    viewport->copy_cells(vt_, cells, [](const termole_cell& cell) { return cell; });
+    out.frame = frame;
+    out.frame.cells = cells;
+    out.first_document_row = viewport->first_document_row;
+    out.document_rows = viewport->document_rows;
+    return TERMOLE_STATUS_OK;
 }
 
 std::optional<SessionFrame> NativeSession::frame_after(uint64_t revision) const

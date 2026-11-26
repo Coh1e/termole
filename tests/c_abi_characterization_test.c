@@ -22,6 +22,20 @@ static void check(int condition, const char* what)
     ++failures;
 }
 
+static int wait_for_text(termole_session* session, const char* expected)
+{
+    const ULONGLONG deadline = GetTickCount64() + 5000;
+    do {
+        char* text = NULL;
+        if (termole_session_get_screen_text(session, &text, NULL) != TERMOLE_STATUS_OK) return 0;
+        const int found = strstr(text, expected) != NULL;
+        termole_free(text);
+        if (found) return 1;
+        Sleep(20);
+    } while (GetTickCount64() < deadline);
+    return 0;
+}
+
 int main(void)
 {
     check(termole_abi_version() == TERMOLE_ABI_VERSION, "abi version matches the header");
@@ -52,12 +66,13 @@ int main(void)
 
     termole_free(NULL); /* documented no-op */
 
-    /* Real session: cmd.exe /c exit 3 through ConPTY, queried via C only. */
+    /* Pause on the alternate screen so the C consumer can observe both screens. */
     options = (termole_session_options)TERMOLE_SESSION_OPTIONS_INIT;
     options.program = L"cmd.exe";
-    const wchar_t* argv[] = { L"/c", L"exit", L"3" };
+    const wchar_t* argv[] = { L"/d", L"/q", L"/c",
+        L"echo \x1b[?1049hALT-READY & pause >nul & echo \x1b[?1049l & exit /b 3" };
     options.arguments = argv;
-    options.argument_count = 3;
+    options.argument_count = 4;
     options.columns = 40;
     options.rows = 10;
     session = NULL;
@@ -66,6 +81,11 @@ int main(void)
     if (session) {
         check(termole_session_is_running(session, &(int){ 0 }) == TERMOLE_STATUS_OK,
               "running query succeeds");
+        termole_modes modes;
+        check(wait_for_text(session, "ALT-READY"), "child has switched to the alternate screen");
+        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK && modes.alternate_screen,
+              "C consumer sees the active alternate screen");
+        check(termole_session_write(session, "\r", 1) == TERMOLE_STATUS_OK, "resume child");
         for (int i = 0; i < 200; ++i) {
             int running = 0;
             if (termole_session_is_running(session, &running) != TERMOLE_STATUS_OK) break;
@@ -86,9 +106,8 @@ int main(void)
         check(termole_session_get_cursor(session, &cursor_column, &cursor_row, &cursor_visible) ==
                   TERMOLE_STATUS_OK,
               "cursor query succeeds");
-        termole_modes modes;
-        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK,
-              "modes query succeeds");
+        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK && !modes.alternate_screen,
+              "C consumer sees the restored primary screen");
         size_t history_lines = 0;
         check(termole_session_get_scrollback_line_count(session, &history_lines) ==
                   TERMOLE_STATUS_OK,

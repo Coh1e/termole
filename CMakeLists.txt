@@ -89,7 +89,7 @@ if(TERMOLE_BUILD_APP)
   endif()
   install(DIRECTORY include/termole DESTINATION include)
   install(FILES README.md GLOSSARY.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION .)
-  install(FILES docs/README.md docs/cli.md docs/config.md docs/sdk.md
+  install(FILES docs/README.md docs/architecture.md docs/cli.md docs/config.md docs/sdk.md
     docs/cross-platform-build.md DESTINATION docs)
   install(DIRECTORY docs/adr DESTINATION docs FILES_MATCHING PATTERN "*.md")
   install(FILES docs/agents/testing.md DESTINATION docs/agents)
@@ -116,6 +116,7 @@ if(TERMOLE_BUILD_APP)
   install(FILES examples/select-file.ps1 examples/preview-file.ps1 DESTINATION share/termole/examples)
   install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
   set(CPACK_GENERATOR ZIP)
+  set(CPACK_PACKAGE_CHECKSUM SHA256)
   set(CPACK_PACKAGE_NAME "Termole")
   set(CPACK_PACKAGE_VENDOR "Termole")
   set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
@@ -123,6 +124,15 @@ if(TERMOLE_BUILD_APP)
   set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
   include(CPack)
+  if(BUILD_TESTING AND TERMOLE_WITH_QUICKJS)
+    add_custom_target(verify_release_zip
+      COMMAND "${CMAKE_COMMAND}"
+        "-DArchive=${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_FILE_NAME}.zip"
+        "-DVersion=${PROJECT_VERSION}" "-DPowerShell=${TERMOLE_POWERSHELL}"
+        "-DEvidence=${CMAKE_BINARY_DIR}/tests/release-zip"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_release_zip.cmake"
+      VERBATIM)
+  endif()
 endif()
 
 if(TERMOLE_BUILD_SPIKES)

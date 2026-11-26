@@ -44,13 +44,11 @@
       }
     },
     {
-      "name": "windows-mingw",
-      "displayName": "Windows x64 MinGW (NMake Makefiles, Debug)",
+      "name": "windows-base",
+      "hidden": true,
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/.local/build/nmake-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": true,
         "CMAKE_EXE_LINKER_FLAGS": "-static",
@@ -58,18 +56,20 @@
       }
     },
     {
+      "name": "windows-mingw",
+      "inherits": "windows-base",
+      "displayName": "Windows x64 MinGW (NMake Makefiles, Debug)",
+      "binaryDir": "${sourceDir}/.local/build/nmake-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
       "name": "windows-mingw-release",
+      "inherits": "windows-base",
       "displayName": "Windows x64 MinGW (NMake Makefiles, Release)",
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
-      "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/.local/build/nmake-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "TERMOLE_WITH_QUICKJS": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-mingw64.cmake",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
-        "CMAKE_EXE_LINKER_FLAGS": "-static",
-        "CMAKE_SHARED_LINKER_FLAGS": "-static"
+        "TERMOLE_WITH_QUICKJS": "ON"
       }
     }
   ],
@@ -79,7 +79,8 @@
     { "name": "linux-gui", "configurePreset": "linux-gui" },
     { "name": "macos-static", "configurePreset": "macos-static" },
     { "name": "windows-mingw", "configurePreset": "windows-mingw" },
-    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" }
+    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" },
+    { "name": "windows-verify-zip", "configurePreset": "windows-mingw-release", "targets": ["verify_release_zip"] }
   ],
   "testPresets": [
     {
@@ -121,6 +122,9 @@
       "output": { "outputOnFailure": true }
     }
   ],
+  "packagePresets": [
+    { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release", "generators": ["ZIP"] }
+  ],
   "workflowPresets": [
     {
       "name": "windows-mingw",
@@ -128,6 +132,16 @@
         { "type": "configure", "name": "windows-mingw" },
         { "type": "build", "name": "windows-mingw" },
         { "type": "test", "name": "windows-mingw" }
+      ]
+    },
+    {
+      "name": "windows-mingw-release",
+      "steps": [
+        { "type": "configure", "name": "windows-mingw-release" },
+        { "type": "build", "name": "windows-mingw-release" },
+        { "type": "test", "name": "windows-mingw-release" },
+        { "type": "package", "name": "windows-mingw-release" },
+        { "type": "build", "name": "windows-verify-zip" }
       ]
     }
   ]

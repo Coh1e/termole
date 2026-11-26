@@ -134,6 +134,25 @@ int main(void)
     check(modes.mouse_sgr == 1, "SGR mouse enabled");
     check(modes.bracketed_paste == 1, "bracketed paste enabled");
 
+    const struct {
+        const char* sequence;
+        int alternate;
+        const char* expected;
+    } screens[] = {
+        { "\033[?47h", 1, "47 enters the alternate screen" },
+        { "\033[?47l", 0, "47 restores the primary screen" },
+        { "\033[?1047h", 1, "1047 enters the alternate screen" },
+        { "\033[?1047l", 0, "1047 restores the primary screen" },
+        { "\033[?1049h", 1, "1049 enters the alternate screen" },
+        { "\033[?1049l", 0, "1049 restores the primary screen" },
+    };
+    for (size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); ++i) {
+        check(termole_vt_feed(vt, screens[i].sequence, strlen(screens[i].sequence)) == TERMOLE_CORE_OK &&
+                  termole_vt_modes(vt, &modes) == TERMOLE_CORE_OK &&
+                  modes.alternate_screen == screens[i].alternate,
+              screens[i].expected);
+    }
+
     const char* title_seq = "\033]0;Hello\007";
     check(termole_vt_feed(vt, title_seq, strlen(title_seq)) == TERMOLE_CORE_OK, "feed title");
     char title[32];

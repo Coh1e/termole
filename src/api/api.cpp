@@ -233,11 +233,7 @@ termole_status TERMOLE_CALL termole_session_get_modes(termole_session* session,
         if (!session || !session->implementation)
             return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "session is null");
         if (!out_modes) return fail(TERMOLE_STATUS_INVALID_ARGUMENT, "out_modes is null");
-        out_modes->mouse_tracking = session->implementation->mouse_mode();
-        out_modes->mouse_sgr = session->implementation->sgr_mouse() ? 1 : 0;
-        out_modes->bracketed_paste = session->implementation->bracketed_paste() ? 1 : 0;
-        out_modes->application_cursor = session->implementation->application_cursor() ? 1 : 0;
-        out_modes->alternate_screen = 0;
+        *out_modes = session->implementation->modes();
         return TERMOLE_STATUS_OK;
     });
 }
@@ -328,6 +324,17 @@ termole_status TERMOLE_CALL termole_session_snapshot(termole_session* session, i
         }
         return TERMOLE_STATUS_OK;
     });
+}
+
+termole_status termole_session_read_viewport(termole_session* session, int32_t scroll_offset,
+                                            termole_viewport* out)
+{
+    if (!session || !session->implementation || !out) return TERMOLE_STATUS_INVALID_ARGUMENT;
+    try {
+        return session->implementation->read_viewport(scroll_offset, *out);
+    } catch (...) {
+        return TERMOLE_STATUS_SYSTEM_ERROR;
+    }
 }
 termole_status TERMOLE_CALL termole_session_is_running(termole_session* session, int* out_running)
 {

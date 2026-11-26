@@ -24,7 +24,7 @@ foreach(path IN ITEMS include/termole/termole.h include/termole/termole.hpp
     lib/cmake/termole/termoleConfigVersion.cmake lib/cmake/termole/termoleTargets.cmake
     share/termole/examples/sdk-host/CMakeLists.txt share/termole/examples/sdk-host/main.cpp
     share/termole/examples/sdk-host/README.md docs/README.md docs/cli.md docs/config.md docs/sdk.md
-    docs/cross-platform-build.md docs/adr/README.md docs/adr/0007-console-launcher-wait.md)
+    docs/architecture.md docs/cross-platform-build.md docs/adr/README.md docs/adr/0007-console-launcher-wait.md)
   if(NOT EXISTS "${package}/${path}")
     message(FATAL_ERROR "Missing installed SDK file: ${path}")
   endif()

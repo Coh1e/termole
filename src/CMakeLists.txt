@@ -1,3 +1,8 @@
+include(../cmake/TermoleVT.cmake)
+termole_add_vt(termole_vt_objects OBJECT)
+target_link_libraries(termole_vt_objects PRIVATE termole_build_options)
+set_property(TARGET termole_vt_objects PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+
 add_library(termole STATIC
   api/api.cpp
   common/win.cpp
@@ -12,7 +17,7 @@ add_library(termole STATIC
   platform/pty.cpp
   platform/windows_pty.cpp
   session/session.cpp
-  vt/termole_vt.c
+  $<TARGET_OBJECTS:termole_vt_objects>
   view/renderer.cpp
   view/view.cpp
 )

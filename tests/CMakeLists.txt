@@ -76,15 +76,19 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
   INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
 )
 
-find_program(TERMOLE_POWERSHELL NAMES powershell.exe)
+find_program(TERMOLE_POWERSHELL NAMES powershell.exe REQUIRED)
 find_program(TERMOLE_FZF NAMES fzf.exe)
 find_program(TERMOLE_WSL NAMES wsl.exe)
 find_program(TERMOLE_NVIM NAMES nvim.exe)
 find_program(TERMOLE_HELIX NAMES hx.exe helix.exe)
 find_program(TERMOLE_LAZYGIT NAMES lazygit.exe)
-if(NOT TERMOLE_POWERSHELL)
-  message(STATUS "powershell.exe not found: PowerShell CLI launch test is omitted.")
-endif()
+foreach(tool IN ITEMS FZF WSL NVIM HELIX LAZYGIT)
+  if(TERMOLE_${tool})
+    message(STATUS "Windows ${tool} tests enabled: ${TERMOLE_${tool}}")
+  else()
+    message(STATUS "Windows ${tool} tests omitted: executable not found")
+  endif()
+endforeach()
 
 add_test(NAME t01_host_api COMMAND termole_test_host_api)
 set_tests_properties(t01_host_api PROPERTIES
@@ -192,123 +196,121 @@ endif()
 # deterministic alt-screen probe and the real-fzf scenario, which registers only
 # when fzf exists (the same condition as t06_fzf). Every run writes PNG and stats
 # under <build>/tests/visual/; failures keep them for review.
-if(TERMOLE_POWERSHELL)
-  add_executable(termole_visual_child visual/alt_screen_child.cpp)
-  target_link_libraries(termole_visual_child PRIVATE termole_build_options)
+add_executable(termole_visual_child visual/alt_screen_child.cpp)
+target_link_libraries(termole_visual_child PRIVATE termole_build_options)
 
-  # T12 (#13) controlled target: enables mouse/bracketed-paste modes and reads
-  # the real ConPTY input bytes for the mouse/paste acceptance.
-  add_executable(termole_input_child visual/t12_input_child.cpp)
-  target_link_libraries(termole_input_child PRIVATE termole_build_options)
+# T12 (#13) controlled target: enables mouse/bracketed-paste modes and reads
+# the real ConPTY input bytes for the mouse/paste acceptance.
+add_executable(termole_input_child visual/t12_input_child.cpp)
+target_link_libraries(termole_input_child PRIVATE termole_build_options)
 
-  add_executable(termole_visual_test visual/visual_test.cpp)
-  target_link_libraries(termole_visual_test PRIVATE termole termole_build_options psapi)
-  add_dependencies(termole_visual_test termole_visual_child termole_input_child termole_app)
+add_executable(termole_visual_test visual/visual_test.cpp)
+target_link_libraries(termole_visual_test PRIVATE termole termole_build_options psapi)
+add_dependencies(termole_visual_test termole_visual_child termole_input_child termole_app)
 
-  foreach(mode latency latency-standalone)
-    add_test(NAME visual_t21_${mode} COMMAND termole_visual_test
-      --mode ${mode}
-      --child "$<TARGET_FILE:termole_visual_child>"
-      --app "$<TARGET_FILE:termole_app>"
-      --powershell "${TERMOLE_POWERSHELL}"
-      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/t21-${mode}")
-    set_tests_properties(visual_t21_${mode} PROPERTIES TIMEOUT 120 LABELS "visual" RUN_SERIAL TRUE
-      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-  endforeach()
-
-  add_test(NAME visual_alt_screen COMMAND termole_visual_test
-    --mode alt-screen
+foreach(mode latency latency-standalone)
+  add_test(NAME visual_t21_${mode} COMMAND termole_visual_test
+    --mode ${mode}
     --child "$<TARGET_FILE:termole_visual_child>"
-    --powershell "${TERMOLE_POWERSHELL}"
-    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/alt-screen")
-  set_tests_properties(visual_alt_screen PROPERTIES
-    TIMEOUT 120
-    LABELS "visual"
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
-  # T12 interaction: mouse/wheel messages through the View path, Shift+Insert
-  # and bracketed paste, with a pixel capture at every step.
-  add_test(NAME visual_input_interaction COMMAND termole_visual_test
-    --mode input-interaction
-    --input-child "$<TARGET_FILE:termole_input_child>"
-    --powershell "${TERMOLE_POWERSHELL}"
-    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-interaction")
-  set_tests_properties(visual_input_interaction PROPERTIES
-    TIMEOUT 240
-    LABELS "visual"
-    SKIP_RETURN_CODE 77
-    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-  )
-
-  # Same T12 interactions through the public standalone entry (`termole -e`).
-  add_test(NAME visual_input_standalone COMMAND termole_visual_test
-    --mode input-standalone
-    --input-child "$<TARGET_FILE:termole_input_child>"
     --app "$<TARGET_FILE:termole_app>"
     --powershell "${TERMOLE_POWERSHELL}"
     --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-standalone")
-  set_tests_properties(visual_input_standalone PROPERTIES
-    TIMEOUT 240
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/t21-${mode}")
+  set_tests_properties(visual_t21_${mode} PROPERTIES TIMEOUT 120 LABELS "visual" RUN_SERIAL TRUE
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+endforeach()
+
+add_test(NAME visual_alt_screen COMMAND termole_visual_test
+  --mode alt-screen
+  --child "$<TARGET_FILE:termole_visual_child>"
+  --powershell "${TERMOLE_POWERSHELL}"
+  --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+  --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/alt-screen")
+set_tests_properties(visual_alt_screen PROPERTIES
+  TIMEOUT 120
+  LABELS "visual"
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+# T12 interaction: mouse/wheel messages through the View path, Shift+Insert
+# and bracketed paste, with a pixel capture at every step.
+add_test(NAME visual_input_interaction COMMAND termole_visual_test
+  --mode input-interaction
+  --input-child "$<TARGET_FILE:termole_input_child>"
+  --powershell "${TERMOLE_POWERSHELL}"
+  --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+  --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-interaction")
+set_tests_properties(visual_input_interaction PROPERTIES
+  TIMEOUT 240
+  LABELS "visual"
+  SKIP_RETURN_CODE 77
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+# Same T12 interactions through the public standalone entry (`termole -e`).
+add_test(NAME visual_input_standalone COMMAND termole_visual_test
+  --mode input-standalone
+  --input-child "$<TARGET_FILE:termole_input_child>"
+  --app "$<TARGET_FILE:termole_app>"
+  --powershell "${TERMOLE_POWERSHELL}"
+  --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+  --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/input-standalone")
+set_tests_properties(visual_input_standalone PROPERTIES
+  TIMEOUT 240
+  LABELS "visual"
+  SKIP_RETURN_CODE 77
+  WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+
+if(TERMOLE_FZF)
+  add_test(NAME visual_fzf COMMAND termole_visual_test
+    --mode fzf
+    --fzf "${TERMOLE_FZF}"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf")
+  set_tests_properties(visual_fzf PROPERTIES
+    ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
+    TIMEOUT 120
     LABELS "visual"
     SKIP_RETURN_CODE 77
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
   )
 
-  if(TERMOLE_FZF)
-    add_test(NAME visual_fzf COMMAND termole_visual_test
-      --mode fzf
-      --fzf "${TERMOLE_FZF}"
-      --powershell "${TERMOLE_POWERSHELL}"
-      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf")
-    set_tests_properties(visual_fzf PROPERTIES
-      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
-      TIMEOUT 120
-      LABELS "visual"
-      SKIP_RETURN_CODE 77
-      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-    )
+  # T06 interaction: drives real fzf through the View's WM_KEYDOWN/WM_CHAR
+  # path (arrow, typing, Enter, Escape) and captures pixels after each step.
+  # No --filter/--no-color and no alt-screen bypass: this is fzf's own UI.
+  add_test(NAME visual_fzf_interaction COMMAND termole_visual_test
+    --mode fzf-interaction
+    --fzf "${TERMOLE_FZF}"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-interaction")
+  set_tests_properties(visual_fzf_interaction PROPERTIES
+    ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
+    TIMEOUT 180
+    LABELS "visual"
+    SKIP_RETURN_CODE 77
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
 
-    # T06 interaction: drives real fzf through the View's WM_KEYDOWN/WM_CHAR
-    # path (arrow, typing, Enter, Escape) and captures pixels after each step.
-    # No --filter/--no-color and no alt-screen bypass: this is fzf's own UI.
-    add_test(NAME visual_fzf_interaction COMMAND termole_visual_test
-      --mode fzf-interaction
-      --fzf "${TERMOLE_FZF}"
-      --powershell "${TERMOLE_POWERSHELL}"
-      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-interaction")
-    set_tests_properties(visual_fzf_interaction PROPERTIES
-      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
-      TIMEOUT 180
-      LABELS "visual"
-      SKIP_RETURN_CODE 77
-      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-    )
-
-    # Same interactions through the public standalone entry (`termole -e`).
-    # Keys are posted to the app's TermoleViewWindow child; the app has no
-    # screen-text API, so the captures are the evidence.
-    add_test(NAME visual_fzf_standalone COMMAND termole_visual_test
-      --mode fzf-standalone
-      --app "$<TARGET_FILE:termole_app>"
-      --fzf "${TERMOLE_FZF}"
-      --powershell "${TERMOLE_POWERSHELL}"
-      --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
-      --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-standalone")
-    set_tests_properties(visual_fzf_standalone PROPERTIES
-      ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
-      TIMEOUT 240
-      LABELS "visual"
-      SKIP_RETURN_CODE 77
-      WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-    )
-  endif()
+  # Same interactions through the public standalone entry (`termole -e`).
+  # Keys are posted to the app's TermoleViewWindow child; the app has no
+  # screen-text API, so the captures are the evidence.
+  add_test(NAME visual_fzf_standalone COMMAND termole_visual_test
+    --mode fzf-standalone
+    --app "$<TARGET_FILE:termole_app>"
+    --fzf "${TERMOLE_FZF}"
+    --powershell "${TERMOLE_POWERSHELL}"
+    --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+    --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/fzf-standalone")
+  set_tests_properties(visual_fzf_standalone PROPERTIES
+    ENVIRONMENT_MODIFICATION "NO_COLOR=unset:"
+    TIMEOUT 240
+    LABELS "visual"
+    SKIP_RETURN_CODE 77
+    WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+  )
 endif()
 
 add_executable(termole_cmd_test cmd_test.cpp)
@@ -375,45 +377,43 @@ add_test(NAME t02_cli_cmd
 )
 set_tests_properties(t02_cli_cmd PROPERTIES TIMEOUT 60)
 
-if(TERMOLE_POWERSHELL)
-  add_test(NAME t02_cli_powershell
-    COMMAND "${CMAKE_COMMAND}"
-      "-DAPP=$<TARGET_FILE:termole_app>"
-      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
-      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-ps"
-      "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_ps.cmake"
-  )
-  set_tests_properties(t02_cli_powershell PROPERTIES TIMEOUT 60)
+add_test(NAME t02_cli_powershell
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-ps"
+    "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_ps.cmake"
+)
+set_tests_properties(t02_cli_powershell PROPERTIES TIMEOUT 60)
 
-  add_test(NAME t03_cli_exit
-    COMMAND "${CMAKE_COMMAND}"
-      "-DAPP=$<TARGET_FILE:termole_app>"
-      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
-      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-exit"
-      "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_exit.cmake"
-  )
-  set_tests_properties(t03_cli_exit PROPERTIES TIMEOUT 60)
+add_test(NAME t03_cli_exit
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-exit"
+    "-DPOWERSHELL=${TERMOLE_POWERSHELL}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_exit.cmake"
+)
+set_tests_properties(t03_cli_exit PROPERTIES TIMEOUT 60)
 
-  add_test(NAME t13_cli_applet
-    COMMAND "${CMAKE_COMMAND}"
-      "-DAPP=$<TARGET_FILE:termole_app>"
-      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
-      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-applet"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_applet.cmake"
-  )
-  set_tests_properties(t13_cli_applet PROPERTIES TIMEOUT 60)
+add_test(NAME t13_cli_applet
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-applet"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_applet.cmake"
+)
+set_tests_properties(t13_cli_applet PROPERTIES TIMEOUT 60)
 
-  add_test(NAME t14_cli_config
-    COMMAND "${CMAKE_COMMAND}"
-      "-DAPP=$<TARGET_FILE:termole_app>"
-      "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
-      "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-config"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_config.cmake"
-  )
-  set_tests_properties(t14_cli_config PROPERTIES TIMEOUT 60)
-endif()
+add_test(NAME t14_cli_config
+  COMMAND "${CMAKE_COMMAND}"
+    "-DAPP=$<TARGET_FILE:termole_app>"
+    "-DHELPER=$<TARGET_FILE:termole_cli_report_helper>"
+    "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-config"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_config.cmake"
+)
+set_tests_properties(t14_cli_config PROPERTIES TIMEOUT 60)
 
 add_executable(termole_launcher_test launcher_test.cpp)
 target_link_libraries(termole_launcher_test PRIVATE termole_build_options)
@@ -544,15 +544,8 @@ set_tests_properties(ghostty_vt_smoke PROPERTIES
   WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 # C VT adapter contract (include/termole/core.h + src/vt/termole_vt.c).
-add_executable(termole_vt_adapter_test
-  vt_adapter_test.c
-  "${PROJECT_SOURCE_DIR}/src/vt/termole_vt.c"
-)
-target_include_directories(termole_vt_adapter_test PRIVATE
-  "${PROJECT_SOURCE_DIR}/include"
-  "${PROJECT_SOURCE_DIR}/src"
-)
-target_link_libraries(termole_vt_adapter_test PRIVATE ghostty_vt)
+add_executable(termole_vt_adapter_test vt_adapter_test.c)
+target_link_libraries(termole_vt_adapter_test PRIVATE termole_vt_objects)
 add_test(NAME vt_adapter_contract COMMAND termole_vt_adapter_test)
 set_tests_properties(vt_adapter_contract PROPERTIES
   TIMEOUT 30
@@ -593,20 +586,17 @@ set_tests_properties(t14_window_config PROPERTIES LABELS "characterization")
 add_executable(termole_gdi_render_test
   gdi_render_test.c
   "${PROJECT_SOURCE_DIR}/src/gui/gdi_render.c"
-  "${PROJECT_SOURCE_DIR}/src/vt/termole_vt.c"
 )
 target_include_directories(termole_gdi_render_test PRIVATE
-  "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include"
-  "${TERMOLE_GHOSTTY_VT_ROOT}/include")
-target_compile_definitions(termole_gdi_render_test PRIVATE GHOSTTY_STATIC)
+  "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(termole_gdi_render_test PRIVATE
-  ghostty_vt termole_build_options user32 gdi32 ntdll)
+  termole_vt_objects termole_build_options user32 gdi32)
 add_test(NAME gdi_render_contract COMMAND termole_gdi_render_test)
 set_tests_properties(gdi_render_contract PROPERTIES LABELS "adapter;domain")
-add_executable(termole_cview_test cview_test.cpp)
+add_executable(termole_cview_test cview_test.cpp sdk-consumer/capture.cpp)
 target_include_directories(termole_cview_test PRIVATE
   "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(termole_cview_test PRIVATE termole termole_build_options user32 gdi32)
+target_link_libraries(termole_cview_test PRIVATE termole termole_build_options user32 gdi32 windowscodecs ole32)
 set_target_properties(termole_cview_test PROPERTIES LINKER_LANGUAGE CXX)
 add_test(NAME cview_contract COMMAND termole_cview_test)
 set_tests_properties(cview_contract PROPERTIES LABELS "adapter;domain")

@@ -1,9 +1,16 @@
-param([Parameter(Mandatory = $true)][string]$Root)
+param(
+    [Parameter(Mandatory = $true)][string]$Root,
+    [string[]]$Files
+)
 
 $ErrorActionPreference = 'Stop'
 $rootPath = (Get-Item -LiteralPath $Root).FullName
 $rootPrefix = $rootPath.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
-$documents = @(Get-ChildItem -LiteralPath $rootPath -Recurse -File -Filter '*.md')
+$documents = @(if ($PSBoundParameters.ContainsKey('Files')) {
+    foreach ($file in $Files) { Get-Item -LiteralPath (Join-Path $rootPath $file) }
+} else {
+    Get-ChildItem -LiteralPath $rootPath -Recurse -File -Filter '*.md'
+})
 if ($documents.Count -eq 0) {
     throw "No Markdown files found in $Root"
 }
@@ -98,4 +105,4 @@ foreach ($document in $documents) {
 if ($failures -gt 0) {
     exit 1
 }
-Write-Output "Checked links in $($documents.Count) installed Markdown files"
+Write-Output "Checked links in $($documents.Count) Markdown files"

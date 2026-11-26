@@ -2,6 +2,7 @@
 #include "core/utf8_encode.h"
 
 #include "gui/gdi_render.h"
+#include "session/viewport.h"
 #include <windowsx.h>
 #include <imm.h>
 
@@ -20,8 +21,7 @@ struct termole_cview {
     HWND window;
     termole_session* session;
     termole_gdi_renderer* renderer;
-    termole_cell* cells;
-    size_t capacity;
+    termole_viewport viewport;
     uint16_t columns;
     uint16_t rows;
     int scroll_offset;
@@ -176,16 +176,11 @@ static int send_mouse(termole_cview* view, int button, int release)
 }
 static void document_cell_at(termole_cview* view, LPARAM point, int* out_row, int* out_column)
 {
-    size_t history = 0;
-    (void)termole_session_get_scrollback_line_count(view->session, &history);
     const int column = (int)(GET_X_LPARAM(point) / termole_gdi_cell_width(view->renderer));
     const int row = (int)(GET_Y_LPARAM(point) / termole_gdi_cell_height(view->renderer));
-    const int viewport_rows = view->rows > 0 ? view->rows : 1;
-    int document_row = (int)history - view->scroll_offset + (row < 0 ? 0 : row);
-    if (document_row < 0) document_row = 0;
-    const int total_rows = (int)history + viewport_rows;
-    if (document_row >= total_rows) document_row = total_rows - 1;
-    *out_row = document_row;
+    int document_row = view->viewport.first_document_row + (row < 0 ? 0 : row);
+    if (document_row >= view->viewport.document_rows) document_row = view->viewport.document_rows - 1;
+    *out_row = document_row < 0 ? 0 : document_row;
     *out_column = column < 0 ? 0 : column;
 }
 
@@ -242,30 +237,12 @@ static void paint(termole_cview* view, HDC hdc)
     if (!GetClientRect(view->window, &client)) return;
     resize_grid(view, client.right - client.left, client.bottom - client.top);
 
-    size_t required = 0;
-    if (termole_session_snapshot(view->session, view->scroll_offset, NULL, 0, &required) != TERMOLE_STATUS_OK)
+    if (termole_session_read_viewport(view->session, view->scroll_offset, &view->viewport) !=
+        TERMOLE_STATUS_OK)
         return;
-    if (required > view->capacity) {
-        termole_cell* grown = realloc(view->cells, required * sizeof(termole_cell));
-        if (!grown) return;
-        view->cells = grown;
-        view->capacity = required;
-    }
-    if (termole_session_snapshot(view->session, view->scroll_offset, view->cells, view->capacity, &required) !=
-        TERMOLE_STATUS_OK) {
-        return;
-    }
 
-    uint16_t session_columns = view->columns;
-    uint16_t session_rows = view->rows;
-    (void)termole_session_get_size(view->session, &session_columns, &session_rows);
-    termole_frame frame;
-    memset(&frame, 0, sizeof(frame));
-    frame.columns = session_columns;
-    frame.rows = session_rows;
+    termole_frame* frame = &view->viewport.frame;
     if (view->selection_active) {
-        size_t history = 0;
-        (void)termole_session_get_scrollback_line_count(view->session, &history);
         const bool forward = view->selection_anchor_row < view->selection_focus_row ||
             (view->selection_anchor_row == view->selection_focus_row &&
              view->selection_anchor_column <= view->selection_focus_column);
@@ -273,27 +250,18 @@ static void paint(termole_cview* view, HDC hdc)
         const int last_row = forward ? view->selection_focus_row : view->selection_anchor_row;
         const int first_column = forward ? view->selection_anchor_column : view->selection_focus_column;
         const int last_column = forward ? view->selection_focus_column : view->selection_anchor_column;
-        for (uint16_t row = 0; row < session_rows; ++row) {
-            const int document_row = (int)history - view->scroll_offset + row;
+        for (uint16_t row = 0; row < frame->rows; ++row) {
+            const int document_row = view->viewport.first_document_row + row;
             if (document_row < first_row || document_row > last_row) continue;
             const int begin = document_row == first_row ? first_column : 0;
-            const int end = document_row == last_row ? last_column : session_columns - 1;
-            for (uint16_t column = 0; column < session_columns; ++column) {
+            const int end = document_row == last_row ? last_column : frame->columns - 1;
+            for (uint16_t column = 0; column < frame->columns; ++column) {
                 if ((int)column < begin || (int)column > end) continue;
-                const size_t index = (size_t)row * session_columns + column;
-                if (index < required) view->cells[index].selected = 1;
+                frame->cells[(size_t)row * frame->columns + column].selected = 1;
             }
         }
     }
-    frame.cells = view->cells;
-    uint16_t cursor_column = 0;
-    uint16_t cursor_row = 0;
-    int cursor_visible = 0;
-    (void)termole_session_get_cursor(view->session, &cursor_column, &cursor_row, &cursor_visible);
-    frame.cursor_column = cursor_column;
-    frame.cursor_row = cursor_row;
-    frame.cursor_visible = (uint8_t)(view->scroll_offset == 0 && cursor_visible);
-    termole_gdi_paint(view->renderer, hdc, &frame, 1);
+    termole_gdi_paint(view->renderer, hdc, frame, 1);
     ++view->paint_count;
 }
 
@@ -493,7 +461,7 @@ void termole_cview_destroy(termole_cview* view)
         DestroyWindow(view->window);
     }
     termole_gdi_destroy(view->renderer);
-    free(view->cells);
+    termole_free(view->viewport.frame.cells);
     free(view);
 }
 

@@ -6,6 +6,7 @@
 #include "core/frame.h"
 #include "core/screen.h"
 #include "platform/windows_pty.h"
+#include "session/viewport.h"
 
 #include <termole/core.h>
 #include <termole/termole.h>
@@ -44,6 +45,7 @@ public:
     Result<void> terminate();
 
     [[nodiscard]] Snapshot snapshot(int scroll_offset = 0) const;
+    termole_status read_viewport(int scroll_offset, termole_viewport& out) const;
     [[nodiscard]] std::optional<SessionFrame> frame_after(uint64_t revision) const;
     [[nodiscard]] termole_modes modes() const;
     [[nodiscard]] std::pair<uint16_t, uint16_t> size() const;
