@@ -66,11 +66,12 @@ int main(void)
 
     termole_free(NULL); /* documented no-op */
 
-    /* Pause on the alternate screen so the C consumer can observe both screens. */
+    /* Synchronize on child output before sampling each screen. */
     options = (termole_session_options)TERMOLE_SESSION_OPTIONS_INIT;
     options.program = L"cmd.exe";
     const wchar_t* argv[] = { L"/d", L"/q", L"/c",
-        L"echo \x1b[?1049hALT-READY & pause >nul & echo \x1b[?1049l & exit /b 3" };
+        L"echo PRIMARY-READY & pause >nul & echo \x1b[?1049hALT-READY & "
+        L"pause >nul & echo \x1b[?1049l & exit /b 3" };
     options.arguments = argv;
     options.argument_count = 4;
     options.columns = 40;
@@ -82,8 +83,12 @@ int main(void)
         check(termole_session_is_running(session, &(int){ 0 }) == TERMOLE_STATUS_OK,
               "running query succeeds");
         termole_modes modes;
+        check(wait_for_text(session, "PRIMARY-READY"), "child is on its primary screen");
+        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK &&
+                  modes.alternate_screen == 0, "C consumer sees the initial primary screen");
+        check(termole_session_write(session, "\r", 1) == TERMOLE_STATUS_OK, "enter alternate screen");
         check(wait_for_text(session, "ALT-READY"), "child has switched to the alternate screen");
-        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK && modes.alternate_screen,
+        check(termole_session_get_modes(session, &modes) == TERMOLE_STATUS_OK && modes.alternate_screen == 1,
               "C consumer sees the active alternate screen");
         check(termole_session_write(session, "\r", 1) == TERMOLE_STATUS_OK, "resume child");
         for (int i = 0; i < 200; ++i) {
@@ -131,7 +136,8 @@ int main(void)
             check(cells[0].codepoint_count <= TERMOLE_CELL_MAX_CODEPOINTS,
                   "snapshot cell codepoints are bounded");
             free(cells);
-        }        termole_session_destroy(session);
+        }
+        termole_session_destroy(session);
     }
 
     if (failures != 0) {

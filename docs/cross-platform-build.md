@@ -114,7 +114,7 @@ cmake --workflow --preset windows-mingw
 cmake --workflow --preset windows-mingw-release
 ```
 
-工作流先构建和运行已注册的测试，再用 CPack 生成 ZIP 和 `.sha256`。最后一步校验摘要，把 ZIP 解压到含中文和空格的新目录，核对文件、文档链接、程序版本和文件选择脚本的空目录行为。命令输出给出本次解压目录。只复核已有 ZIP 可运行 `cmake --build --preset windows-verify-zip`。
+工作流先构建和运行已注册的测试，再用 CPack 生成 ZIP 和 `.sha256`。最后一步校验摘要，把 ZIP 解压到含中文和空格的新目录，并检查随包文件、文档链接和程序版本。它通过包内文件选择脚本核对空目录、无效目录和缺少 fzf 时的标准流与退出码。命令输出给出本次解压目录。复核已有 ZIP 可运行 `cmake --build --preset windows-verify-zip`。
 
 在输出的目录打开 Windows PowerShell 5.1，通过 README 的两条入口体验终端及真实 fzf 文件选择，按 [AV1](https://github.com/Coh1e/termole/issues/43) 逐项检查选择、预览、取消、并发、焦点、中文输入法和首次可输入耗时；通过[本地插件示例](config.md#本地-quickjs-插件)核对编辑器收到的文本与菜单截图。验收记录写明源提交、工作树改动、包名、SHA-256、系统与 fzf 版本、实测结果及未执行项。新包使用新的验收记录。
 

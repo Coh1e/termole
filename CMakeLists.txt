@@ -123,7 +123,6 @@ if(TERMOLE_BUILD_APP)
   set(CPACK_PACKAGE_FILE_NAME "Termole-${PROJECT_VERSION}-win64")
   set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-  include(CPack)
   if(BUILD_TESTING AND TERMOLE_WITH_QUICKJS)
     add_custom_target(verify_release_zip
       COMMAND "${CMAKE_COMMAND}"
@@ -133,6 +132,7 @@ if(TERMOLE_BUILD_APP)
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_release_zip.cmake"
       VERBATIM)
   endif()
+  include(CPack)
 endif()
 
 if(TERMOLE_BUILD_SPIKES)

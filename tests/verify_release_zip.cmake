@@ -20,7 +20,9 @@ set(examples "${package}/share/termole/examples")
 foreach(path IN ITEMS bin/termole.exe LICENSE THIRD_PARTY_NOTICES.md licenses/quickjs.txt
     licenses/libghostty-vt.txt docs/architecture.md share/termole/examples/select-file.ps1
     share/termole/examples/preview-file.ps1 share/termole/examples/markdown-quote.js
-    share/termole/examples/markdown-quote.toml)
+    share/termole/examples/markdown-quote.toml include/termole/termole.h
+    lib/termole.a lib/ghostty-vt-static.lib lib/cmake/termole/termoleConfig.cmake
+    share/termole/examples/sdk-host/CMakeLists.txt)
   if(NOT EXISTS "${package}/${path}")
     message(FATAL_ERROR "${filename} lacks ${path}")
   endif()
@@ -35,14 +37,21 @@ if(NOT version STREQUAL "Termole ${Version}")
   message(FATAL_ERROR "Unexpected packaged executable version: ${version}")
 endif()
 
-# Exercise the shipped script through Windows PowerShell without opening a window.
+# The documented preflight errors return before launching fzf. Give this child
+# an empty search path so a developer's installed fzf cannot mask the last case.
+function(check_preflight directory code expected_diagnostic)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env "PATH=" --
+      "${PowerShell}" -NoProfile -ExecutionPolicy Bypass -File
+      "${examples}/select-file.ps1" -Directory "${directory}"
+    WORKING_DIRECTORY "${package}" RESULT_VARIABLE status OUTPUT_VARIABLE output
+    ERROR_VARIABLE diagnostic TIMEOUT 15)
+  if(NOT status STREQUAL code OR NOT output STREQUAL "" OR NOT diagnostic MATCHES "${expected_diagnostic}")
+    message(FATAL_ERROR "Unexpected selection result for ${directory}: ${status} [${output}] [${diagnostic}]")
+  endif()
+endfunction()
 file(MAKE_DIRECTORY "${root}/empty")
-execute_process(COMMAND "${PowerShell}" -NoProfile -ExecutionPolicy Bypass -File
-    "${examples}/select-file.ps1" -Directory "${root}/empty"
-  WORKING_DIRECTORY "${package}" RESULT_VARIABLE status OUTPUT_VARIABLE output
-  ERROR_VARIABLE diagnostic TIMEOUT 15)
-if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT diagnostic MATCHES "No files in directory")
-  message(FATAL_ERROR "Unexpected empty-directory result: ${status} [${output}] [${diagnostic}]")
-endif()
+check_preflight("${root}/empty" 1 "No files in directory")
+check_preflight("${root}/missing" 2 "Invalid directory")
+check_preflight("${package}" 2 "fzf.exe was not found on PATH")
 message(STATUS "Verified ${filename} SHA-256 ${digest}")
 message(STATUS "Use this extracted candidate for interactive acceptance: ${package}")
