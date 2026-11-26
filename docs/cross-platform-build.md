@@ -116,7 +116,13 @@ cmake --workflow --preset windows-mingw-release
 
 工作流先构建和运行已注册的测试，再用 CPack 生成 ZIP 和 `.sha256`。最后一步校验摘要，把 ZIP 解压到含中文和空格的新目录，并检查随包文件、文档链接和程序版本。它通过包内文件选择脚本核对空目录、无效目录和缺少 fzf 时的标准流与退出码。命令输出给出本次解压目录。复核已有 ZIP 可运行 `cmake --build --preset windows-verify-zip`。
 
-在输出的目录打开 Windows PowerShell 5.1，通过 README 的两条入口体验终端及真实 fzf 文件选择，按 [AV1](https://github.com/Coh1e/termole/issues/43) 逐项检查选择、预览、取消、并发、焦点、中文输入法和首次可输入耗时；通过[本地插件示例](config.md#本地-quickjs-插件)核对编辑器收到的文本与菜单截图。验收记录写明源提交、工作树改动、包名、SHA-256、系统与 fzf 版本、实测结果及未执行项。新包使用新的验收记录。
+在输出的解压目录打开 Windows PowerShell 5.1，按 [README 快速开始](../README.md#快速开始)打开默认 Shell 和文件选择窗口。随后完成以下桌面检查。
+
+1. 在测试目录准备 `中文目标.txt` 和 `alpha.txt`，从前台 PowerShell 运行随包 `select-file.ps1 -Directory <测试目录>`。直接用中文输入法键入 `zhongwen`，选词“中文”，查看预览并按 Enter。核对返回的完整中文路径和 `$LASTEXITCODE`。从后台召出窗口时，记录窗口可见、点击后能输入的过程。保留候选窗和提交后的画面。
+2. 在预览运行时分别用 Esc 和关窗取消，检查脚本输出、退出码和子进程回收。并发打开两个选择器，取消其中一个，再从另一个选回文件。冷启动使用固定的候选和窗口设置，从调用脚本计时至首个按键产生预期选择。预览边界和各情境的预期结果见 [Applet 规格](https://github.com/Coh1e/termole/issues/31)及 [AV1 验收](https://github.com/Coh1e/termole/issues/43)。
+3. 启用随包 QuickJS 示例，选中两行中英文，执行菜单命令并粘贴到编辑器。用两个窗口确认命令读取打开菜单的视图，再停用插件并重启，检查菜单项消失。[配置示例](config.md#本地-quickjs-插件) · [菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
+
+验收记录写明源提交、工作树改动、包名、SHA-256、系统与 fzf 版本、实测结果及未执行项。新包使用新的验收记录。
 
 - Windows 标准包启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。引擎及示例插件的契约测试为 `script_abi_stub`。
 - 技术探针通过 `-DTERMOLE_BUILD_SPIKES=ON` 启用。fzf 相关测试按工具可用性注册，详见[验证指南](agents/testing.md)。

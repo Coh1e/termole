@@ -37,11 +37,11 @@ flowchart LR
 1. **读取输出。** Windows 的 `WindowsPty` 为进程连接 ConPTY，`NativeSession::read_loop` 从输出管道读取字节。Linux/macOS 的 `spawn_posix_pty` 建立主从端，把子程序的标准流接到从端。父进程的 `PosixSession::read_loop` 经主端读取字节。两条路径都在会话锁内调用 `termole_vt_feed`。
 2. **形成画面。** 共享 VT 核心处理文本和控制序列，维护字符、颜色、光标、主屏与备用屏以及回滚历史。Windows 的 `NativeSession::snapshot` 按视图的回滚位置取出一屏，包括宽字符及其后续单元格。默认视图在 `NativeView::paint_client` 中叠加选区，再由 `Renderer::paint` 绘制。POSIX 的 `PosixSession::frame_after` 在版本变化时复制当前帧，SDL 窗口读取该副本并用 FreeType 绘制字形。
 3. **确定状态归属。** 回滚的内容属于会话的 VT。Windows 默认视图持有自己的 `scroll_offset_` 和选区端点，向上浏览历史不会改变子程序的光标。SDL 窗口用 `FrameSelection` 保存当前帧上的选区。可用的历史行和用户此刻看到的行是两个不同的值。
-4. **送回输入。** 用户按方向键时，Windows 的 `NativeSession::send_key` 和 SDL 窗口的按键处理都会读取应用光标键模式，再向 PTY 写入对应字节。粘贴读取系统剪贴板，按程序设置的括号粘贴模式决定是否加入起止序列。子程序读到输入后产生新输出，重新开始上述过程。终端对查询序列的自动应答也走 PTY 的写入方向，核心通过 `termole_vt_callbacks.write_pty` 将应答交给会话。
+4. **送回输入。** 用户按方向键时，Windows 的 `NativeSession::send_key` 和 SDL 窗口的按键处理都会读取应用光标键模式，再向 PTY 写入对应字节。粘贴读取系统剪贴板，按程序设置的括号粘贴模式决定是否加入起止序列。终端对查询序列的自动应答也走 PTY 的写入方向，核心通过 `termole_vt_callbacks.write_pty` 将应答交给会话。POSIX 会话的读线程继续排空子程序输出，写线程将排队的应答送回子程序。加入应答会使队列超过 1 MiB，或为应答分配内存失败时，会话关闭 PTY 并结束子程序。
 
 **实验 C 视图如何画准选区？** `src/gui/cview.c` 每次绘制调用一次私有接口 `termole_session_read_viewport`（`src/session/viewport.h`）。会话在同一把锁内复制网格尺寸、单元格、光标和当前视口的文档行范围。视图拥有这份副本，后续输出和缩放不会改变正在绘制的帧。
 
-会话将回滚偏移限制在当前可用历史行数内。向上滚动时，视口先显示历史行，再接上当前屏幕的行，并隐藏实时光标。C 视图用副本里的 `first_document_row` 将选区的文档行映射到可见行，在单元格上标记选区后交给 GDI。比如从有历史的主屏切到没有历史的备用屏，偏移会收回到零，第一个文档行仍画在窗口首行。
+会话将回滚偏移限制在当前可用历史行数内。向上滚动时，视口先显示历史行，再接上当前屏幕的行，并隐藏实时光标。鼠标拖出窗口时，C 视图将端点限制在已绘帧的行列内，再加上该帧的首个文档行号 `first_document_row`。绘制时按同一行号定位选区，交给 GDI 着色。从主屏切到没有历史的备用屏后，窗口第二行就对应备用屏第二行。
 
 修改各平台共用的 VT 行为，从 `include/termole/core.h` 和 `src/vt/termole_vt.c` 入手。C 接口使用字节、单元格和状态码。平台实现用 C++ 管理管道和线程的寿命，例如 `WindowsPty` 取得句柄后立即交给资源对象，部分初始化失败时由析构函数释放。若单元格已经正确，只有 Windows 默认窗口缺字或选区出现缝隙，先检查 `src/view/view.cpp` 交给 `src/view/renderer.cpp` 的快照和设备像素坐标。[跨平台 C 核心决策](adr/0016-portable-c-core.md) · [共享 VT 与视图决策](adr/0008-libghostty-vt-mingw-c-core.md)
 
@@ -102,14 +102,16 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | 控制序列如何改变屏幕和光标？ | `src/vt/termole_vt.c` 的 `termole_vt_feed`、`termole_vt_frame`、`termole_vt_modes`。Windows 的 `termole_session_get_modes` 从会话取得模式。 | `vt_adapter_contract`、`vt_adapter_<平台>` 检查单元格和模式。`c_abi_characterization` 经 Windows C 接口读取备用屏状态，`visual_alt_screen` 检查窗口中的文字像素。 | [ADR 0008](adr/0008-libghostty-vt-mingw-c-core.md) |
 | Windows 选择、粘贴和绘制要改哪里？ | `src/view/view.cpp` 的 `NativeView::paste`、`paint_client`，`src/view/renderer.cpp` 的 `Renderer::paint`。 | `visual_input_interaction`、`visual_input_standalone` 核对子程序收到的字节与窗口像素。 | [ADR 0008](adr/0008-libghostty-vt-mingw-c-core.md) |
-| 实验 C 视图如何避免缩放或切屏时选错行？ | `src/session/session.cpp` 的 `NativeSession::read_viewport`，`src/gui/cview.c` 的 `paint` 和 `document_cell_at`。 | `cview_contract` 的 `check_viewport_resizes` 在并发缩放时核对帧尺寸与文档行数。同一测试滚动主屏再切到备用屏，捕获 `cview-selection.png` 并检查首行选区像素。`cgui_visual` 检查独立实验窗口。 | [ADR 0008](adr/0008-libghostty-vt-mingw-c-core.md) |
+| 实验 C 视图如何避免缩放或切屏时选错行？ | `src/session/session.cpp` 的 `NativeSession::read_viewport`，`src/gui/cview.c` 的 `paint` 和 `document_cell_at`。 | `tests/visual/cview_test.cpp` 对应 `cview_contract`。它在滚动后的主屏将鼠标拖出底边和右边，再在备用屏第二行拖选，核对两次选中的文本与高亮像素。截图在构建目录的 `tests/visual/cview/` 下。它也在并发缩放时检查网格与首行。`cgui_visual` 检查独立实验窗口。 | [ADR 0008](adr/0008-libghostty-vt-mingw-c-core.md) |
 | fzf 的选择结果、取消和窗口清理如何验证？ | `apps/standalone/main.cpp` 的 `run_launcher`，`apps/standalone/gui.cpp` 的 `window_proc`，`src/platform/windows_pty.cpp` 的 `WindowsPty` | `t26_cli_pipelines` 核对真实管道字节，`t26_launcher` 核对退出状态、关窗取消与子进程退出。`visual_fzf_standalone` 捕获真实 fzf。 | [ADR 0006](adr/0006-terminal-selector-boundary.md) · [ADR 0007](adr/0007-console-launcher-wait.md) |
 | 如何检查 POSIX 终端、重连或嵌入视图的寿命？ | `src/platform/posix_session.cpp` 的 `PosixSession::read_loop`，`src/ipc/session_ipc.cpp` 的 `serve_connection`，`src/api/api.cpp` 的 `termole_view_destroy` | `posix_interactive_<平台>` 从子程序验证光标位置应答。`session_ipc_windows`、`session_ipc_<平台>` 验证重连。`t22_sdk_consumer` 从安装目录构建宿主，销毁视图后重新附加到同一会话。 | [ADR 0010](adr/0010-window-definitions.md) · [ADR 0017](adr/0017-native-embedding.md) |
 | 配置和脚本怎样影响当前视图？ | `apps/common/config.cpp` 的 `load_config`，`apps/standalone/gui.cpp` 的 `run_pipe_action`、`show_selection_menu`，`src/script/script.c` 的 `termole_plugin_invoke` | `t14_cli_config` 检查覆盖次序，`t25_pipe_e2e` 检查单向文本。`script_abi_stub` 在启用 QuickJS 时测试示例输出和异常时丢弃剪贴板文本。 | [ADR 0006](adr/0006-terminal-selector-boundary.md) · [ADR 0018](adr/0018-quickjs-plugins.md) |
 
 **实现与计划。** 上述终端、数据通道、嵌入、重连及按开关构建的视图和插件均有源码入口。ADR 0017 还采纳了按视图调整内边距、分别覆盖或撤销三种颜色的设计。当前 ABI 3 的 `termole_appearance` 只提供字体、字号和主题，相应的细粒度设置仍待实现。替换默认 Windows 视图需另行完成两种实现的输入法、回滚、选区和绘制对照验收。[视图定制决定](adr/0017-native-embedding.md) · [视图验收条件](adr/0008-libghostty-vt-mingw-c-core.md)
 
-**核对基准。** 本文以提交 `adbc611ece92` 及其工作树为起点。工作树中已有 Windows 默认视图的单击清除选区、输入法提交处理和选区背景像素对齐改动，相关说明及证据入口为 `docs/config.md`、`tests/host_api_test.cpp`、`tests/visual/visual_test.cpp` 和 `scripts/capture-window.ps1`。本轮备用屏模式和 POSIX 应答的依据分别在 `tests/c_abi_characterization_test.c` 和 `tests/posix_interactive_test.cpp`。
+**核对基准。** 在提交 `adbc611ece92` 中，Windows 默认视图已通过 `NativeView::paste` 处理括号粘贴，实验 C 视图通过 `termole_session_snapshot` 读取单元格，再单独查询光标。可以在该提交的 `src/view/view.cpp`、`src/gui/cview.c` 核对这两条调用链。后续提交 `7bc9468` 接通 POSIX 终端应答，`f2ed36b` 为 Windows 实验视图增加同帧读取，并修正备用屏状态查询。
+
+**工作树来源。** 此次审阅时，Windows 默认视图的单击清除选区、输入法提交和选区背景对齐还包含未提交的改动。对照 `src/view/view.cpp`、`src/view/view.h`、`src/view/renderer.cpp` 与基准提交可见其实现差异，对照 `docs/config.md`、`tests/host_api_test.cpp`、`tests/visual/visual_test.cpp` 和 `scripts/capture-window.ps1` 可见相应说明与验证方法。
 
 历史记录 `docs/fzf-blank-validation.md` 对应 2026-10-31 的 Windows 11 x64、MSVC Release、150% 缩放、fzf 0.74.5，保留了当时的截图及候选行和指针行的像素统计。当前包的验收需对应其实际构建和测试产物。[历史像素记录与截图](https://github.com/Coh1e/termole/blob/b15c73d117e0b8a79e06fa04d1a15d8879be4d74/docs/fzf-blank-validation.md)
 

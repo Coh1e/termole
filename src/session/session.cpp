@@ -381,7 +381,6 @@ namespace {
 struct BorrowedViewport {
     termole_frame frame;
     int first_document_row;
-    int document_rows;
     int history_rows_in_frame;
 
     template<class CellType, class Convert>
@@ -412,7 +411,6 @@ std::optional<BorrowedViewport> borrow_viewport(termole_vt* vt, int scroll_offse
         termole_vt_history_rows(vt, &history) != TERMOLE_CORE_OK) return std::nullopt;
     const int offset = std::clamp(scroll_offset, 0, static_cast<int>(history));
     BorrowedViewport viewport{ *frame, static_cast<int>(history) - offset,
-                               static_cast<int>(history) + frame->rows,
                                std::min<int>(offset, frame->rows) };
     if (offset) viewport.frame.cursor_visible = 0;
     return viewport;
@@ -454,7 +452,6 @@ termole_status NativeSession::read_viewport(int scroll_offset, termole_viewport&
     out.frame = frame;
     out.frame.cells = cells;
     out.first_document_row = viewport->first_document_row;
-    out.document_rows = viewport->document_rows;
     return TERMOLE_STATUS_OK;
 }
 

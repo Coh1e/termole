@@ -174,14 +174,21 @@ static int send_mouse(termole_cview* view, int button, int release)
     (void)termole_session_write(view->session, bytes, (size_t)length);
     return 1;
 }
+static int cell_at_pixel(int pixel, float cell_size, uint16_t count)
+{
+    if (pixel <= 0 || !count) return 0;
+    const int cell = (int)(pixel / cell_size);
+    return cell < count ? cell : count - 1;
+}
+
 static void document_cell_at(termole_cview* view, LPARAM point, int* out_row, int* out_column)
 {
-    const int column = (int)(GET_X_LPARAM(point) / termole_gdi_cell_width(view->renderer));
-    const int row = (int)(GET_Y_LPARAM(point) / termole_gdi_cell_height(view->renderer));
-    int document_row = view->viewport.first_document_row + (row < 0 ? 0 : row);
-    if (document_row >= view->viewport.document_rows) document_row = view->viewport.document_rows - 1;
-    *out_row = document_row < 0 ? 0 : document_row;
-    *out_column = column < 0 ? 0 : column;
+    const termole_frame* frame = &view->viewport.frame;
+    const int row = cell_at_pixel(GET_Y_LPARAM(point), termole_gdi_cell_height(view->renderer),
+                                  frame->rows);
+    *out_row = view->viewport.first_document_row + row;
+    *out_column = cell_at_pixel(GET_X_LPARAM(point), termole_gdi_cell_width(view->renderer),
+                                frame->columns);
 }
 
 static void copy_selection(termole_cview* view)

@@ -78,7 +78,8 @@ uint8_t channel(uint32_t pixel, int shift)
 
 namespace capture {
 
-bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error)
+bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error,
+            std::span<Sample> samples)
 {
     out_stats = Stats{};
     RECT rectangle{};
@@ -128,6 +129,7 @@ bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::
     BOOL printed = ::PrintWindow(hwnd, memory, PW_RENDERFULLCONTENT);
     if (!printed) printed = ::PrintWindow(hwnd, memory, 0);
     ::GdiFlush();
+    for (auto& sample : samples) sample.color = ::GetPixel(memory, sample.x, sample.y);
 
     const auto* pixels = static_cast<const uint32_t*>(bits);
     const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);

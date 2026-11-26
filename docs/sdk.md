@@ -34,6 +34,17 @@ target_link_libraries(my-host PRIVATE Termole::termole)
 `examples/sdk-host` 是可独立配置、编译的最小示例；`tests/sdk-consumer` 是覆盖全部
 宿主能力的验收宿主，两者都只使用公开头文件。
 
+在 Windows 11 x64 上，MSYS2 MinGW-w64 GCC 16.2.0 所带的 GNU ld 2.47.20260726
+用含中文的绝对路径打开静态库时会报告找不到文件，即使 CMake 已找到 SDK。可将包解压到
+全 ASCII 路径。已有中文路径的包可以保留在原处，从全 ASCII 路径的宿主项目根目录运行
+以下 PowerShell 命令，为同一目录创建联接。使用新的构建目录可以避开 CMake 缓存的旧路径。
+
+```powershell
+New-Item -ItemType Junction -Path .\termole-sdk -Target 'D:\便携 验收\Termole-0.1.0-win64'
+cmake -S . -B build-sdk -G "NMake Makefiles" -DCMAKE_CXX_COMPILER=g++.exe "-DCMAKE_PREFIX_PATH=$PWD\termole-sdk"
+cmake --build build-sdk
+```
+
 ## ABI 规则（冻结）
 
 | 项 | v0.1 规则 |

@@ -593,13 +593,16 @@ target_link_libraries(termole_gdi_render_test PRIVATE
   termole_vt_objects termole_build_options user32 gdi32)
 add_test(NAME gdi_render_contract COMMAND termole_gdi_render_test)
 set_tests_properties(gdi_render_contract PROPERTIES LABELS "adapter;domain")
-add_executable(termole_cview_test cview_test.cpp sdk-consumer/capture.cpp)
+add_executable(termole_cview_test visual/cview_test.cpp sdk-consumer/capture.cpp)
 target_include_directories(termole_cview_test PRIVATE
   "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(termole_cview_test PRIVATE termole termole_build_options user32 gdi32 windowscodecs ole32)
 set_target_properties(termole_cview_test PROPERTIES LINKER_LANGUAGE CXX)
 add_test(NAME cview_contract COMMAND termole_cview_test)
-set_tests_properties(cview_contract PROPERTIES LABELS "adapter;domain")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/visual/cview")
+set_tests_properties(cview_contract PROPERTIES
+  LABELS "adapter;domain;visual"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/visual/cview")
 if(TARGET termole_cgui_smoke)
   add_test(NAME cgui_smoke COMMAND termole_cgui_smoke --smoke)
   add_test(NAME cgui_product_smoke COMMAND termole_app --c-gui --smoke)

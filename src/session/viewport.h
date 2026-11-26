@@ -12,7 +12,6 @@ typedef struct termole_viewport {
     termole_frame frame;
     size_t capacity;
     int32_t first_document_row;
-    int32_t document_rows;
 } termole_viewport;
 
 /* Copies a single session revision. The caller may paint and mark selected

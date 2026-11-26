@@ -1,6 +1,7 @@
 #include <termole/cview.h>
 
-#include "sdk-consumer/capture.h"
+#include "../sdk-consumer/capture.h"
+#include "gui/gdi_render.h"
 #include "session/viewport.h"
 
 #include <objbase.h>
@@ -49,6 +50,56 @@ static bool wait_for_text(termole_session* session, const char* expected)
     return false;
 }
 
+static void drag(HWND window, int start_x, int start_y, int end_x, int end_y)
+{
+    SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(start_x, start_y));
+    SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(end_x, end_y));
+    SendMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(end_x, end_y));
+    RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+}
+
+static void check_selection_text(termole_cview* view, const std::string& expected,
+                                 const char* description)
+{
+    char* text = NULL;
+    size_t length = 0;
+    const auto status = termole_cview_get_selection_text(view, &text, &length);
+    const bool matches = status == TERMOLE_STATUS_OK && text && length == expected.size() &&
+                         memcmp(text, expected.data(), length) == 0;
+    if (!matches) fprintf(stderr, "Expected [%s], got [%s]\n", expected.c_str(), text ? text : "");
+    check(matches, description);
+    termole_free(text);
+}
+
+static bool has_selection_color(COLORREF pixel)
+{
+    return pixel != CLR_INVALID && GetBValue(pixel) > GetRValue(pixel) + 32;
+}
+
+static void check_selection_pixels(HWND window, const char* file, int x, int selected_y,
+                                   int outside_y)
+{
+    capture::Sample samples[] = { { x, selected_y }, { x, outside_y } };
+    capture::Stats pixels;
+    std::string error;
+    const ULONGLONG deadline = GetTickCount64() + 3000;
+    // Window composition can still show the preceding paint. Sample the same
+    // bitmap we save to disk and keep the final capture if the test fails.
+    do {
+        pump();
+        if (!capture::window(window, file, pixels, error, samples)) break;
+        if (has_selection_color(samples[0].color) && samples[1].color != CLR_INVALID &&
+            !has_selection_color(samples[1].color)) {
+            check(true, "captured highlight is on the selected row and clear on the adjacent row");
+            return;
+        }
+        Sleep(20);
+    } while (GetTickCount64() < deadline);
+    fprintf(stderr, "%s: selected=%#lx, adjacent=%#lx %s\n",
+            file, samples[0].color, samples[1].color, error.c_str());
+    check(false, "capture the selected row and its unselected neighbor");
+}
+
 static void check_viewport_resizes(termole_session* session)
 {
     check(termole_session_resize(session, 48, 8) == TERMOLE_STATUS_OK, "set initial viewport size");
@@ -72,14 +123,14 @@ static void check_viewport_resizes(termole_session* session)
                                    (frame.columns == 96 && frame.rows == 16);
         if (!expected_size || !frame.cells ||
             static_cast<size_t>(frame.columns) * frame.rows > viewport.capacity ||
-            viewport.first_document_row + frame.rows != viewport.document_rows) {
+            viewport.first_document_row != 0) {
             coherent = false;
             break;
         }
     }
     writer.join();
     termole_free(viewport.frame.cells);
-    check(resized && coherent, "copied frames match their grid and document rows during resize");
+    check(resized && coherent, "resized alternate-screen frames keep their grid and first row");
 }
 
 int main(void)
@@ -102,7 +153,7 @@ int main(void)
     options.program = L"cmd.exe";
     const wchar_t* args[] = { L"/d", L"/q", L"/c",
         L"(for /l %i in (1,1,60) do @echo C-VIEW-ROW-%i) & pause >nul & "
-        L"echo \x1b[?1049hALT-READY & pause >nul" };
+        L"echo \x1b[?1049h\x1b[2J\x1b[2;1HALT-READY & pause >nul" };
     options.arguments = args;
     options.argument_count = 4;
     options.columns = 80;
@@ -115,28 +166,21 @@ int main(void)
     check(termole_cview_create(parent, session, &view_options, &view) == TERMOLE_STATUS_OK,
           "C view created");
     if (view) {
-        ShowWindow(termole_cview_hwnd(view), SW_SHOW);
+        HWND window = termole_cview_hwnd(view);
+        ShowWindow(window, SW_SHOW);
         check(wait_for_text(session, "C-VIEW-ROW-60"), "child has filled the primary scrollback");
-        InvalidateRect(termole_cview_hwnd(view), NULL, TRUE);
-        RedrawWindow(termole_cview_hwnd(view), NULL, NULL,
-                     RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-        for (int index = 0; index < 100; ++index) {
-            pump();
-            Sleep(20);
-        }
+        RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
         check(termole_cview_paint_count(view) > 0, "C view painted");
-        RedrawWindow(termole_cview_hwnd(view), NULL, NULL,
-                     RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-        HDC dc = GetDC(termole_cview_hwnd(view));
+        HDC dc = GetDC(window);
         int ink = 0;
         if (dc) {
-            for (int y = 0; y < 300; y += 2) {
-                for (int x = 0; x < 600; x += 2) {
+            for (int y = 0; y < 96; y += 3) {
+                for (int x = 0; x < 140; x += 3) {
                     const COLORREF pixel = GetPixel(dc, x, y);
-                    if (pixel != RGB(12, 12, 12) && pixel != RGB(0, 0, 0)) ++ink;
+                    if (pixel != CLR_INVALID && GetRValue(pixel) > 64) ++ink;
                 }
             }
-            ReleaseDC(termole_cview_hwnd(view), dc);
+            ReleaseDC(window, dc);
         }
         check(ink > 20, "C view draws text pixels");
         termole_cview_set_selection(view, 0, 0, 23, 79);
@@ -147,30 +191,36 @@ int main(void)
                   selected && selected_size > 0,
               "C view selection text");
         termole_free(selected);
-        // The alternate screen has no history. A previous scroll offset must
-        // not move the View's selected document row outside that new frame.
-        HWND window = termole_cview_hwnd(view);
+        termole_gdi_renderer* metrics = termole_gdi_create(view_options.font_family,
+                                                           view_options.font_size, view_options.theme);
+        const int cell_width = (int)termole_gdi_cell_width(metrics);
+        const int cell_height = (int)termole_gdi_cell_height(metrics);
+        termole_gdi_destroy(metrics);
+        check(cell_width > 0 && cell_height > 0, "measure the configured GDI font");
+        const HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+        check(SUCCEEDED(com), "initialize the PNG encoder");
+
         SendMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
+        RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+        uint16_t columns = 0, rows = 0;
+        check(termole_session_get_size(session, &columns, &rows) == TERMOLE_STATUS_OK && rows > 1,
+              "read the displayed grid size");
+        const int last_y = (rows - 1) * cell_height + 2;
+        // The captured mouse can travel past the bottom and right of the HWND.
+        drag(window, 2, last_y, (columns + 2) * cell_width, (rows + 4) * cell_height);
+        std::string bottom_line = "C-VIEW-ROW-58";
+        bottom_line.resize(columns, ' ');
+        check_selection_text(view, bottom_line, "dragging outside stops at the last visible cell");
+        check_selection_pixels(window, "primary-selection.png", (columns - 2) * cell_width,
+                               last_y, last_y - cell_height);
+
         check(termole_session_write(session, "\r", 1) == TERMOLE_STATUS_OK, "switch screens");
         check(wait_for_text(session, "ALT-READY"), "child switched to its alternate screen");
-        termole_cview_set_selection(view, 0, 0, 0, 4);
         RedrawWindow(window, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-        const HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        capture::Stats pixels;
-        std::string error;
-        check(SUCCEEDED(com) && capture::window(window, "cview-selection.png", pixels, error),
-              "capture the selected alternate-screen row");
-        if (!error.empty()) fprintf(stderr, "%s\n", error.c_str());
+        drag(window, 2, cell_height + 2, 2 * cell_width + 2, cell_height + 2);
+        check_selection_text(view, "ALT", "dragging on the second alternate-screen row selects ALT");
+        check_selection_pixels(window, "alternate-selection.png", 2, cell_height + 2, 2);
         if (SUCCEEDED(com)) CoUninitialize();
-        dc = GetDC(window);
-        if (dc) {
-            const COLORREF top_cell = GetPixel(dc, 2, 2);
-            ReleaseDC(window, dc);
-            check(top_cell != CLR_INVALID && GetBValue(top_cell) > GetRValue(top_cell) + 32,
-                  "selection highlights the first alternate-screen row");
-        } else {
-            check(false, "obtain the C view pixels");
-        }
         termole_cview_clear_selection(view);
         check(termole_cview_get_selection_text(view, &selected, &selected_size) ==
                   TERMOLE_STATUS_INVALID_STATE,
