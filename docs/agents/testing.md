@@ -46,6 +46,11 @@ being replaced. Visible text, mouse selection and `WM_PRINTCLIENT` must agree
 with the painted grid. The test also checks that a hidden cursor can stay hidden
 while the View resumes drawing after output stops or a counter keeps updating.
 
+At the current DPI and at 192 DPI the test compares the complete short sentence
+with a same-DPI reference and checks its final `n.` against independently drawn
+glyphs. Both counter frames must show the complete sentence. The PNGs and pixel
+measurements are in `<build>/tests/visual/preview-redraw/`.
+
 Before changing the default View, run the same IME, selection, copy/paste, focus and window interaction scenarios on both implementations. Verify visible behavior with screenshots or pixel checks.
 
 For changes involving View, renderer, window placement or selector UI:
