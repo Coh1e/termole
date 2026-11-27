@@ -1,0 +1,89 @@
+﻿{
+    "Status":  "passed",
+    "SawLicense":  true,
+    "FirstShortMs":  592.2511,
+    "FirstCleanMs":  592.2511,
+    "Presentations":  6,
+    "Missed":  0,
+    "Masked":  0,
+    "Failures":  [
+
+                 ],
+    "Gaps":  [
+
+             ],
+    "Frames":  [
+                   {
+                       "Index":  0,
+                       "PresentMs":  -4.3171,
+                       "Image":  0,
+                       "State":  "GLOSSARY",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  64422,
+                       "TailInk":  42112,
+                       "FromGlossary":  42112,
+                       "FromLicense":  2150
+                   },
+                   {
+                       "Index":  2,
+                       "PresentMs":  25.313,
+                       "Image":  0,
+                       "State":  "GLOSSARY",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  64422,
+                       "TailInk":  42112,
+                       "FromGlossary":  42112,
+                       "FromLicense":  2150
+                   },
+                   {
+                       "Index":  3,
+                       "PresentMs":  292.2811,
+                       "Image":  1,
+                       "State":  "GLOSSARY",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  64674,
+                       "TailInk":  42224,
+                       "FromGlossary":  42056,
+                       "FromLicense":  2150
+                   },
+                   {
+                       "Index":  4,
+                       "PresentMs":  309.367,
+                       "Image":  2,
+                       "State":  "LICENSE",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  57709,
+                       "TailInk":  43932,
+                       "FromGlossary":  2150,
+                       "FromLicense":  43932
+                   },
+                   {
+                       "Index":  5,
+                       "PresentMs":  575.2049,
+                       "Image":  3,
+                       "State":  "LICENSE",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  58073,
+                       "TailInk":  44100,
+                       "FromGlossary":  2150,
+                       "FromLicense":  43932
+                   },
+                   {
+                       "Index":  6,
+                       "PresentMs":  592.2511,
+                       "Image":  4,
+                       "State":  "short",
+                       "Accumulated":  1,
+                       "Masked":  0,
+                       "DifferentPixels":  0,
+                       "TailInk":  0,
+                       "FromGlossary":  0,
+                       "FromLicense":  0
+                   }
+               ]
+}
