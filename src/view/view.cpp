@@ -21,6 +21,8 @@ namespace {
 
 constexpr wchar_t kViewClassName[] = L"TermoleViewWindow";
 constexpr UINT kRedrawMessage = WM_APP + 1;
+constexpr UINT_PTR kRedrawTimer = 1;
+constexpr UINT kMaxCursorHoldMs = 100;
 constexpr uint8_t kMouseButtonEventMode = 2;
 constexpr uint8_t kMouseAnyEventMode = 3;
 constexpr int kMouseMotionButton = 32;
@@ -322,6 +324,13 @@ LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPA
     case kRedrawMessage:
         ::InvalidateRect(window, nullptr, FALSE);
         return 0;
+    case WM_TIMER:
+        if (wparam != kRedrawTimer) return ::DefWindowProcW(window, message, wparam, lparam);
+        if (redraw_deadline_ && ::GetTickCount64() >= redraw_deadline_) {
+            ::KillTimer(window, kRedrawTimer);
+            ::InvalidateRect(window, nullptr, FALSE);
+        }
+        return 0;
     case WM_MOUSEWHEEL: {
         POINT point{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
         ::ScreenToClient(window, &point);
@@ -378,17 +387,45 @@ void NativeView::on_paint()
     ::EndPaint(window, &paint);
 }
 
+Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest)
+{
+    // ConPTY can spread one full-screen redraw over multiple reads between
+    // hiding and restoring the cursor. Keep the preceding grid for both paint
+    // paths. A program may also hide the cursor indefinitely: after the first
+    // deadline, paint normally until it shows the cursor again.
+    const bool live_alt = latest.alternate_screen && scroll_offset_ == 0;
+    if (live_alt && !latest.cursor_visible &&
+        last_visible_cursor_frame_.columns == latest.columns &&
+        last_visible_cursor_frame_.rows == latest.rows) {
+        const auto now = ::GetTickCount64();
+        if (!redraw_deadline_ && ::SetTimer(window, kRedrawTimer, kMaxCursorHoldMs, nullptr))
+            redraw_deadline_ = now + kMaxCursorHoldMs;
+        if (now < redraw_deadline_) return last_visible_cursor_frame_;
+    }
+    if (redraw_deadline_) {
+        ::KillTimer(window, kRedrawTimer);
+        redraw_deadline_ = 0;
+    }
+    if (live_alt && latest.cursor_visible) {
+        last_visible_cursor_frame_ = std::move(latest);
+        return last_visible_cursor_frame_;
+    }
+    last_visible_cursor_frame_ = {};
+    return latest;
+}
+
 void NativeView::paint_client(HWND window, HDC device)
 {
     RECT client{};
     ::GetClientRect(window, &client);
     bool painted = false;
     if (renderer_) {
-        Snapshot snapshot = session_->snapshot(scroll_offset_);
+        Snapshot latest = session_->snapshot(scroll_offset_);
+        Snapshot& snapshot = frame_for_paint(window, latest);
+        snapshot.has_selection = has_selection_;
         if (has_selection_) {
             const int history = static_cast<int>(session_->scrollback_line_count());
             const int first = history - scroll_offset_;
-            snapshot.has_selection = true;
             snapshot.selection_start_row = static_cast<int16_t>(selection_anchor_row_ - first);
             snapshot.selection_start_column = static_cast<int16_t>(selection_anchor_column_);
             snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);

@@ -210,8 +210,8 @@ target_link_libraries(termole_visual_child PRIVATE termole_build_options)
 add_executable(termole_input_child visual/t12_input_child.cpp)
 target_link_libraries(termole_input_child PRIVATE termole_build_options)
 
-add_executable(termole_visual_test visual/visual_test.cpp)
-target_link_libraries(termole_visual_test PRIVATE termole termole_build_options psapi)
+add_executable(termole_visual_test visual/visual_test.cpp sdk-consumer/capture.cpp)
+target_link_libraries(termole_visual_test PRIVATE termole termole_build_options psapi windowscodecs ole32)
 add_dependencies(termole_visual_test termole_visual_child termole_input_child termole_app)
 
 foreach(mode latency latency-standalone)
@@ -225,6 +225,12 @@ foreach(mode latency latency-standalone)
   set_tests_properties(visual_t21_${mode} PROPERTIES TIMEOUT 120 LABELS "visual" RUN_SERIAL TRUE
     WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 endforeach()
+
+add_test(NAME visual_preview_redraw COMMAND termole_visual_test
+  --mode preview-redraw --child "$<TARGET_FILE:termole_visual_child>"
+  --powershell "${TERMOLE_POWERSHELL}" --capture "${PROJECT_SOURCE_DIR}/scripts/capture-window.ps1"
+  --artifacts "${CMAKE_CURRENT_BINARY_DIR}/visual/preview-redraw")
+set_tests_properties(visual_preview_redraw PROPERTIES TIMEOUT 25 LABELS "visual" RUN_SERIAL TRUE)
 
 add_test(NAME visual_alt_screen COMMAND termole_visual_test
   --mode alt-screen

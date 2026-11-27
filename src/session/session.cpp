@@ -382,6 +382,9 @@ Snapshot NativeSession::snapshot(int scroll_offset) const
     result.cursor_column = frame.cursor_column;
     result.cursor_row = frame.cursor_row;
     result.cursor_visible = frame.cursor_visible != 0;
+    termole_modes modes{};
+    result.alternate_screen =
+        termole_vt_modes(vt_, &modes) == TERMOLE_CORE_OK && modes.alternate_screen;
     return result;
 }
 

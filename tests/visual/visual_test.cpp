@@ -11,8 +11,10 @@
 // signals. The pass criterion is the captured pixels.
 
 #include <termole/termole.hpp>
+#include "../sdk-consumer/capture.h"
 
 #include <windows.h>
+#include <objbase.h>
 #include <psapi.h>
 
 #include <algorithm>
@@ -169,7 +171,7 @@ std::optional<Options> parse_arguments(int argc, wchar_t** argv)
         options.capture.empty()) {
         std::cerr << "usage: termole_visual_test "
                      "--mode <alt-screen|fzf|fzf-interaction|fzf-standalone|input-interaction|"
-                     "input-standalone|latency|latency-standalone> "
+                     "input-standalone|latency|latency-standalone|preview-redraw> "
                      "--artifacts <dir> --powershell <powershell.exe> "
                      "--capture <capture-window.ps1> "
                      "[--child <alt_screen_child.exe>] [--input-child <t12_input_child.exe>] "
@@ -477,11 +479,12 @@ bool register_probe_class()
     return registered;
 }
 
-HWND create_probe_window(const std::wstring& title)
+HWND create_probe_window(const std::wstring& title, int width = kWindowWidth,
+                         int height = kWindowHeight)
 {
     const HWND window = ::CreateWindowExW(
-        0, kProbeClass, title.c_str(), WS_POPUP | WS_VISIBLE, 40, 40, kWindowWidth,
-        kWindowHeight, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+        0, kProbeClass, title.c_str(), WS_POPUP | WS_VISIBLE, 40, 40, width,
+        height, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
     if (window) {
         ::ShowWindow(window, SW_SHOWNORMAL);
         ::UpdateWindow(window);
@@ -616,6 +619,124 @@ int run_alt_screen(const Options& options)
     scenario.band_marker = "ALT-SCREEN PIXEL PROBE";
     scenario.band_check = "the known alt-screen line has non-background pixels";
     return run_view_scenario(options, session, scenario);
+}
+
+int run_preview_redraw(const Options& options)
+{
+    // Use the Applet's direct standard handles. The child sends the same VT
+    // operations as ConPTY's fzf redraw, one acknowledged pipe write at a time.
+    HANDLE read = nullptr, write = nullptr;
+    if (!::CreatePipe(&read, &write, nullptr, 0)) return 1;
+    using Handle = std::unique_ptr<void, decltype(&::CloseHandle)>;
+    Handle input(read, ::CloseHandle), writer(write, ::CloseHandle);
+    Handle output(::CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr), ::CloseHandle);
+    if (output.get() == INVALID_HANDLE_VALUE || !register_probe_class()) return 1;
+    termole::Session::Options target;
+    target.program = options.child;
+    target.arguments = { L"--preview-stream" };
+    target.stdin_handle = input.get();
+    target.stdout_handle = output.get();
+    auto session = termole::Session::create(target);
+    if (!session) {
+        std::cerr << session.error().message() << '\n';
+        return 1;
+    }
+    input.reset();
+    const auto window = create_probe_window(L"Termole preview redraw", 340, 160);
+    if (!window) return 1;
+    auto view = termole::View::create(*session, window);
+    if (!view) {
+        ::DestroyWindow(window);
+        return 1;
+    }
+    ::MoveWindow(view->hwnd(), 0, 0, 340, 160, TRUE);
+    pump_messages();
+
+    const auto send = [&](std::string_view vt, std::string_view phase) {
+        const std::string bytes = std::string(vt) + "\x1b]2;" + std::string(phase) + "\x07";
+        DWORD written = 0;
+        if (!::WriteFile(writer.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &written,
+                         nullptr) || written != bytes.size()) return false;
+        // OSC 2 acknowledges parsing the preceding cells, independently of painting.
+        const auto deadline = ::GetTickCount64() + 3000;
+        do {
+            if (const auto title = session->title(); title && *title == phase) return true;
+            pump_messages();
+            ::Sleep(1);
+        } while (::GetTickCount64() < deadline);
+        return false;
+    };
+    const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
+    const int x = static_cast<int>(view->cell_width() / 2);
+    const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail) {
+        // The colored first space identifies the header. Count actual glyph
+        // pixels in both old tail rows against a blank row in the same image.
+        std::vector<capture::Sample> points{
+            { x, static_cast<int>(1.5f * view->cell_height()) },
+            { x, static_cast<int>(5.5f * view->cell_height()) }
+        };
+        for (int y = static_cast<int>(3 * view->cell_height());
+             y < static_cast<int>(5 * view->cell_height()); ++y)
+            for (int col = 0; col < static_cast<int>(12 * view->cell_width()); ++col)
+                points.push_back({ col, y });
+        capture::Stats stats;
+        std::string error;
+        const auto png = options.artifacts / (std::string(name) + ".png");
+        if (!capture::window(view->hwnd(), png, stats, error, points)) {
+            std::cerr << "capture failed: " << error << '\n';
+            return false;
+        }
+        const auto ink = std::count_if(points.begin() + 2, points.end(), [&](const auto& pixel) {
+            return pixel.color != points[1].color;
+        });
+        std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink << '\n';
+        return points[0].color == header && (old_tail ? ink > 50 : ink == 0);
+    };
+
+    const HRESULT com = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool started = send("\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;30;55;220m Old header"
+                              "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h",
+                              "long");
+    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    check(started && capture_frame("01-long", old_color, true), "long preview is visible");
+
+    const bool partial = send("\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m",
+                              "partial");
+    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    check(partial && capture_frame("02-during-redraw", old_color, true),
+          "a paint between the new header and the tail erase still shows the complete old preview");
+    const bool committed = send("\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h", "short");
+    check(committed && capture_frame("03-short", new_color, false),
+          "the completed redraw shows the short preview and a clean tail");
+
+    const bool hidden = send("\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[0m",
+                             "hidden");
+    // An immediate paint also covers an already-queued WM_PAINT delivered while
+    // waiting for the acknowledgement. After this, only natural repaints count.
+    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    bool resumed = hidden && capture_frame("04-cursor-stays-hidden", old_color, false);
+    auto paints = view->paint_count();
+    const auto deadline = ::GetTickCount64() + 2500;
+    while (hidden && !resumed && ::GetTickCount64() < deadline) {
+        pump_messages();
+        if (paints != view->paint_count()) {
+            paints = view->paint_count();
+            resumed = capture_frame("04-cursor-stays-hidden", old_color, false);
+        }
+        ::Sleep(1);
+    }
+    check(resumed, "a program that keeps its cursor hidden gets a repaint without further output");
+    const bool main_screen = send("\x1b[?1049l\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Main screen"
+                                  "\x1b[0m", "main");
+    check(main_screen && capture_frame("05-main-screen", new_color, false),
+          "main-screen output is visible immediately with the cursor hidden");
+    if (SUCCEEDED(com)) ::CoUninitialize();
+    view->reset();
+    ::DestroyWindow(window);
+    writer.reset();
+    (void)session->terminate();
+    return failures ? 1 : 0;
 }
 
 int run_fzf(const Options& options)
@@ -2772,6 +2893,7 @@ int wmain(int argc, wchar_t** argv)
     }
 
     if (options->mode == L"alt-screen") return run_alt_screen(*options);
+    if (options->mode == L"preview-redraw") return run_preview_redraw(*options);
     if (options->mode == L"fzf") return run_fzf(*options);
     if (options->mode == L"fzf-interaction") return run_fzf_interaction(*options);
     if (options->mode == L"fzf-standalone") return run_fzf_standalone(*options);

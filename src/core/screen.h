@@ -36,6 +36,7 @@ struct Snapshot {
     uint16_t cursor_column = 0;
     uint16_t cursor_row = 0;
     bool cursor_visible = true;
+    bool alternate_screen = false;
     bool has_selection = false;
     int16_t selection_start_row = 0;
     int16_t selection_start_column = 0;

@@ -51,6 +51,19 @@ bool write_frame(std::string_view rgb, std::string_view label)
 
 int wmain(int argc, wchar_t** argv)
 {
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--preview-stream") {
+        // The --stdio data channel leaves stderr on Termole's VT output pipe.
+        // Forward each byte block verbatim so the test controls the redraw boundaries.
+        char buffer[1024];
+        DWORD count = 0;
+        while (::ReadFile(::GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &count,
+                          nullptr) && count) {
+            DWORD written = 0;
+            if (!::WriteFile(::GetStdHandle(STD_ERROR_HANDLE), buffer, count, &written,
+                             nullptr) || written != count) return 3;
+        }
+        return 0;
+    }
     ::SetConsoleOutputCP(CP_UTF8);
 
     if (argc == 2 && std::wstring_view(argv[1]) == L"--navigation") {

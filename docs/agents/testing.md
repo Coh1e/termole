@@ -28,6 +28,7 @@ ctest --preset windows-mingw -R t17_wrap --output-on-failure
 | Windows 启动器与 CLI | `t26_launcher` | 通过公开入口 `termole`、`-e`、`--stdio` 核对等待、退出码、管道字节、慢读端、取消、启动失败和控制台行为。内部角色 `--gui` 只用于窗口策略或几何测试。 |
 | 管道与并发调用 | `t26_cli_pipelines`、`t26_cli_parallel` | 前者在 CMD 和 PowerShell 中核对字节顺序、退出码、提前关闭、fzf 过滤和含 NUL 字节的文件重定向。后者核对并发 `-e` 的参数、工作目录与环境隔离。 |
 | 备用屏 | `vt_adapter_contract`、`c_abi_characterization`、`visual_alt_screen` | 依次检查 VT 模式、Windows 会话 C 接口报告的状态，以及实际窗口显示的文字。 |
+| Windows 默认视图的分段重绘 | `visual_preview_redraw` | 在写入短预览首行和擦除旧尾行之间强制绘制，检查首行和尾行的像素。随后恢复光标，检查完整短预览。另测子程序一直隐藏光标时视图能自行刷新。 |
 | 真实 fzf 画面与操作 | `visual_fzf`、`visual_fzf_interaction`、`visual_fzf_standalone` | 配置时找到 fzf 才注册。交互用例分别通过宿主视图和独立入口 `termole -e` 的 `WM_KEYDOWN`、`WM_CHAR` 驱动真实 fzf，逐步截图检查方向键、筛选、Enter 和 Esc。 |
 | 鼠标、选择与粘贴 | `visual_input_interaction`、`visual_input_standalone` | 两个入口均向视图发送鼠标和键盘消息。受控子程序 `tests/visual/t12_input_child.cpp` 打开鼠标模式、括号粘贴和应用光标键，记录真实 ConPTY 输入字节。测试把这些字节与固定行带的像素一并核对。 |
 
