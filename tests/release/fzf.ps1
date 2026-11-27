@@ -88,21 +88,23 @@ try {
     $firstDir = [IO.Directory]::CreateDirectory("$Evidence/first").FullName
     $secondDir = [IO.Directory]::CreateDirectory("$Evidence/second").FullName
     foreach ($leaf in 'first-alpha.txt','first-beta.txt') { [IO.File]::WriteAllText("$firstDir/$leaf", $leaf) }
-    # Each partial query has a shorter match. Only both committed characters select the target.
+    # fzf's end anchor makes each checkpoint select exactly one filename.
     $zhong = [char]0x4e2d
     $wen = [char]0x6587
-    $survivorName = [string]$zhong + $wen + '-target.txt'
+    $survivorName = 'target-' + $zhong + $wen
     [IO.File]::WriteAllText("$secondDir/0.txt", '[File unreadable]')
-    [IO.File]::WriteAllText("$secondDir/$zhong.txt", '[Binary file]')
-    [IO.File]::WriteAllText("$secondDir/$wen.txt", '[File unreadable]')
+    [IO.File]::WriteAllText("$secondDir/partial-$zhong", '[Binary file]')
     [IO.File]::WriteAllText("$secondDir/$survivorName", 'CURRENT PREVIEW')
     $first = Start-Applet $firstDir 'escape'
     $survivor = Start-Applet $secondDir 'survivor'
     $null = Wait-AppletPreview $survivor 'survivor-initial' $signatures['locked']
     Send-AppletMessage $survivor.View 258 ([int]$zhong)
+    Send-AppletMessage $survivor.View 258 ([int][char]'$')
     $null = Wait-AppletPreview $survivor 'survivor-first-character' $signatures['binary']
     Test-AppletCancel $first 'escape'
+    Send-AppletMessage $survivor.View 258 8  # Backspace removes the end anchor.
     Send-AppletMessage $survivor.View 258 ([int]$wen)
+    Send-AppletMessage $survivor.View 258 ([int][char]'$')
     $null = Wait-AppletPreview $survivor 'survivor' $signatures['target']
     Send-AppletMessage $survivor.View 256 13
     Test-AppletResult $survivor 0 ((Join-Path $secondDir $survivorName) + "`r`n")

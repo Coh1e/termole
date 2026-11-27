@@ -12,7 +12,7 @@ public static class AppletWindow
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
 
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", EntryPoint = "PostMessageW", ExactSpelling = true, SetLastError = true)]
     public static extern bool PostMessage(IntPtr window, uint message, IntPtr key, IntPtr flags);
 
     [DllImport("user32.dll")]
