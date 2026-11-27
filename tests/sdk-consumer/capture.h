@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace capture {
@@ -19,10 +20,17 @@ struct Stats {
     bool print_window_ok = false;
 };
 
-// Captures hwnd with PrintWindow(PW_RENDERFULLCONTENT), writes a PNG for the
-// evidence trail, and returns tolerant pixel statistics. The caller decides
-// whether the numbers are acceptable; this helper asserts nothing.
-bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error);
+struct Sample {
+    int x, y;
+    COLORREF color = CLR_INVALID;
+};
+
+enum class Method { PrintWindow, PrintClient };
+
+// Captures hwnd, writes a PNG, and returns pixel statistics. PrintClient sends
+// WM_PRINTCLIENT synchronously to isolate the off-screen paint path.
+bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error,
+            std::span<Sample> samples = {}, Method method = Method::PrintWindow);
 
 bool write_stats(const std::filesystem::path& path, const Stats& stats, std::string& error);
 

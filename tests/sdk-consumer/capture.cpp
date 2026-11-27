@@ -78,7 +78,8 @@ uint8_t channel(uint32_t pixel, int shift)
 
 namespace capture {
 
-bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error)
+bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::string& error,
+            std::span<Sample> samples, Method method)
 {
     out_stats = Stats{};
     RECT rectangle{};
@@ -125,9 +126,17 @@ bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::
     std::memset(bits, 0, static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
     const HGDIOBJ previous = ::SelectObject(memory, bitmap);
 
-    BOOL printed = ::PrintWindow(hwnd, memory, PW_RENDERFULLCONTENT);
-    if (!printed) printed = ::PrintWindow(hwnd, memory, 0);
+    BOOL printed = TRUE;
+    if (method == Method::PrintClient) {
+        // PrintWindow may first dispatch a queued on-screen paint. To test a
+        // synchronous off-screen draw alone, send the client message directly.
+        ::SendMessageW(hwnd, WM_PRINTCLIENT, reinterpret_cast<WPARAM>(memory), PRF_CLIENT);
+    } else {
+        printed = ::PrintWindow(hwnd, memory, PW_RENDERFULLCONTENT);
+        if (!printed) printed = ::PrintWindow(hwnd, memory, 0);
+    }
     ::GdiFlush();
+    for (auto& sample : samples) sample.color = ::GetPixel(memory, sample.x, sample.y);
 
     const auto* pixels = static_cast<const uint32_t*>(bits);
     const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
@@ -159,7 +168,7 @@ bool window(HWND hwnd, const std::filesystem::path& png, Stats& out_stats, std::
     out_stats.ink_ratio =
         pixel_count == 0 ? 0.0 : static_cast<double>(ink) / static_cast<double>(pixel_count);
     out_stats.strong_pixels = strong;
-    out_stats.print_window_ok = printed != FALSE;
+    out_stats.print_window_ok = method == Method::PrintWindow && printed != FALSE;
 
     if (printed) (void)write_png(png, width, height, bits, error);
 

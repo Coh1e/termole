@@ -151,6 +151,7 @@ void NativeSession::read_loop()
         {
             std::lock_guard lock(mutex_);
             if (vt_) (void)termole_vt_feed(vt_, buffer.data(), *read);
+            last_output_tick_ = ::GetTickCount64();
             ++revision_;
         }
         if (data_event_) ::SetEvent(data_event_.get());
@@ -405,6 +406,11 @@ Snapshot NativeSession::snapshot(int scroll_offset) const
     result.cursor_column = frame->cursor_column;
     result.cursor_row = frame->cursor_row;
     result.cursor_visible = offset == 0 && frame->cursor_visible != 0;
+    termole_modes modes{};
+    result.first_document_row = static_cast<int>(history) - offset;
+    result.live_alternate_screen = offset == 0 &&
+        termole_vt_modes(vt_, &modes) == TERMOLE_CORE_OK && modes.alternate_screen;
+    result.last_output_tick = last_output_tick_;
     return result;
 }
 

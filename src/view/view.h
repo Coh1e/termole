@@ -60,7 +60,8 @@ private:
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     void on_size();
     void on_paint();
-    void paint_client(HWND window, HDC device);
+    void paint_client(HWND window, HDC device, bool print = false);
+    Snapshot& frame_for_paint(HWND window, Snapshot& latest, bool print);
     void on_character(wchar_t character);
     void on_key_down(WPARAM key);
     void position_ime();
@@ -81,6 +82,9 @@ private:
     HWND parent_ = nullptr;
     std::atomic<HWND> window_{ nullptr };
     std::unique_ptr<Renderer> renderer_;
+    Snapshot last_visible_cursor_frame_;
+    ULONGLONG redraw_deadline_ = 0;
+    size_t remaining_glyphs_ = 0;
     Appearance appearance_;
     std::thread watcher_;
     HANDLE stop_event_ = nullptr;

@@ -40,6 +40,12 @@ target would stop proving that the development package is sufficient.
 
 ## UI evidence
 
+Run `visual_preview_redraw` when changing how the Windows View paints a partial
+alternate-screen redraw. It holds the previous frame while the old text is
+being replaced. Visible text, mouse selection and `WM_PRINTCLIENT` must agree
+with the painted grid. The test also checks that a hidden cursor can stay hidden
+while the View resumes drawing after output stops or a counter keeps updating.
+
 Before changing the default View, run the same IME, selection, copy/paste, focus and window interaction scenarios on both implementations. Verify visible behavior with screenshots or pixel checks.
 
 For changes involving View, renderer, window placement or selector UI:
