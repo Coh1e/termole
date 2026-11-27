@@ -694,7 +694,9 @@ int run_preview_redraw(const Options& options)
     const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
     std::vector<COLORREF> long_tail;
     const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail,
-                                   std::optional<COLORREF> footer = std::nullopt) {
+                                   std::optional<COLORREF> footer = std::nullopt,
+                                   std::vector<COLORREF>* counter = nullptr,
+                                   capture::Method method = capture::Method::PrintWindow) {
         RECT client{};
         if (!::GetClientRect(view->hwnd(), &client)) return false;
         const int x = static_cast<int>(view->cell_width() / 2);
@@ -707,16 +709,27 @@ int run_preview_redraw(const Options& options)
              y < static_cast<int>(5 * view->cell_height()); ++y)
             for (int col = 0; col < client.right; ++col)
                 points.push_back({ col, y });
+        const auto tail_end = points.size();
+        if (counter) {
+            for (int y = static_cast<int>(6 * view->cell_height());
+                 y < static_cast<int>(7 * view->cell_height()); ++y)
+                for (int col = 0; col < static_cast<int>(4 * view->cell_width()); ++col)
+                    points.push_back({ col, y });
+        }
         capture::Stats stats;
         std::string error;
         const auto png = options.artifacts / (std::string(name) + ".png");
-        if (!capture::window(view->hwnd(), png, stats, error, points)) {
+        if (!capture::window(view->hwnd(), png, stats, error, points, method)) {
             std::cerr << "capture failed: " << error << '\n';
             return false;
         }
         std::vector<COLORREF> tail;
-        tail.reserve(points.size() - 3);
-        for (auto it = points.begin() + 3; it != points.end(); ++it) tail.push_back(it->color);
+        tail.reserve(tail_end - 3);
+        for (size_t i = 3; i < tail_end; ++i) tail.push_back(points[i].color);
+        if (counter) {
+            counter->clear();
+            for (size_t i = tail_end; i < points.size(); ++i) counter->push_back(points[i].color);
+        }
         const auto ink = std::count_if(tail.begin(), tail.end(), [&](COLORREF color) {
             return color != points[1].color;
         });
@@ -815,7 +828,13 @@ int run_preview_redraw(const Options& options)
         const bool parsed = wait_for_title(name);
         paint_view();
         pump_for(duration_ms);
-        const bool matched = capture_frame(name, header, old_tail);
+        std::vector<COLORREF> first_counter, next_counter;
+        bool matched = capture_frame(name, header, old_tail, {}, old_tail ? nullptr : &first_counter);
+        if (!old_tail && matched) {
+            pump_for(120);
+            matched = capture_frame("04-next-counter", header, false, {}, &next_counter) &&
+                first_counter != next_counter;
+        }
         output.request_stop();
         output.join();
         std::cout << name << " VT writes=" << writes << " largest gap=" << largest_gap << "ms\n";
@@ -885,11 +904,8 @@ int run_preview_redraw(const Options& options)
     check(view->paint_count() == paints_before_switch && view->selection_text() == "Old",
           "a mouse drag reads the still-visible alternate header after the main screen arrives");
 
-    capture::Stats print_stats;
-    std::string print_error;
-    check(capture::window(view->hwnd(), options.artifacts / "07-offscreen.png", print_stats,
-                          print_error, {}, capture::Method::PrintClient) && print_stats.strong_pixels > 50,
-          "the off-screen capture completes while the main-screen paint is queued");
+    check(capture_frame("07-offscreen", old_color, true, {}, nullptr, capture::Method::PrintClient),
+          "the off-screen capture draws the old header and complete tail while the main paint is queued");
     const auto before_display = view->viewport_text();
     check(view->paint_count() == paints_before_switch && before_display &&
               before_display->contains("Old header") && view->selection_text() == "Old",
@@ -902,7 +918,7 @@ int run_preview_redraw(const Options& options)
 
     ::SendMessageW(view->hwnd(), WM_DPICHANGED, MAKEWPARAM(192, 192), 0);
     size_probe();
-    check(send("\x1b[2J\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m\x1b[7;1H\x1b[?25h",
+    check(send("\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m\x1b[7;1H\x1b[?25h",
                "high-dpi") && capture_after_resize("08-high-dpi", new_color, false),
           "the 192 DPI preview and its blank reference row are inside the captured window");
     if (SUCCEEDED(com)) ::CoUninitialize();
