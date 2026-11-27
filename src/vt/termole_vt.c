@@ -355,7 +355,11 @@ termole_core_status termole_vt_modes(termole_vt* vt, termole_modes* out_modes)
     out_modes->mouse_sgr = (uint8_t)query_mode(vt, GHOSTTY_MODE_MOUSE_FORMAT_SGR);
     out_modes->bracketed_paste = (uint8_t)query_mode(vt, GHOSTTY_MODE_BRACKETED_PASTE);
     out_modes->application_cursor = (uint8_t)query_mode(vt, GHOSTTY_MODE_CURSOR_KEYS);
-    out_modes->alternate_screen = (uint8_t)query_mode(vt, GHOSTTY_MODE_ALT_SCREEN);
+    GhosttyTerminalScreen screen;
+    if (ghostty_terminal_get(vt->terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen) !=
+        GHOSTTY_SUCCESS)
+        return TERMOLE_CORE_INVALID_STATE;
+    out_modes->alternate_screen = screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
     return TERMOLE_CORE_OK;
 }
 
