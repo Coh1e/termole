@@ -669,12 +669,12 @@ int run_preview_redraw(const Options& options)
         return ::WriteFile(writer.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &written,
                            nullptr) && written == bytes.size();
     };
-    // OSC 2 acknowledges parsing the preceding cells, independently of painting.
+    // OSC 2 acknowledges parsing the preceding cells. The child and Session
+    // reader can both progress while the UI thread leaves WM_PAINT queued.
     const auto wait_for_title = [&](std::string_view phase) {
         const auto deadline = ::GetTickCount64() + 3000;
         do {
             if (const auto title = session->title(); title && *title == phase) return true;
-            pump_messages();
             ::Sleep(1);
         } while (::GetTickCount64() < deadline);
         return false;
@@ -683,18 +683,29 @@ int run_preview_redraw(const Options& options)
         return write_vt(std::string(vt) + "\x1b]2;" + std::string(phase) + "\x07") &&
                wait_for_title(phase);
     };
+    const auto paint_view = [&] {
+        ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    };
+    const auto send_and_paint = [&](std::string_view vt, std::string_view phase) {
+        if (!send(vt, phase)) return false;
+        paint_view();
+        return true;
+    };
     const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
-    const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail) {
-        // The colored first space identifies the header. Count actual glyph
-        // pixels in both old tail rows against a blank row in the same image.
+    std::vector<COLORREF> long_tail;
+    const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail,
+                                   std::optional<COLORREF> footer = std::nullopt) {
+        RECT client{};
+        if (!::GetClientRect(view->hwnd(), &client)) return false;
         const int x = static_cast<int>(view->cell_width() / 2);
         std::vector<capture::Sample> points{
             { x, static_cast<int>(1.5f * view->cell_height()) },
-            { x, static_cast<int>(5.5f * view->cell_height()) }
+            { x, static_cast<int>(5.5f * view->cell_height()) },
+            { x, static_cast<int>(6.5f * view->cell_height()) }
         };
         for (int y = static_cast<int>(3 * view->cell_height());
              y < static_cast<int>(5 * view->cell_height()); ++y)
-            for (int col = 0; col < static_cast<int>(12 * view->cell_width()); ++col)
+            for (int col = 0; col < client.right; ++col)
                 points.push_back({ col, y });
         capture::Stats stats;
         std::string error;
@@ -703,14 +714,27 @@ int run_preview_redraw(const Options& options)
             std::cerr << "capture failed: " << error << '\n';
             return false;
         }
-        const auto ink = std::count_if(points.begin() + 2, points.end(), [&](const auto& pixel) {
-            return pixel.color != points[1].color;
+        std::vector<COLORREF> tail;
+        tail.reserve(points.size() - 3);
+        for (auto it = points.begin() + 3; it != points.end(); ++it) tail.push_back(it->color);
+        const auto ink = std::count_if(tail.begin(), tail.end(), [&](COLORREF color) {
+            return color != points[1].color;
         });
-        std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink << '\n';
         const bool in_bounds = std::none_of(points.begin(), points.end(), [](const auto& pixel) {
             return pixel.color == CLR_INVALID;
         });
-        return in_bounds && points[0].color == header && (old_tail ? ink > 50 : ink == 0);
+        if (name == "01-long" && in_bounds && points[0].color == header && ink > 50)
+            long_tail = tail;
+        const bool same_tail = !long_tail.empty() && tail == long_tail;
+        const auto stats_path = options.artifacts / (std::string(name) + ".txt");
+        if (!capture::write_stats(stats_path, stats, error)) return false;
+        std::ofstream details(stats_path, std::ios::app);
+        details << "header=" << points[0].color << "\nfooter=" << points[2].color
+                << "\ntailInkPixels=" << ink << "\nmatchesLongTail=" << same_tail << '\n';
+        std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink
+                  << " matches long tail=" << same_tail << '\n';
+        return details.good() && in_bounds && points[0].color == header &&
+               (!footer || points[2].color == *footer) && (old_tail ? same_tail : ink == 0);
     };
     // Window creation and DPI changes can produce an empty capture while the
     // backing surface settles. Only the two stationary setup frames may retry.
@@ -733,8 +757,7 @@ int run_preview_redraw(const Options& options)
     const bool started = send(long_preview, "long");
     check(started && capture_after_resize("01-long", old_color, true), "long preview is visible");
 
-    const bool partial = send(short_header, "partial");
-    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    const bool partial = send_and_paint(short_header, "partial");
     check(partial && capture_frame("02-during-redraw", old_color, true),
           "a paint between the new header and the tail erase still shows the complete old preview");
     const auto held_text = view->viewport_text();
@@ -746,7 +769,7 @@ int run_preview_redraw(const Options& options)
 
     constexpr std::string_view finish_short =
         "\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h";
-    const bool committed = send(finish_short, "short");
+    const bool committed = send_and_paint(finish_short, "short");
     check(committed && capture_frame("03-short", new_color, false),
           "the completed redraw shows the short preview and a clean tail");
     const auto short_text = view->viewport_text();
@@ -790,7 +813,7 @@ int run_preview_redraw(const Options& options)
             }
         });
         const bool parsed = wait_for_title(name);
-        ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+        paint_view();
         pump_for(duration_ms);
         const bool matched = capture_frame(name, header, old_tail);
         output.request_stop();
@@ -798,18 +821,16 @@ int run_preview_redraw(const Options& options)
         std::cout << name << " VT writes=" << writes << " largest gap=" << largest_gap << "ms\n";
         return parsed && wrote && writes > 1 && matched;
     };
-    check(send(long_preview, "slow-long") && capture_frame("02-before-slow", old_color, true),
+    check(send_and_paint(long_preview, "slow-long") && capture_frame("02-before-slow", old_color, true),
           "the slow redraw starts from the complete long preview");
     check(capture_stream("02-slow-redraw", 1250, old_color, true),
           "the slow redraw retains a complete frame while the child is still erasing old text");
-    check(send(finish_short, "slow-short") && capture_frame("03-after-slow", new_color, false),
+    check(send_and_paint(finish_short, "slow-short") && capture_frame("03-after-slow", new_color, false),
           "the short preview is clean after the slower redraw completes");
 
-    const bool hidden = send("\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[0m",
-                             "hidden");
-    // An immediate paint also covers an already-queued WM_PAINT delivered while
-    // waiting for the acknowledgement. After this, only natural repaints count.
-    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+    // After this first paint only natural repaints count towards the timeout.
+    const bool hidden = send_and_paint(
+        "\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[0m", "hidden");
     bool resumed = hidden && capture_frame("04-cursor-stays-hidden", old_color, false);
     auto paints = view->paint_count();
     const auto deadline = ::GetTickCount64() + 2500;
@@ -822,15 +843,19 @@ int run_preview_redraw(const Options& options)
         ::Sleep(1);
     }
     check(resumed, "a program that keeps its cursor hidden gets a repaint without further output");
+    check(send_and_paint("\x1b[7;1H\x1b[48;2;220;30;55m \x1b[0m", "hidden-footer") &&
+              capture_frame("04-hidden-footer", old_color, false, new_color),
+          "the hidden-cursor program displays its next update after repainting resumes");
 
     // Start another hidden-cursor interval, this time with continuous output.
     // The program never explicitly commits a frame by showing the cursor.
-    check(send("\x1b[?25h", "visible") && capture_frame("04-before-stream", old_color, false),
+    check(send_and_paint("\x1b[?25h", "visible") && capture_frame("04-before-stream", old_color, false),
           "the starting frame for the continuous output case is visible");
     check(capture_stream("04-continuous-output", 1800, new_color, false),
           "continuous output advances while the program keeps the cursor hidden");
-    const bool main_screen = send("\x1b[?1049l\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Main screen"
-                                  "\x1b[0m", "main");
+    constexpr std::string_view main_preview =
+        "\x1b[?1049l\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Main screen\x1b[0m";
+    const bool main_screen = send_and_paint(main_preview, "main");
     check(main_screen && capture_frame("05-main-screen", new_color, false),
           "main-screen output is visible immediately with the cursor hidden");
 
@@ -838,11 +863,42 @@ int run_preview_redraw(const Options& options)
     for (int i = 0; i < 40; ++i) history += "history line\r\n";
     check(send(history, "history"), "main-screen history is ready");
     view->scroll(5);
-    check(send(long_preview, "scrolled-long") && capture_frame("06-scrolled-long", old_color, true),
+    check(send_and_paint(long_preview, "scrolled-long") && capture_frame("06-scrolled-long", old_color, true),
           "entering the alternate screen from scrollback displays the live preview");
-    check(send(short_header, "scrolled-partial") &&
+    check(send_and_paint(short_header, "scrolled-partial") &&
               capture_frame("07-scrolled-partial", old_color, true),
           "the alternate-screen preview remains complete after scrolling the main screen");
+
+    // Return to a main screen with history while the previous alternate screen
+    // is still visible. Reading the OSC acknowledgement does not pump WM_PAINT.
+    view->scroll(-100);
+    check(send_and_paint(long_preview, "mouse-long") && capture_frame("07-before-switch", old_color, true),
+          "the alternate header for mouse selection is visible");
+    const auto paints_before_switch = view->paint_count();
+    check(send(main_preview, "mouse-main"), "the main screen is parsed before its next window paint");
+    const int header_y = static_cast<int>(1.5f * view->cell_height());
+    const LPARAM first = MAKELPARAM(static_cast<int>(1.5f * view->cell_width()), header_y);
+    const LPARAM last = MAKELPARAM(static_cast<int>(3.5f * view->cell_width()), header_y);
+    ::SendMessageW(view->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, first);
+    ::SendMessageW(view->hwnd(), WM_MOUSEMOVE, MK_LBUTTON, last);
+    ::SendMessageW(view->hwnd(), WM_LBUTTONUP, 0, last);
+    check(view->paint_count() == paints_before_switch && view->selection_text() == "Old",
+          "a mouse drag reads the still-visible alternate header after the main screen arrives");
+
+    capture::Stats print_stats;
+    std::string print_error;
+    check(capture::window(view->hwnd(), options.artifacts / "07-offscreen.png", print_stats,
+                          print_error, {}, capture::Method::PrintClient) && print_stats.strong_pixels > 50,
+          "the off-screen capture completes while the main-screen paint is queued");
+    const auto before_display = view->viewport_text();
+    check(view->paint_count() == paints_before_switch && before_display &&
+              before_display->contains("Old header") && view->selection_text() == "Old",
+          "drawing into a capture DC leaves the displayed viewport and selection unchanged");
+    view->clear_selection();
+    paint_view();
+    const auto after_display = view->viewport_text();
+    check(after_display && after_display->contains("Main screen") && !after_display->contains("Old header"),
+          "painting the window advances the viewport to the main screen");
 
     ::SendMessageW(view->hwnd(), WM_DPICHANGED, MAKEWPARAM(192, 192), 0);
     size_probe();

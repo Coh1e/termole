@@ -296,7 +296,7 @@ LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPA
         on_paint();
         return 0;
     case WM_PRINTCLIENT:
-        paint_client(window, reinterpret_cast<HDC>(wparam));
+        paint_client(window, reinterpret_cast<HDC>(wparam), true);
         return 0;
     case WM_ERASEBKGND:
         return 1;
@@ -421,8 +421,14 @@ void NativeView::on_paint()
     ::EndPaint(window, &paint);
 }
 
-Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest)
+Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest, bool print)
 {
+    // A host can request a bitmap before the queued WM_PAINT. Printing must
+    // not commit a new grid to the View or update its presentation timer.
+    if (print && !last_visible_cursor_frame_.cells.empty()) return last_visible_cursor_frame_;
+    latest = session_->snapshot(scroll_offset_);
+    if (print) return latest;
+
     // ConPTY can spread one full-screen redraw over multiple reads between
     // hiding and restoring the cursor. Each new read extends the quiet period;
     // repaints and screenshots do not. While output continues, renew the hold
@@ -458,14 +464,14 @@ Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest)
     return latest;
 }
 
-void NativeView::paint_client(HWND window, HDC device)
+void NativeView::paint_client(HWND window, HDC device, bool print)
 {
     RECT client{};
     ::GetClientRect(window, &client);
     bool painted = false;
     if (renderer_) {
-        Snapshot latest = session_->snapshot(scroll_offset_);
-        Snapshot& snapshot = frame_for_paint(window, latest);
+        Snapshot latest;
+        Snapshot& snapshot = frame_for_paint(window, latest, print);
         snapshot.has_selection = has_selection_;
         if (has_selection_) {
             const int first = snapshot.first_document_row;
@@ -501,12 +507,16 @@ void NativeView::scroll(int lines)
 void NativeView::set_selection(int start_row, int start_column, int end_row, int end_column)
 {
     if (!session_) return;
-    const int history = static_cast<int>(session_->scrollback_line_count());
-    const int last = history + static_cast<int>(session_->size().second) - 1;
-    selection_anchor_row_ = std::clamp(start_row, 0, last);
-    selection_focus_row_ = std::clamp(end_row, 0, last);
-    selection_anchor_column_ = std::clamp(start_column, 0, static_cast<int>(session_->size().first) - 1);
-    selection_focus_column_ = std::clamp(end_column, 0, static_cast<int>(session_->size().first) - 1);
+    const Snapshot& frame = last_visible_cursor_frame_;
+    const bool cached = !frame.cells.empty();
+    const auto [columns, rows] = cached ? std::pair{frame.columns, frame.rows} : session_->size();
+    if (!columns || !rows) return;
+    const int first = cached ? frame.first_document_row : 0;
+    const int last = (cached ? first : static_cast<int>(session_->scrollback_line_count())) + rows - 1;
+    selection_anchor_row_ = std::clamp(start_row, first, last);
+    selection_focus_row_ = std::clamp(end_row, first, last);
+    selection_anchor_column_ = std::clamp(start_column, 0, columns - 1);
+    selection_focus_column_ = std::clamp(end_column, 0, columns - 1);
     has_selection_ = true;
     selecting_ = false;
     if (const HWND window = window_.load(std::memory_order_acquire))
@@ -601,13 +611,17 @@ bool NativeView::mouse_coordinates(int x, int y, int& row, int& column) const
         renderer_->cell_height() <= 0.0f) {
         return false;
     }
-    const auto [columns, rows] = session_->size();
+    const Snapshot& frame = last_visible_cursor_frame_;
+    const bool cached = !frame.cells.empty();
+    const auto [columns, rows] = cached ? std::pair{frame.columns, frame.rows} : session_->size();
+    if (!columns || !rows) return false;
     int screen_row = static_cast<int>(static_cast<float>(y) / renderer_->cell_height());
     int screen_column = static_cast<int>(static_cast<float>(x) / renderer_->cell_width());
     screen_row = std::clamp(screen_row, 0, static_cast<int>(rows) - 1);
     screen_column = std::clamp(screen_column, 0, static_cast<int>(columns) - 1);
-    const int history = static_cast<int>(session_->scrollback_line_count());
-    row = std::max(0, history - scroll_offset_) + screen_row;
+    const int first = cached ? frame.first_document_row :
+        std::max(0, static_cast<int>(session_->scrollback_line_count()) - scroll_offset_);
+    row = first + screen_row;
     column = screen_column;
     return true;
 }
