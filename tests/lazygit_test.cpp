@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -27,6 +28,19 @@ bool wait_for_text(termole::Session& session, std::string_view marker, int timeo
 int wmain(int argc, wchar_t** argv)
 {
     if (argc < 2) return 2;
+    // CTest records which Git settings were empty before it ran the first test.
+    if (const auto* indices = _wgetenv(L"TERMOLE_TEST_EMPTY_GIT_INDICES")) {
+        std::wistringstream empty(indices);
+        for (unsigned index; empty >> index;) {
+            const auto name = L"GIT_CONFIG_VALUE_" + std::to_wstring(index);
+            if (!::GetEnvironmentVariableW(name.c_str(), nullptr, 0) &&
+                ::GetLastError() == ERROR_ENVVAR_NOT_FOUND &&
+                !::SetEnvironmentVariableW(name.c_str(), L"")) {
+                std::cerr << "could not restore an empty Git setting for the test repository\n";
+                return 1;
+            }
+        }
+    }
     const std::filesystem::path lazygit = argv[1];
     const bool shell = argc > 2 && std::wstring_view(argv[2]) == L"shell";
     const auto repo = std::filesystem::temp_directory_path() /

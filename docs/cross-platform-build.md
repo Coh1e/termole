@@ -116,6 +116,8 @@ cmake --workflow --preset windows-mingw-release
 
 正式候选从干净提交构建。使用已解锁的 Windows 11 x64 交互桌面，将 `fzf.exe` 加入 PATH，预留系统剪贴板给窗口测试。使用上述 MinGW 工具链时，从全 ASCII 路径的仓库运行，测试会为含中文和空格的包路径创建 SDK 目录联接。[SDK 路径说明](sdk.md#构建外部宿主)
 
+从 Codex 或 PowerShell 7 运行同一预设时，ZIP 验收脚本使用 Windows PowerShell 5.1 自己的模块搜索路径。
+
 工作流依次完成构建、CTest、CPack、SHA-256 校验，再将最终 ZIP 解压到新目录。验证程序读取包内许可证、文档链接、版本、依赖和源码修订号，从包内 SDK 编译运行纯 C 宿主，再运行以下窗口场景。
 
 - 启动默认 Shell，检查子进程与窗口像素。

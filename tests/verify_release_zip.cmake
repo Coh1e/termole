@@ -48,7 +48,8 @@ endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DEXE=${app}" "-DOBJDUMP=${Objdump}"
   -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/CheckDeps.cmake" COMMAND_ERROR_IS_FATAL ANY)
 
-execute_process(COMMAND "${PowerShell}" -NoProfile -ExecutionPolicy Bypass -File
+include("${CMAKE_CURRENT_LIST_DIR}/release/WindowsPowerShell.cmake")
+execute_process(COMMAND ${zip_powershell} -File
     "${CMAKE_CURRENT_LIST_DIR}/check_package_markdown.ps1" -Root "${package}"
   WORKING_DIRECTORY "${package}" COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${app}" --version WORKING_DIRECTORY "${package}"
@@ -62,7 +63,7 @@ if(NOT EXISTS "${Fzf}")
 endif()
 function(run_check name)
   set(log "${record}/${name}.log")
-  execute_process(COMMAND "${PowerShell}" -NoProfile -STA -ExecutionPolicy Bypass
+  execute_process(COMMAND ${zip_powershell} -STA
     -File "${CMAKE_CURRENT_LIST_DIR}/release/${name}.ps1" -Package "${package}"
     -Evidence "${record}/${name}" ${ARGN} WORKING_DIRECTORY "${package}"
     RESULT_VARIABLE result OUTPUT_FILE "${log}" ERROR_FILE "${log}" TIMEOUT 300)

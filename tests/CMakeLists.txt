@@ -77,6 +77,18 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
 )
 
 find_program(TERMOLE_POWERSHELL NAMES powershell.exe REQUIRED)
+set(PowerShell "${TERMOLE_POWERSHELL}")
+include(release/WindowsPowerShell.cmake)
+set(caller_modules "${CMAKE_CURRENT_BINARY_DIR}/caller-modules")
+file(WRITE "${caller_modules}/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psm1"
+  "function Get-FileHash { throw 'Loaded the calling shell module' }\n")
+add_test(NAME release_powershell_hash COMMAND ${zip_powershell} -Command
+  "(Get-FileHash -InputStream ([IO.MemoryStream]::new([byte[]](97,98,99)))).Hash")
+# The caller's incompatible module shadows the Windows PowerShell implementation.
+# The expected value is SHA-256 of the three ASCII bytes 'abc'.
+set_tests_properties(release_powershell_hash PROPERTIES
+  ENVIRONMENT "PSModulePath=${caller_modules}"
+  PASS_REGULAR_EXPRESSION "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
 find_program(TERMOLE_FZF NAMES fzf.exe)
 find_program(TERMOLE_WSL NAMES wsl.exe)
 find_program(TERMOLE_NVIM NAMES nvim.exe)
@@ -132,6 +144,8 @@ set_tests_properties(t22_sdk_consumer PROPERTIES
 )
 
 if(TERMOLE_LAZYGIT)
+  set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/remember_empty_git_config.cmake")
   add_executable(termole_lazygit_test lazygit_test.cpp)
   target_link_libraries(termole_lazygit_test PRIVATE termole termole_build_options)
   add_test(NAME t19_lazygit COMMAND termole_lazygit_test "${TERMOLE_LAZYGIT}")
