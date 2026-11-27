@@ -51,6 +51,22 @@ with a same-DPI reference and checks its final `n.` against independently drawn
 glyphs. Both counter frames must show the complete sentence. The PNGs and pixel
 measurements are in `<build>/tests/visual/preview-redraw/`.
 
+Build the standalone Windows desktop collector and run the offline replay with
+the following commands. [Recorded frames from #54](https://github.com/Coh1e/termole/issues/54#issuecomment-7212010345)
+
+```sh
+cmake --build --preset windows-mingw --target termole_release_dxgi_capture
+ctest --preset windows-mingw -R release_preview_residue_control --output-on-failure
+```
+
+The replay uses saved pixels and DXGI acquisition records. The first short
+preview must immediately follow a post-input `LICENSE` presentation. Mouse-only
+updates count for pointer visibility but do not present a new frame. An
+overlapping pointer, unknown pointer state or missed presentation makes the run
+inconclusive. If a readable frame shows the short heading with text left over
+from the previous preview, the run fails even if a later frame is obscured.
+The historical mixed frame contains 1,379 pixels from the `LICENSE` tail.
+
 Before changing the default View, run the same IME, selection, copy/paste, focus and window interaction scenarios on both implementations. Verify visible behavior with screenshots or pixel checks.
 
 For changes involving View, renderer, window placement or selector UI:

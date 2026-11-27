@@ -76,14 +76,25 @@ set_target_properties(termole_cli_no_console_test PROPERTIES
   INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
 )
 
+add_executable(termole_release_dxgi_capture EXCLUDE_FROM_ALL release/desktop_capture.cpp)
+termole_unicode_startup(termole_release_dxgi_capture)
+target_include_directories(termole_release_dxgi_capture PRIVATE "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_release_dxgi_capture PRIVATE termole_build_options d3d11 dxgi dwmapi user32 gdi32)
+
 find_program(TERMOLE_POWERSHELL NAMES powershell.exe)
 find_program(TERMOLE_FZF NAMES fzf.exe)
 find_program(TERMOLE_WSL NAMES wsl.exe)
 find_program(TERMOLE_NVIM NAMES nvim.exe)
 find_program(TERMOLE_HELIX NAMES hx.exe helix.exe)
 find_program(TERMOLE_LAZYGIT NAMES lazygit.exe)
-if(NOT TERMOLE_POWERSHELL)
-  message(STATUS "powershell.exe not found: PowerShell CLI launch test is omitted.")
+if(TERMOLE_POWERSHELL)
+  add_test(NAME release_preview_residue_control
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=PSModulePath --
+      "${TERMOLE_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/release/test-desktop-preview.ps1")
+else()
+  message(STATUS "powershell.exe not found: PowerShell-dependent tests are omitted.")
 endif()
 
 add_test(NAME t01_host_api COMMAND termole_test_host_api)
