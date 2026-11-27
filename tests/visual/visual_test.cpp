@@ -1799,9 +1799,9 @@ bool input_drag(const InputTarget& target, int start_x, int start_y, int end_x, 
     return pressed && moved && released;
 }
 
-bool input_move(const InputTarget& target, int x, int y)
+bool input_move(const InputTarget& target, int x, int y, WPARAM buttons = 0)
 {
-    const bool moved = ::PostMessageW(target.view, WM_MOUSEMOVE, 0, MAKELPARAM(x, y)) != FALSE;
+    const bool moved = ::PostMessageW(target.view, WM_MOUSEMOVE, buttons, MAKELPARAM(x, y)) != FALSE;
     pump_for(150);
     return moved;
 }
@@ -2339,8 +2339,19 @@ int run_input_phases(InputTarget& target)
     const int last_x_in_first_cell = static_cast<int>(target.cell_width) - 1;
     const int cell_top = static_cast<int>(kInputRowBeta * target.cell_height) + 1;
     const int cell_bottom = static_cast<int>((kInputRowBeta + 1) * target.cell_height) - 1;
-    check(input_drag(target, 0, cell_top, last_x_in_first_cell, cell_bottom, false),
-          "dragged across the S within the first cell of SELECT-BETA");
+    const UINT view_dpi = ::GetDpiForWindow(target.view);
+    const int drag_width = ::GetSystemMetricsForDpi(SM_CXDRAG, view_dpi);
+    const int drag_height = ::GetSystemMetricsForDpi(SM_CYDRAG, view_dpi);
+    check(input_drag(target, 0, cell_top, last_x_in_first_cell, cell_bottom, false, [&] {
+        if (last_x_in_first_cell <= drag_width && cell_bottom - cell_top <= drag_height) {
+            // This cell fits entirely inside the click tolerance. Keep the button down
+            // while crossing the threshold, then return to the S before releasing it.
+            check(input_move(target, drag_width + 1, cell_top, MK_LBUTTON),
+                  "moved beyond the system drag threshold");
+            check(input_move(target, last_x_in_first_cell, cell_bottom, MK_LBUTTON),
+                  "dragged back into the first cell");
+        }
+    }), "finished the drag on the S in SELECT-BETA");
     check(selection_background(target, L"17-single-cell-selection", input_cell_x(target, 0),
                                cell_top, cell_top),
           "the single selected cell has the highlight color above its glyph");
@@ -2349,8 +2360,11 @@ int run_input_phases(InputTarget& target)
 
     const size_t interrupts = count_occurrences(collect_raw_input(read_file(target.log)), "\x03");
     const int first_cell_center = input_cell_x(target, 0);
-    check(input_drag(target, first_cell_center, local_y, first_cell_center + 1, local_y, false),
-          "a click with one pixel of movement dismisses the local selection");
+    const int jitter_x = drag_width > 0 ? 1 : 0;
+    const int jitter_y = jitter_x == 0 && drag_height > 0 ? 1 : 0;
+    check(input_drag(target, first_cell_center, local_y, first_cell_center + jitter_x,
+                     local_y + jitter_y, false),
+          "a click inside the system drag tolerance dismisses the local selection");
     post_input_char(target, 0x03);
     check(wait_for_log(target.log,
                        [&](const std::string& log) {
