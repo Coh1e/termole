@@ -28,6 +28,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -643,22 +644,33 @@ int run_preview_redraw(const Options& options)
         return 1;
     }
     input.reset();
-    const auto window = create_probe_window(L"Termole preview redraw", 340, 160);
+    const auto window = create_probe_window(L"Termole preview redraw");
     if (!window) return 1;
     auto view = termole::View::create(*session, window);
     if (!view) {
         ::DestroyWindow(window);
         return 1;
     }
-    ::MoveWindow(view->hwnd(), 0, 0, 340, 160, TRUE);
-    pump_messages();
+    // Size the client in terminal cells so row 7 and the reference row both
+    // fit at the monitor's DPI and after the explicit 200% scaling case.
+    const auto size_probe = [&] {
+        const int width = static_cast<int>(24 * view->cell_width()) + 1;
+        const int height = static_cast<int>(8 * view->cell_height()) + 1;
+        ::SetWindowPos(window, nullptr, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
+        ::MoveWindow(view->hwnd(), 0, 0, width, height, TRUE);
+        // Drain the native resize and the child's ConPTY resize output before
+        // writing the fixture. A later resize can clear an already-written row.
+        force_paint(window, view->hwnd());
+    };
+    size_probe();
 
-    const auto send = [&](std::string_view vt, std::string_view phase) {
-        const std::string bytes = std::string(vt) + "\x1b]2;" + std::string(phase) + "\x07";
+    const auto write_vt = [&](std::string_view bytes) {
         DWORD written = 0;
-        if (!::WriteFile(writer.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &written,
-                         nullptr) || written != bytes.size()) return false;
-        // OSC 2 acknowledges parsing the preceding cells, independently of painting.
+        return ::WriteFile(writer.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &written,
+                           nullptr) && written == bytes.size();
+    };
+    // OSC 2 acknowledges parsing the preceding cells, independently of painting.
+    const auto wait_for_title = [&](std::string_view phase) {
         const auto deadline = ::GetTickCount64() + 3000;
         do {
             if (const auto title = session->title(); title && *title == phase) return true;
@@ -667,11 +679,15 @@ int run_preview_redraw(const Options& options)
         } while (::GetTickCount64() < deadline);
         return false;
     };
+    const auto send = [&](std::string_view vt, std::string_view phase) {
+        return write_vt(std::string(vt) + "\x1b]2;" + std::string(phase) + "\x07") &&
+               wait_for_title(phase);
+    };
     const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
-    const int x = static_cast<int>(view->cell_width() / 2);
     const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail) {
         // The colored first space identifies the header. Count actual glyph
         // pixels in both old tail rows against a blank row in the same image.
+        const int x = static_cast<int>(view->cell_width() / 2);
         std::vector<capture::Sample> points{
             { x, static_cast<int>(1.5f * view->cell_height()) },
             { x, static_cast<int>(5.5f * view->cell_height()) }
@@ -691,24 +707,103 @@ int run_preview_redraw(const Options& options)
             return pixel.color != points[1].color;
         });
         std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink << '\n';
-        return points[0].color == header && (old_tail ? ink > 50 : ink == 0);
+        const bool in_bounds = std::none_of(points.begin(), points.end(), [](const auto& pixel) {
+            return pixel.color == CLR_INVALID;
+        });
+        return in_bounds && points[0].color == header && (old_tail ? ink > 50 : ink == 0);
+    };
+    // Window creation and DPI changes can produce an empty capture while the
+    // backing surface settles. Only the two stationary setup frames may retry.
+    const auto capture_after_resize = [&](std::string_view name, COLORREF header, bool old_tail) {
+        const auto deadline = ::GetTickCount64() + 1500;
+        do {
+            ::RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+            if (capture_frame(name, header, old_tail)) return true;
+            pump_for(20);
+        } while (::GetTickCount64() < deadline);
+        return false;
     };
 
     const HRESULT com = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    const bool started = send("\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;30;55;220m Old header"
-                              "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h",
-                              "long");
-    ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
-    check(started && capture_frame("01-long", old_color, true), "long preview is visible");
+    constexpr std::string_view long_preview =
+        "\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;30;55;220m Old header"
+        "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h";
+    constexpr std::string_view short_header =
+        "\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m";
+    const bool started = send(long_preview, "long");
+    check(started && capture_after_resize("01-long", old_color, true), "long preview is visible");
 
-    const bool partial = send("\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m",
-                              "partial");
+    const bool partial = send(short_header, "partial");
     ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
     check(partial && capture_frame("02-during-redraw", old_color, true),
           "a paint between the new header and the tail erase still shows the complete old preview");
-    const bool committed = send("\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h", "short");
+    const auto held_text = view->viewport_text();
+    check(held_text && held_text->contains("Old header") && !held_text->contains("Short line"),
+          "the viewport text matches the retained window frame");
+    check(view->set_selection(1, 1, 1, 3).has_value() && view->selection_text() == "Old",
+          "selecting the visible header reads the retained text");
+    view->clear_selection();
+
+    constexpr std::string_view finish_short =
+        "\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h";
+    const bool committed = send(finish_short, "short");
     check(committed && capture_frame("03-short", new_color, false),
           "the completed redraw shows the short preview and a clean tail");
+    const auto short_text = view->viewport_text();
+    check(short_text && short_text->contains("Short line") && !short_text->contains("Old tail"),
+          "the viewport text advances with the displayed short preview");
+    check(view->set_selection(1, 3, 1, 1).has_value() && view->selection_text() == "Sho",
+          "a reversed selection reads the new text after the redraw");
+    view->clear_selection();
+
+    // Keep output independent of the UI thread: PrintWindow and decoding the
+    // sampled pixels can each take longer than a terminal's idle interval.
+    const auto capture_stream = [&](std::string_view name, int duration_ms, COLORREF header,
+                                    bool old_tail) {
+        if (!write_vt(std::string(short_header) + "\x1b]2;" + std::string(name) + "\x07")) return false;
+        const auto started_at = ::GetTickCount64();
+        unsigned writes = 0;
+        ULONGLONG largest_gap = 0;
+        bool wrote = true;
+        std::jthread output([&](std::stop_token stop) {
+            auto previous = started_at;
+            while (!stop.stop_requested()) {
+                std::string bytes;
+                if (old_tail) {
+                    // Erase another letter of "Old tail B" every 150 ms.
+                    // Between those advances, keep sending the same VT update.
+                    const auto elapsed = ::GetTickCount64() - started_at;
+                    const auto column = 11 - std::min<ULONGLONG>(elapsed / 150, 9);
+                    bytes = "\x1b[5;" + std::to_string(column) + "H\x1b[K";
+                } else {
+                    bytes = "\x1b[7;1H" + std::to_string(writes);
+                }
+                if (!write_vt(bytes)) {
+                    wrote = false;
+                    break;
+                }
+                const auto now = ::GetTickCount64();
+                largest_gap = std::max(largest_gap, now - previous);
+                previous = now;
+                ++writes;
+                ::Sleep(20);
+            }
+        });
+        const bool parsed = wait_for_title(name);
+        ::RedrawWindow(view->hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+        pump_for(duration_ms);
+        const bool matched = capture_frame(name, header, old_tail);
+        output.request_stop();
+        output.join();
+        std::cout << name << " VT writes=" << writes << " largest gap=" << largest_gap << "ms\n";
+        return parsed && wrote && writes > 1 && matched;
+    };
+    check(send(long_preview, "slow-long") && capture_frame("02-before-slow", old_color, true),
+          "the slow redraw starts from the complete long preview");
+    check(capture_stream("02-slow-redraw", 1250, old_color, true),
+          "the slow redraw retains a complete frame while the child is still erasing old text");
+    check(send(finish_short, "slow-short") && capture_frame("03-after-slow", new_color, false),
+          "the short preview is clean after the slower redraw completes");
 
     const bool hidden = send("\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[0m",
                              "hidden");
@@ -727,10 +822,33 @@ int run_preview_redraw(const Options& options)
         ::Sleep(1);
     }
     check(resumed, "a program that keeps its cursor hidden gets a repaint without further output");
+
+    // Start another hidden-cursor interval, this time with continuous output.
+    // The program never explicitly commits a frame by showing the cursor.
+    check(send("\x1b[?25h", "visible") && capture_frame("04-before-stream", old_color, false),
+          "the starting frame for the continuous output case is visible");
+    check(capture_stream("04-continuous-output", 1800, new_color, false),
+          "continuous output advances while the program keeps the cursor hidden");
     const bool main_screen = send("\x1b[?1049l\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Main screen"
                                   "\x1b[0m", "main");
     check(main_screen && capture_frame("05-main-screen", new_color, false),
           "main-screen output is visible immediately with the cursor hidden");
+
+    std::string history;
+    for (int i = 0; i < 40; ++i) history += "history line\r\n";
+    check(send(history, "history"), "main-screen history is ready");
+    view->scroll(5);
+    check(send(long_preview, "scrolled-long") && capture_frame("06-scrolled-long", old_color, true),
+          "entering the alternate screen from scrollback displays the live preview");
+    check(send(short_header, "scrolled-partial") &&
+              capture_frame("07-scrolled-partial", old_color, true),
+          "the alternate-screen preview remains complete after scrolling the main screen");
+
+    ::SendMessageW(view->hwnd(), WM_DPICHANGED, MAKEWPARAM(192, 192), 0);
+    size_probe();
+    check(send("\x1b[2J\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m\x1b[7;1H\x1b[?25h",
+               "high-dpi") && capture_after_resize("08-high-dpi", new_color, false),
+          "the 192 DPI preview and its blank reference row are inside the captured window");
     if (SUCCEEDED(com)) ::CoUninitialize();
     view->reset();
     ::DestroyWindow(window);

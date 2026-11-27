@@ -14,7 +14,6 @@
 #include <mutex>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace termole {
 namespace {
@@ -22,7 +21,8 @@ namespace {
 constexpr wchar_t kViewClassName[] = L"TermoleViewWindow";
 constexpr UINT kRedrawMessage = WM_APP + 1;
 constexpr UINT_PTR kRedrawTimer = 1;
-constexpr UINT kMaxCursorHoldMs = 100;
+constexpr UINT kRedrawQuietMs = 100;
+constexpr UINT kRedrawProgressMs = 500;
 constexpr uint8_t kMouseButtonEventMode = 2;
 constexpr uint8_t kMouseAnyEventMode = 3;
 constexpr int kMouseMotionButton = 32;
@@ -31,6 +31,43 @@ constexpr int kMouseAnyMotionButton = 35;
 bool is_shift_key(WPARAM key)
 {
     return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
+}
+
+// A split redraw progressively replaces glyphs in the old frame. A TUI
+// updating the same counter or spinner cannot lower this count indefinitely.
+size_t unchanged_glyphs(const Snapshot& previous, const Snapshot& latest)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < previous.cells.size(); ++i) {
+        const Cell& old = previous.cells[i];
+        const Cell& cell = latest.cells[i];
+        if (!old.continuation && old.character != U' ' && old.character != 0 &&
+            old.character == cell.character && old.combining == cell.combining) ++count;
+    }
+    return count;
+}
+
+void append_row_text(std::string& text, const Snapshot& frame, int row, int first, int last)
+{
+    const size_t offset = static_cast<size_t>(row) * frame.columns;
+    for (int column = first; column <= last; ++column) {
+        const Cell& cell = frame.cells[offset + column];
+        if (cell.continuation) continue;
+        append_utf8(text, cell.character == 0 ? U' ' : cell.character);
+        for (const char32_t combining : cell.combining) append_utf8(text, combining);
+    }
+}
+
+std::string viewport_text_from(const Snapshot& frame)
+{
+    std::string text;
+    for (int row = 0; row < frame.rows; ++row) {
+        append_row_text(text, frame, row, 0, frame.columns - 1);
+        while (!text.empty() && text.back() == ' ') text.pop_back();
+        text.push_back('\n');
+    }
+    while (!text.empty() && text.back() == '\n') text.pop_back();
+    return text;
 }
 
 std::wstring wide_from_utf8(std::string_view text)
@@ -326,10 +363,7 @@ LRESULT NativeView::handle_message(HWND window, UINT message, WPARAM wparam, LPA
         return 0;
     case WM_TIMER:
         if (wparam != kRedrawTimer) return ::DefWindowProcW(window, message, wparam, lparam);
-        if (redraw_deadline_ && ::GetTickCount64() >= redraw_deadline_) {
-            ::KillTimer(window, kRedrawTimer);
-            ::InvalidateRect(window, nullptr, FALSE);
-        }
+        if (redraw_deadline_) ::InvalidateRect(window, nullptr, FALSE);
         return 0;
     case WM_MOUSEWHEEL: {
         POINT point{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
@@ -390,17 +424,27 @@ void NativeView::on_paint()
 Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest)
 {
     // ConPTY can spread one full-screen redraw over multiple reads between
-    // hiding and restoring the cursor. Keep the preceding grid for both paint
-    // paths. A program may also hide the cursor indefinitely: after the first
-    // deadline, paint normally until it shows the cursor again.
-    const bool live_alt = latest.alternate_screen && scroll_offset_ == 0;
+    // hiding and restoring the cursor. Each new read extends the quiet period;
+    // repaints and screenshots do not. While output continues, renew the hold
+    // only if more of the original text has actually been replaced.
+    const bool live_alt = latest.live_alternate_screen;
     if (live_alt && !latest.cursor_visible &&
         last_visible_cursor_frame_.columns == latest.columns &&
         last_visible_cursor_frame_.rows == latest.rows) {
         const auto now = ::GetTickCount64();
-        if (!redraw_deadline_ && ::SetTimer(window, kRedrawTimer, kMaxCursorHoldMs, nullptr))
-            redraw_deadline_ = now + kMaxCursorHoldMs;
-        if (now < redraw_deadline_) return last_visible_cursor_frame_;
+        const auto quiet_at = latest.last_output_tick + kRedrawQuietMs;
+        if (now < quiet_at && now >= redraw_deadline_) {
+            const auto unchanged = unchanged_glyphs(last_visible_cursor_frame_, latest);
+            if (!redraw_deadline_ || unchanged < remaining_glyphs_) {
+                remaining_glyphs_ = unchanged;
+                redraw_deadline_ = now + kRedrawProgressMs;
+            }
+        }
+        const auto wake_at = std::min(redraw_deadline_, quiet_at);
+        if (now < wake_at &&
+            ::SetTimer(window, kRedrawTimer, static_cast<UINT>(wake_at - now), nullptr)) {
+            return last_visible_cursor_frame_;
+        }
     }
     if (redraw_deadline_) {
         ::KillTimer(window, kRedrawTimer);
@@ -424,8 +468,7 @@ void NativeView::paint_client(HWND window, HDC device)
         Snapshot& snapshot = frame_for_paint(window, latest);
         snapshot.has_selection = has_selection_;
         if (has_selection_) {
-            const int history = static_cast<int>(session_->scrollback_line_count());
-            const int first = history - scroll_offset_;
+            const int first = snapshot.first_document_row;
             snapshot.selection_start_row = static_cast<int16_t>(selection_anchor_row_ - first);
             snapshot.selection_start_column = static_cast<int16_t>(selection_anchor_column_);
             snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
@@ -442,11 +485,17 @@ void NativeView::scroll(int lines)
 {
     if (!session_) return;
     const int history = static_cast<int>(session_->scrollback_line_count());
-    const int next = std::clamp(scroll_offset_ + lines, 0, history);
-    if (next == scroll_offset_) return;
-    scroll_offset_ = next;
-    if (const HWND window = window_.load(std::memory_order_acquire))
+    const int current = std::min(scroll_offset_, history);
+    scroll_offset_ = static_cast<int>(std::clamp<int64_t>(int64_t{current} + lines, 0, history));
+    if (scroll_offset_ == current) return;
+    last_visible_cursor_frame_ = {};
+    if (const HWND window = window_.load(std::memory_order_acquire)) {
+        if (redraw_deadline_) {
+            ::KillTimer(window, kRedrawTimer);
+            redraw_deadline_ = 0;
+        }
         ::InvalidateRect(window, nullptr, FALSE);
+    }
 }
 
 void NativeView::set_selection(int start_row, int start_column, int end_row, int end_column)
@@ -475,34 +524,39 @@ void NativeView::clear_selection()
 std::string NativeView::selection_text() const
 {
     if (!has_selection_ || !session_) return {};
-    return session_->selection_text(selection_anchor_row_, selection_anchor_column_,
-                                    selection_focus_row_, selection_focus_column_);
+    const Snapshot& frame = last_visible_cursor_frame_;
+    if (frame.cells.empty()) {
+        return session_->selection_text(selection_anchor_row_, selection_anchor_column_,
+                                        selection_focus_row_, selection_focus_column_);
+    }
+
+    // The live alternate screen has no scrollback; the retained grid contains
+    // the complete document that was available for selection when it was drawn.
+    const auto position = [&](int row, int column) {
+        return std::pair{ std::clamp(row - frame.first_document_row, 0, frame.rows - 1),
+                          std::clamp(column, 0, frame.columns - 1) };
+    };
+    auto [first_row, first_column] = position(selection_anchor_row_, selection_anchor_column_);
+    auto [last_row, last_column] = position(selection_focus_row_, selection_focus_column_);
+    if (first_row > last_row || (first_row == last_row && first_column > last_column)) {
+        std::swap(first_row, last_row);
+        std::swap(first_column, last_column);
+    }
+    std::string text;
+    for (int row = first_row; row <= last_row; ++row) {
+        if (row != first_row) text.push_back('\n');
+        append_row_text(text, frame, row, row == first_row ? first_column : 0,
+                        row == last_row ? last_column : frame.columns - 1);
+    }
+    return text;
 }
 
 std::string NativeView::viewport_text() const
 {
     if (!session_) return {};
-    const Snapshot snapshot = session_->snapshot(scroll_offset_);
-    std::vector<std::string> lines;
-    int last = -1;
-    for (int row = 0; row < snapshot.rows; ++row) {
-        std::string line;
-        for (int column = 0; column < snapshot.columns; ++column) {
-            const Cell& cell = snapshot.cells[static_cast<size_t>(row) * snapshot.columns + column];
-            if (cell.continuation) continue;
-            append_utf8(line, cell.character == 0 ? U' ' : cell.character);
-            for (const char32_t combining : cell.combining) append_utf8(line, combining);
-        }
-        while (!line.empty() && line.back() == ' ') line.pop_back();
-        if (!line.empty()) last = row;
-        lines.push_back(std::move(line));
-    }
-    std::string text;
-    for (int row = 0; row <= last; ++row) {
-        text += lines[static_cast<size_t>(row)];
-        if (row != last) text.push_back('\n');
-    }
-    return text;
+    if (!last_visible_cursor_frame_.cells.empty())
+        return viewport_text_from(last_visible_cursor_frame_);
+    return viewport_text_from(session_->snapshot(scroll_offset_));
 }
 
 Result<void> NativeView::copy_selection()
@@ -553,7 +607,7 @@ bool NativeView::mouse_coordinates(int x, int y, int& row, int& column) const
     screen_row = std::clamp(screen_row, 0, static_cast<int>(rows) - 1);
     screen_column = std::clamp(screen_column, 0, static_cast<int>(columns) - 1);
     const int history = static_cast<int>(session_->scrollback_line_count());
-    row = std::clamp(history - scroll_offset_ + screen_row, 0, history + static_cast<int>(rows) - 1);
+    row = std::max(0, history - scroll_offset_) + screen_row;
     column = screen_column;
     return true;
 }
