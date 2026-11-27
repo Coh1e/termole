@@ -89,6 +89,13 @@ add_test(NAME release_powershell_hash COMMAND ${zip_powershell} -Command
 set_tests_properties(release_powershell_hash PROPERTIES
   ENVIRONMENT "PSModulePath=${caller_modules}"
   PASS_REGULAR_EXPRESSION "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+add_test(NAME release_preview_residue_control COMMAND ${zip_powershell} -File
+  "${CMAKE_CURRENT_SOURCE_DIR}/release/test-desktop-preview.ps1")
+add_executable(termole_release_dxgi_capture EXCLUDE_FROM_ALL release/desktop_capture.cpp)
+termole_unicode_startup(termole_release_dxgi_capture)
+target_include_directories(termole_release_dxgi_capture PRIVATE "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(termole_release_dxgi_capture PRIVATE termole_build_options d3d11 dxgi dwmapi user32 gdi32)
 find_program(TERMOLE_FZF NAMES fzf.exe)
 find_program(TERMOLE_WSL NAMES wsl.exe)
 find_program(TERMOLE_NVIM NAMES nvim.exe)

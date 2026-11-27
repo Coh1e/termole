@@ -1,9 +1,10 @@
-# Windows PowerShell 5.1, loaded by fzf.ps1. Each picker uses an isolated profile
-# and unique window title. Send input only to that picker's child View HWND.
-function Start-Applet($Folder, $Name, [switch]$DefaultDirectory, [switch]$Measure, [switch]$PackageRoot) {
+# Windows PowerShell 5.1 helpers for the candidate's file picker.
+# Each picker uses an isolated profile and unique window title.
+function Start-Applet($Folder, $Name, [switch]$DefaultDirectory, [switch]$Measure, [switch]$PackageRoot,
+                      [string[]]$WindowConfig = @('columns = 80', 'rows = 24')) {
     $title = 'termole-test-' + [guid]::NewGuid().ToString('N')
     $profile = [IO.Directory]::CreateDirectory("$Evidence/profiles/$title/Termole").FullName
-    [IO.File]::WriteAllLines("$profile/config.toml", @('columns = 80', 'rows = 24', ('title = "' + $title + '"')))
+    [IO.File]::WriteAllLines("$profile/config.toml", ($WindowConfig + ('title = "' + $title + '"')))
     $start = [Diagnostics.ProcessStartInfo]::new("$PSHOME/powershell.exe")
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
@@ -60,6 +61,17 @@ function Save-AppletView($Picker, $Name) {
     $png = Join-Path $Evidence "$Name.png"
     & $capture -Hwnd $Picker.View.ToInt64() -OutputPath $png -StatsPath "$png.txt" -Quiet
     return $png
+}
+
+function Wait-AppletPreview($Picker, $Label, $Expected) {
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $png = Save-AppletView $Picker $Label
+        $signature = [AppletWindow]::PreviewSignature($png)
+        if ($signature -and (!$Expected -or $signature -ceq $Expected)) { return $signature }
+        Start-Sleep -Milliseconds 250
+    } while ($deadline.Elapsed.TotalSeconds -lt 10)
+    throw "Unexpected preview in ${png}: expected '$Expected', got '$signature'"
 }
 
 function Test-AppletResult($Picker, $Status, $Expected) {

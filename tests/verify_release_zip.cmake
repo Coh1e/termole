@@ -29,14 +29,18 @@ foreach(path IN ITEMS bin/termole.exe LICENSE THIRD_PARTY_NOTICES.md licenses/qu
 endforeach()
 file(READ "${package}/share/termole/source-revision.txt" revision)
 string(STRIP "${revision}" revision)
-get_filename_component(source "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-if(NOT EXISTS "${source}/.git")
+# A newer acceptance harness can also verify an archived ZIP against its
+# original clean checkout. The checksum and embedded revision still apply.
+if(NOT DEFINED CandidateSource)
+  get_filename_component(CandidateSource "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+endif()
+if(NOT EXISTS "${CandidateSource}/.git")
   message(FATAL_ERROR "Release acceptance requires the candidate's Git checkout.")
 endif()
 find_program(git NAMES git REQUIRED)
-execute_process(COMMAND "${git}" -C "${source}" rev-parse --verify HEAD
+execute_process(COMMAND "${git}" -C "${CandidateSource}" rev-parse --verify HEAD
   OUTPUT_VARIABLE head OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
-execute_process(COMMAND "${git}" -C "${source}" status --porcelain
+execute_process(COMMAND "${git}" -C "${CandidateSource}" status --porcelain
   OUTPUT_VARIABLE changes OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
 if(changes OR NOT head STREQUAL revision)
   message(FATAL_ERROR "Use a clean checkout matching the packaged revision '${revision}'. Current HEAD: ${head}")
@@ -77,10 +81,11 @@ run_check(preflight)
 run_check(sdk -Cmake "${CMAKE_COMMAND}" -Generator "${Generator}"
   -MakeProgram "${MakeProgram}" -Cc "${Cc}" -Cxx "${Cxx}")
 run_check(default-shell)
+run_check(desktop-preview -Fzf "${Fzf}" -Capture "${Capture}")
 run_check(fzf -Fzf "${Fzf}")
 run_check(plugin-menu)
 file(WRITE "${record}/acceptance.txt"
   "${filename}\nSHA-256: ${digest}\nSource: ${revision}\nPackage: ${package}\n"
-  "Passed: archive checksum, license, imports, documents, CLI preflight, SDK ABI 3, default shell, fzf, QuickJS menus\n"
+  "Passed: archive checksum, license, imports, documents, CLI preflight, SDK ABI 3, default shell, fzf, DXGI first preview frame, QuickJS menus\n"
   "Human handoff: #53 (IME, foreground/background focus, first-time README use)\n")
 message(STATUS "Verified ${filename} SHA-256 ${digest} from ${revision}. Evidence: ${record}")

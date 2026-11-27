@@ -16,16 +16,6 @@ if (@(Get-ChildItem -LiteralPath $Evidence -Force).Count) { throw "Use an empty 
 $capture = (Get-Item -LiteralPath "$PSScriptRoot/../../scripts/capture-window.ps1").FullName
 . "$PSScriptRoot/applet-desktop.ps1"
 Add-Type -Path "$PSScriptRoot/applet-window.cs" -ReferencedAssemblies System.Drawing.dll
-function Wait-AppletPreview($Picker, $Label, $Expected) {
-    $deadline = [Diagnostics.Stopwatch]::StartNew()
-    do {
-        $png = Save-AppletView $Picker $Label
-        $signature = [AppletWindow]::PreviewSignature($png)
-        if ($signature -and (!$Expected -or $signature -ceq $Expected)) { return $signature }
-        Start-Sleep -Milliseconds 250
-    } while ($deadline.Elapsed.TotalSeconds -lt 10)
-    throw "Unexpected preview in ${png}: expected '$Expected', got '$signature'"
-}
 $running = [Collections.Generic.List[Diagnostics.Process]]::new()
 $saved = @{}
 foreach ($name in 'PATH','APPDATA','TEMP','TMP','FZF_DEFAULT_OPTS','FZF_DEFAULT_OPTS_FILE') {

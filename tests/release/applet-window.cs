@@ -18,6 +18,38 @@ public static class AppletWindow
     [DllImport("user32.dll")]
     public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmFlush();
+
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+
+    public static bool RaiseForDesktopCapture(IntPtr window)
+    {
+        // Activate the test-owned picker without moving or resizing any window.
+        SetForegroundWindow(window);
+        const uint keepSizeAndPosition = 0x0001 | 0x0002;
+        if (!SetWindowPos(window, new IntPtr(-1), 0, 0, 0, 0, keepSizeAndPosition))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        Marshal.ThrowExceptionForHR(DwmFlush());
+        var deadline = Stopwatch.StartNew();
+        while (GetForegroundWindow() != window && deadline.ElapsedMilliseconds < 500)
+            System.Threading.Thread.Sleep(20);
+        return GetForegroundWindow() == window;
+    }
+
     [DllImport("kernel32.dll")]
     public static extern void GetSystemTimePreciseAsFileTime(out long time);
 

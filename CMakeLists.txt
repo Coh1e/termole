@@ -130,6 +130,7 @@ if(TERMOLE_BUILD_APP)
         "-DArchive=${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_FILE_NAME}.zip"
         "-DVersion=${PROJECT_VERSION}" "-DPowerShell=${TERMOLE_POWERSHELL}"
         "-DFzf=${TERMOLE_FZF}" "-DObjdump=${CMAKE_OBJDUMP}"
+        "-DCapture=$<TARGET_FILE:termole_release_dxgi_capture>"
         "-DGenerator=${CMAKE_GENERATOR}" "-DMakeProgram=${CMAKE_MAKE_PROGRAM}"
         "-DCc=${CMAKE_C_COMPILER}" "-DCxx=${CMAKE_CXX_COMPILER}"
         "-DEvidence=${CMAKE_BINARY_DIR}/tests/release-zip"

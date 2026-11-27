@@ -28,7 +28,7 @@ ctest --preset windows-mingw -R t17_wrap --output-on-failure
 | Windows 启动器与 CLI | `t26_launcher` | 通过公开入口 `termole`、`-e`、`--stdio` 核对等待、退出码、管道字节、慢读端、取消、启动失败和控制台行为。内部角色 `--gui` 只用于窗口策略或几何测试。 |
 | 管道与并发调用 | `t26_cli_pipelines`、`t26_cli_parallel` | 前者在 CMD 和 PowerShell 中核对字节顺序、退出码、提前关闭、fzf 过滤和含 NUL 字节的文件重定向。后者核对并发 `-e` 的参数、工作目录与环境隔离。 |
 | 备用屏 | `vt_adapter_contract`、`c_abi_characterization`、`visual_alt_screen` | 依次检查 VT 模式、Windows 会话 C 接口报告的状态，以及实际窗口显示的文字。 |
-| Windows 默认视图的分段重绘 | `visual_preview_redraw` | 在慢速擦除旧尾行期间核对窗口像素、可见文本和选区。另测主屏滚动后进入备用屏、持续隐藏光标时的静止和连续输出，以及 192 DPI 时的预览像素。 |
+| Windows 默认视图的分段重绘 | `visual_preview_redraw` | 在慢速擦除旧尾行期间核对窗口像素、可见文本和选区。在当前 DPI 和 192 DPI 下各自独立绘制完整短句，确认末字和句点可见，并逐像素比较切换后的整行。另测主屏滚动后进入备用屏，以及持续隐藏光标时的静止和连续输出。 |
 | 真实 fzf 画面与操作 | `visual_fzf`、`visual_fzf_interaction`、`visual_fzf_standalone` | 配置时找到 fzf 才注册。交互用例分别通过宿主视图和独立入口 `termole -e` 的 `WM_KEYDOWN`、`WM_CHAR` 驱动真实 fzf，逐步截图检查方向键、筛选、Enter 和 Esc。 |
 | 鼠标、选择与粘贴 | `visual_input_interaction`、`visual_input_standalone` | 两个入口均向视图发送鼠标和键盘消息。受控子程序 `tests/visual/t12_input_child.cpp` 打开鼠标模式、括号粘贴和应用光标键，记录真实 ConPTY 输入字节。测试把这些字节与固定行带的像素一并核对。 |
 
@@ -56,3 +56,5 @@ powershell -NoProfile -File scripts\capture-window.ps1 -Hwnd 0x1234 -OutputPath 
 `t22_sdk_consumer` 先把 SDK 安装到 `<build>/tests/sdk-consumer/package` 并检查已安装文档的相对链接和标题锚点。独立构建的 `tests/sdk-consumer` 和随包示例 `share/termole/examples/sdk-host` 通过 `find_package(Termole CONFIG REQUIRED)` 链接安装后的 SDK。测试宿主驱动真实 CMD 和 ConPTY，检查 ABI、资源所有权及错误处理，并将宿主和嵌入视图的 PNG、统计值写入 `<build>/tests/sdk-consumer/artifacts/`。
 
 交付候选包时在交互桌面运行 `cmake --workflow --preset windows-mingw-release`。从输出的证据目录核对 ZIP 摘要、包内源码修订号和各项结果。将同一份候选的摘要与解压路径填入人工交接单。[Windows 便携包验收](../cross-platform-build.md#windows-便携包验收)
+
+复核桌面首帧判据时，运行 `ctest --preset windows-mingw -R release_preview_residue_control --output-on-failure` 回放 #54 的历史混字帧。候选 ZIP 的实机结果在当次证据目录的 `desktop-preview/result.json`。各次切换的 `pixels.json` 和 `frames/dxgi.csv` 可对照首张短句、旧尾行像素及合帧记录。

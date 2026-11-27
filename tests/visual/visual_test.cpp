@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -651,10 +652,11 @@ int run_preview_redraw(const Options& options)
         ::DestroyWindow(window);
         return 1;
     }
-    // Size the client in terminal cells so row 7 and the reference row both
-    // fit at the monitor's DPI and after the explicit 200% scaling case.
+    constexpr std::string_view sentence = "The lighthouse turns amber at noon.";
+    // The fixture starts with a blank cell for the header color probe.
+    constexpr int sentence_columns = 1 + static_cast<int>(sentence.size());
     const auto size_probe = [&] {
-        const int width = static_cast<int>(24 * view->cell_width()) + 1;
+        const int width = static_cast<int>((sentence_columns + 1) * view->cell_width()) + 1;
         const int height = static_cast<int>(8 * view->cell_height()) + 1;
         ::SetWindowPos(window, nullptr, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
         ::MoveWindow(view->hwnd(), 0, 0, width, height, TRUE);
@@ -692,11 +694,17 @@ int run_preview_redraw(const Options& options)
         return true;
     };
     const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
-    std::vector<COLORREF> long_tail;
+    enum class Sentence { Omit, Reference, Compare };
+    struct FrameCheck {
+        Sentence sentence = Sentence::Omit;
+        bool record_long_tail = false;
+        std::optional<COLORREF> footer = std::nullopt;
+        std::vector<COLORREF>* counter = nullptr;
+        capture::Method method = capture::Method::PrintWindow;
+    };
+    std::vector<COLORREF> long_tail, reference_row;
     const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail,
-                                   std::optional<COLORREF> footer = std::nullopt,
-                                   std::vector<COLORREF>* counter = nullptr,
-                                   capture::Method method = capture::Method::PrintWindow) {
+                                   FrameCheck frame = {}) {
         RECT client{};
         if (!::GetClientRect(view->hwnd(), &client)) return false;
         const int x = static_cast<int>(view->cell_width() / 2);
@@ -710,25 +718,32 @@ int run_preview_redraw(const Options& options)
             for (int col = 0; col < client.right; ++col)
                 points.push_back({ col, y });
         const auto tail_end = points.size();
-        if (counter) {
+        if (frame.counter) {
             for (int y = static_cast<int>(6 * view->cell_height());
                  y < static_cast<int>(7 * view->cell_height()); ++y)
                 for (int col = 0; col < static_cast<int>(4 * view->cell_width()); ++col)
                     points.push_back({ col, y });
         }
+        const auto row_start = points.size();
+        if (frame.sentence != Sentence::Omit) {
+            const auto bottom = std::lround(2 * view->cell_height());
+            for (int y = std::lround(view->cell_height()); y < bottom; ++y)
+                for (int col = 0; col < client.right; ++col)
+                    points.push_back({ col, y });
+        }
         capture::Stats stats;
         std::string error;
         const auto png = options.artifacts / (std::string(name) + ".png");
-        if (!capture::window(view->hwnd(), png, stats, error, points, method)) {
+        if (!capture::window(view->hwnd(), png, stats, error, points, frame.method)) {
             std::cerr << "capture failed: " << error << '\n';
             return false;
         }
         std::vector<COLORREF> tail;
         tail.reserve(tail_end - 3);
         for (size_t i = 3; i < tail_end; ++i) tail.push_back(points[i].color);
-        if (counter) {
-            counter->clear();
-            for (size_t i = tail_end; i < points.size(); ++i) counter->push_back(points[i].color);
+        if (frame.counter) {
+            frame.counter->clear();
+            for (size_t i = tail_end; i < row_start; ++i) frame.counter->push_back(points[i].color);
         }
         const auto ink = std::count_if(tail.begin(), tail.end(), [&](COLORREF color) {
             return color != points[1].color;
@@ -736,7 +751,7 @@ int run_preview_redraw(const Options& options)
         const bool in_bounds = std::none_of(points.begin(), points.end(), [](const auto& pixel) {
             return pixel.color == CLR_INVALID;
         });
-        if (name == "01-long" && in_bounds && points[0].color == header && ink > 50)
+        if (frame.record_long_tail && in_bounds && points[0].color == header && ink > 50)
             long_tail = tail;
         const bool same_tail = !long_tail.empty() && tail == long_tail;
         const auto stats_path = options.artifacts / (std::string(name) + ".txt");
@@ -744,18 +759,47 @@ int run_preview_redraw(const Options& options)
         std::ofstream details(stats_path, std::ios::app);
         details << "header=" << points[0].color << "\nfooter=" << points[2].color
                 << "\ntailInkPixels=" << ink << "\nmatchesLongTail=" << same_tail << '\n';
+        if (frame.sentence != Sentence::Omit) {
+            const auto cell_edge = [&](int column) { return std::lround(column * view->cell_width()); };
+            const auto letter_left = cell_edge(sentence_columns - 2);
+            const auto period_left = cell_edge(sentence_columns - 1);
+            const auto period_right = cell_edge(sentence_columns);
+            std::vector<COLORREF> row;
+            row.reserve(points.size() - row_start);
+            unsigned letter_ink = 0, period_ink = 0;
+            for (size_t i = row_start; i < points.size(); ++i) {
+                const auto& pixel = points[i];
+                row.push_back(pixel.color);
+                // Only the sentence glyphs are green on the red header.
+                if (GetGValue(pixel.color) <= GetRValue(pixel.color)) continue;
+                if (pixel.x >= letter_left && pixel.x < period_left) ++letter_ink;
+                if (pixel.x >= period_left && pixel.x < period_right) ++period_ink;
+            }
+            const bool complete = in_bounds && client.right >= period_right && letter_ink && period_ink;
+            details << "lastLetterInkPixels=" << letter_ink << "\nperiodInkPixels=" << period_ink << '\n';
+            const bool different = frame.sentence == Sentence::Compare && row != reference_row;
+            if (frame.sentence == Sentence::Compare)
+                details << "matchesSentenceReference=" << !different << '\n';
+            if (!complete || different) {
+                std::cerr << name << ": incomplete or different sentence (last letter pixels="
+                          << letter_ink << ", period pixels=" << period_ink << ")\n";
+                return false;
+            }
+            if (frame.sentence == Sentence::Reference) reference_row = std::move(row);
+        }
         std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink
                   << " matches long tail=" << same_tail << '\n';
         return details.good() && in_bounds && points[0].color == header &&
-               (!footer || points[2].color == *footer) && (old_tail ? same_tail : ink == 0);
+               (!frame.footer || points[2].color == *frame.footer) && (old_tail ? same_tail : ink == 0);
     };
     // Window creation and DPI changes can produce an empty capture while the
-    // backing surface settles. Only the two stationary setup frames may retry.
-    const auto capture_after_resize = [&](std::string_view name, COLORREF header, bool old_tail) {
+    // backing surface settles. Only stationary setup frames may retry.
+    const auto capture_after_resize = [&](std::string_view name, COLORREF header, bool old_tail,
+                                          FrameCheck frame) {
         const auto deadline = ::GetTickCount64() + 1500;
         do {
             ::RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-            if (capture_frame(name, header, old_tail)) return true;
+            if (capture_frame(name, header, old_tail, frame)) return true;
             pump_for(20);
         } while (::GetTickCount64() < deadline);
         return false;
@@ -765,16 +809,25 @@ int run_preview_redraw(const Options& options)
     constexpr std::string_view long_preview =
         "\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;30;55;220m Old header"
         "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h";
-    constexpr std::string_view short_header =
-        "\x1b[?25l\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m";
+    const std::string sentence_line =
+        "\x1b[2;1H\x1b[48;2;220;30;55;38;2;0;255;0m " + std::string(sentence) + "\x1b[0m";
+    const std::string short_header = "\x1b[?25l" + sentence_line;
+    const auto capture_reference = [&](std::string_view name) {
+        reference_row.clear();
+        return send("\x1b[?1049h\x1b[2J" + sentence_line + "\x1b[7;1H\x1b[?25h", name) &&
+            capture_after_resize(name, new_color, false, { .sentence = Sentence::Reference });
+    };
+    check(capture_reference("00-short-reference"),
+          "the independent short preview shows its last letter and period");
     const bool started = send(long_preview, "long");
-    check(started && capture_after_resize("01-long", old_color, true), "long preview is visible");
+    check(started && capture_after_resize("01-long", old_color, true, { .record_long_tail = true }),
+          "long preview is visible");
 
     const bool partial = send_and_paint(short_header, "partial");
     check(partial && capture_frame("02-during-redraw", old_color, true),
           "a paint between the new header and the tail erase still shows the complete old preview");
     const auto held_text = view->viewport_text();
-    check(held_text && held_text->contains("Old header") && !held_text->contains("Short line"),
+    check(held_text && held_text->contains("Old header") && !held_text->contains(sentence),
           "the viewport text matches the retained window frame");
     check(view->set_selection(1, 1, 1, 3).has_value() && view->selection_text() == "Old",
           "selecting the visible header reads the retained text");
@@ -783,12 +836,12 @@ int run_preview_redraw(const Options& options)
     constexpr std::string_view finish_short =
         "\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h";
     const bool committed = send_and_paint(finish_short, "short");
-    check(committed && capture_frame("03-short", new_color, false),
-          "the completed redraw shows the short preview and a clean tail");
+    check(committed && capture_frame("03-short", new_color, false, { .sentence = Sentence::Compare }),
+          "the completed redraw matches the full short sentence and has a clean tail");
     const auto short_text = view->viewport_text();
-    check(short_text && short_text->contains("Short line") && !short_text->contains("Old tail"),
+    check(short_text && short_text->contains(sentence) && !short_text->contains("Old tail"),
           "the viewport text advances with the displayed short preview");
-    check(view->set_selection(1, 3, 1, 1).has_value() && view->selection_text() == "Sho",
+    check(view->set_selection(1, 3, 1, 1).has_value() && view->selection_text() == "The",
           "a reversed selection reads the new text after the redraw");
     view->clear_selection();
 
@@ -796,7 +849,7 @@ int run_preview_redraw(const Options& options)
     // sampled pixels can each take longer than a terminal's idle interval.
     const auto capture_stream = [&](std::string_view name, int duration_ms, COLORREF header,
                                     bool old_tail) {
-        if (!write_vt(std::string(short_header) + "\x1b]2;" + std::string(name) + "\x07")) return false;
+        if (!write_vt(short_header + "\x1b]2;" + std::string(name) + "\x07")) return false;
         const auto started_at = ::GetTickCount64();
         unsigned writes = 0;
         ULONGLONG largest_gap = 0;
@@ -829,10 +882,10 @@ int run_preview_redraw(const Options& options)
         paint_view();
         pump_for(duration_ms);
         std::vector<COLORREF> first_counter, next_counter;
-        bool matched = capture_frame(name, header, old_tail, {}, old_tail ? nullptr : &first_counter);
+        bool matched = capture_frame(name, header, old_tail, { .counter = old_tail ? nullptr : &first_counter });
         if (!old_tail && matched) {
             pump_for(120);
-            matched = capture_frame("04-next-counter", header, false, {}, &next_counter) &&
+            matched = capture_frame("04-next-counter", header, false, { .counter = &next_counter }) &&
                 first_counter != next_counter;
         }
         output.request_stop();
@@ -844,8 +897,9 @@ int run_preview_redraw(const Options& options)
           "the slow redraw starts from the complete long preview");
     check(capture_stream("02-slow-redraw", 1250, old_color, true),
           "the slow redraw retains a complete frame while the child is still erasing old text");
-    check(send_and_paint(finish_short, "slow-short") && capture_frame("03-after-slow", new_color, false),
-          "the short preview is clean after the slower redraw completes");
+    check(send_and_paint(finish_short, "slow-short") &&
+              capture_frame("03-after-slow", new_color, false, { .sentence = Sentence::Compare }),
+          "the slow redraw also shows the full short sentence and a clean tail");
 
     // After this first paint only natural repaints count towards the timeout.
     const bool hidden = send_and_paint(
@@ -863,7 +917,7 @@ int run_preview_redraw(const Options& options)
     }
     check(resumed, "a program that keeps its cursor hidden gets a repaint without further output");
     check(send_and_paint("\x1b[7;1H\x1b[48;2;220;30;55m \x1b[0m", "hidden-footer") &&
-              capture_frame("04-hidden-footer", old_color, false, new_color),
+              capture_frame("04-hidden-footer", old_color, false, { .footer = new_color }),
           "the hidden-cursor program displays its next update after repainting resumes");
 
     // Start another hidden-cursor interval, this time with continuous output.
@@ -904,7 +958,7 @@ int run_preview_redraw(const Options& options)
     check(view->paint_count() == paints_before_switch && view->selection_text() == "Old",
           "a mouse drag reads the still-visible alternate header after the main screen arrives");
 
-    check(capture_frame("07-offscreen", old_color, true, {}, nullptr, capture::Method::PrintClient),
+    check(capture_frame("07-offscreen", old_color, true, { .method = capture::Method::PrintClient }),
           "the off-screen capture draws the old header and complete tail while the main paint is queued");
     const auto before_display = view->viewport_text();
     check(view->paint_count() == paints_before_switch && before_display &&
@@ -918,9 +972,15 @@ int run_preview_redraw(const Options& options)
 
     ::SendMessageW(view->hwnd(), WM_DPICHANGED, MAKEWPARAM(192, 192), 0);
     size_probe();
-    check(send("\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;220;30;55m Short line\x1b[0m\x1b[7;1H\x1b[?25h",
-               "high-dpi") && capture_after_resize("08-high-dpi", new_color, false),
-          "the 192 DPI preview and its blank reference row are inside the captured window");
+    check(capture_reference("08-high-dpi-reference"),
+          "the 192 DPI reference shows its last letter and period");
+    check(send_and_paint(long_preview, "high-dpi-long") &&
+              capture_frame("08-high-dpi-long", old_color, true, { .record_long_tail = true }),
+          "the 192 DPI window displays the long preview before the switch");
+    check(send_and_paint(short_header, "high-dpi-partial") &&
+              send_and_paint(finish_short, "high-dpi-short") &&
+              capture_frame("08-high-dpi", new_color, false, { .sentence = Sentence::Compare }),
+          "the completed 192 DPI redraw matches the full short sentence and has a clean tail");
     if (SUCCEEDED(com)) ::CoUninitialize();
     view->reset();
     ::DestroyWindow(window);
