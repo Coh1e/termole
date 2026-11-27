@@ -36,16 +36,19 @@ try {
     $mixed = @($report.Frames | Where-Object State -eq 'mixed')
     if ($report.Status -ne 'failed' -or $report.Presentations -ne 7 -or $report.Missed -or $report.Masked -or
         $mixed.Count -ne 1 -or $mixed[0].Index -ne 6 -or $mixed[0].TailInk -ne 1379 -or
-        $mixed[0].FromLicense -ne 1379 -or !$report.SawLicense -or
+        $mixed[0].FromLicense -ne 1379 -or $report.FirstShortPredecessor -ne 'LICENSE' -or
         $report.FirstShortMs -ne 602.5598 -or $report.FirstCleanMs -ne 633.5750) {
         throw ("Historical desktop residue was not detected: " + ($report | ConvertTo-Json -Depth 5 -Compress))
     }
     Get-ChildItem -LiteralPath $frames -Filter '*.png' | Copy-Item -Destination $scratch
     $rows = @(Import-Csv -LiteralPath "$frames/dxgi.csv")
-    function Check-Replay($Expected, $FirstShortState) {
+    function Check-Replay($Expected, $FirstShortState, $Predecessor) {
         $rows | Export-Csv -LiteralPath "$scratch/dxgi.csv" -NoTypeInformation
         $replay = & $measure -Frames $scratch @references
         if ($replay.Status -ne $Expected) { throw "Expected $Expected replay: $($replay | ConvertTo-Json -Depth 4)" }
+        if ($Predecessor -and $replay.FirstShortPredecessor -ne $Predecessor) {
+            throw "Expected $Predecessor before the first short presentation, got $($replay.FirstShortPredecessor)"
+        }
         if ($FirstShortState) {
             $frame = $replay.Frames | Where-Object Index -eq 6
             if ($frame.State -ne $FirstShortState -or $replay.FirstShortMs -ne 602.5598) {
@@ -54,9 +57,44 @@ try {
         }
     }
     $rows[6].imageIndex = 3
-    Check-Replay 'passed'
-    $rows[6].accumulatedFrames = 2
+    # The historical ledger predates pointer metadata. Its clean variant alone
+    # cannot prove that the hardware cursor was clear of the preview.
     Check-Replay 'inconclusive'
+    foreach ($row in $rows) { $row | Add-Member -NotePropertyName pointerState -NotePropertyValue 'clear' }
+    $rows[1].pointerState = 'overlap' # Mouse-only update.
+    Check-Replay 'inconclusive'
+    $rows[1].pointerState = 'clear'
+    $rows[6].pointerState = 'overlap' # First visible short.
+    Check-Replay 'inconclusive'
+    $rows[6].imageIndex = 2 # Covered pixels cannot prove residue either.
+    Check-Replay 'inconclusive'
+    $rows[6].imageIndex = 3
+    $rows[6].pointerState = 'unknown'
+    Check-Replay 'inconclusive'
+    $rows[6].pointerState = 'clear'
+    # A later pointer overlap must preserve the earlier unobscured mixed frame.
+    $rows[6].imageIndex = 2
+    $rows[7].pointerState = 'overlap'
+    Check-Replay 'failed' 'mixed'
+    $rows[7].pointerState = 'clear'
+    $rows[6].imageIndex = 3
+    Check-Replay 'passed' -Predecessor 'LICENSE'
+    # LICENSE appeared at index 4, but the frame immediately before short is GLOSSARY.
+    $rows[5].imageIndex = 0
+    Check-Replay 'inconclusive' -Predecessor 'GLOSSARY'
+    # A visible defect is still a failure on this path.
+    $rows[6].imageIndex = 2
+    Check-Replay 'failed' 'mixed' -Predecessor 'GLOSSARY'
+    $rows[6].imageIndex = 3
+    $rows[5].imageIndex = 1
+    # Pointer-only acquisitions do not introduce a new preview between LICENSE and short.
+    $lastLicense = $rows[5]
+    $rows[5] = $rows[1].PSObject.Copy()
+    $rows[5].index = 5
+    Check-Replay 'passed' -Predecessor 'LICENSE'
+    $rows[5] = $lastLicense
+    $rows[6].accumulatedFrames = 2
+    Check-Replay 'inconclusive' -Predecessor 'unavailable'
     $rows[6].accumulatedFrames = 1
     $rows[6].protectedContentMaskedOut = 1
     $rows[6].imageIndex = -1

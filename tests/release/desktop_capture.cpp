@@ -214,6 +214,151 @@ public:
     }
 };
 
+enum class PointerState { clear, overlap, unknown };
+
+const char* pointer_name(PointerState state)
+{
+    switch (state) {
+    case PointerState::clear: return "clear";
+    case PointerState::overlap: return "overlap";
+    default: return "unknown";
+    }
+}
+
+constexpr PointerState pointer_bounds(std::int64_t left, std::int64_t top, UINT width, UINT height, const RECT& area)
+{
+    if (!width || !height) return PointerState::unknown;
+    return left < area.right && top < area.bottom && left + width > area.left && top + height > area.top
+        ? PointerState::overlap : PointerState::clear;
+}
+
+struct DuplicationPointer {
+    std::optional<DXGI_OUTDUPL_POINTER_POSITION> position;
+    UINT width{}, height{};
+
+    constexpr void update(const DXGI_OUTDUPL_FRAME_INFO& info, const DXGI_OUTDUPL_POINTER_SHAPE_INFO& shape)
+    {
+        if (info.LastMouseUpdateTime.QuadPart) position = info.PointerPosition;
+        if (!info.PointerShapeBufferSize) return;
+        width = shape.Width;
+        height = 0;
+        if (shape.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR ||
+            shape.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR)
+            height = shape.Height;
+        else if (shape.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME && !(shape.Height % 2))
+            height = shape.Height / 2; // Stacked AND and XOR masks.
+    }
+
+    constexpr PointerState within(const RECT& area) const
+    {
+        if (!position) return PointerState::unknown;
+        if (!position->Visible) return PointerState::clear;
+        // DXGI already supplies the top-left, local to the duplicated output.
+        return pointer_bounds(position->Position.x, position->Position.y, width, height, area);
+    }
+
+    constexpr PointerState observe(const DXGI_OUTDUPL_FRAME_INFO& info,
+                                   const DXGI_OUTDUPL_POINTER_SHAPE_INFO& shape, const RECT& area,
+                                   PointerState initial = PointerState::unknown)
+    {
+        const auto prior = position ? within(area) : initial;
+        update(info, shape);
+        if (!position) return initial;
+        const auto latest = within(area);
+        if (info.LastPresentTime.QuadPart && info.LastMouseUpdateTime.QuadPart > info.LastPresentTime.QuadPart) {
+            // DXGI only reports the last move. Even identical endpoints can hide
+            // an intervening pointer position at the earlier presentation.
+            return prior == PointerState::overlap || latest == PointerState::overlap
+                ? PointerState::overlap : PointerState::unknown;
+        }
+        return latest;
+    }
+};
+
+// Replay independent mouse, shape and presentation events against one physical pixel.
+static_assert([] {
+    DuplicationPointer cursor{};
+    DXGI_OUTDUPL_FRAME_INFO mouse{};
+    mouse.LastMouseUpdateTime.QuadPart = 1;
+    mouse.PointerPosition = {{-2, 0}, TRUE};
+    cursor.update(mouse, {});
+    const RECT pixel{0, 1, 1, 2};
+    if (cursor.within(pixel) != PointerState::unknown) return false;
+    DXGI_OUTDUPL_FRAME_INFO shape_change{};
+    shape_change.LastMouseUpdateTime.QuadPart = 0;
+    shape_change.PointerShapeBufferSize = 4;
+    cursor.update(shape_change, {DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME, 3, 4, 1, {2, 1}});
+    auto presentation = shape_change;
+    presentation.PointerShapeBufferSize = 0;
+    cursor.update(presentation, {}); // Retain the last visibility, position and shape.
+    if (cursor.within(pixel) != PointerState::overlap ||
+        cursor.within({0, 2, 1, 3}) != PointerState::clear) return false;
+    mouse.PointerPosition.Position.x = -3;
+    cursor.update(mouse, {});
+    if (cursor.within(pixel) != PointerState::clear) return false;
+    mouse.PointerPosition = {{0, 0}, FALSE}; // Pointer left the duplicated output.
+    cursor.update(mouse, {});
+    if (cursor.within(pixel) != PointerState::clear) return false;
+    mouse.PointerPosition.Visible = TRUE;
+    cursor.update(mouse, {});
+    cursor.update(shape_change, {}); // The driver reported a change but supplied no usable dimensions.
+    return cursor.within(pixel) == PointerState::unknown;
+}());
+
+static_assert([] {
+    const RECT pixel{0, 0, 1, 1};
+    DXGI_OUTDUPL_FRAME_INFO frame{};
+    frame.LastPresentTime.QuadPart = 0;
+    frame.LastMouseUpdateTime.QuadPart = 1;
+    frame.PointerPosition = {{0, 0}, TRUE};
+    frame.PointerShapeBufferSize = 4;
+    DuplicationPointer cursor{};
+    cursor.observe(frame, {DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR, 1, 1, 4, {}}, pixel);
+    frame.LastPresentTime.QuadPart = 2;
+    frame.LastMouseUpdateTime.QuadPart = 3;
+    frame.PointerPosition.Position.x = 1;
+    frame.PointerShapeBufferSize = 0;
+    if (cursor.observe(frame, {}, pixel) != PointerState::overlap) return false;
+    frame.LastPresentTime.QuadPart = 4;
+    frame.LastMouseUpdateTime.QuadPart = 5;
+    if (cursor.observe(frame, {}, pixel) != PointerState::unknown) return false;
+    frame.LastMouseUpdateTime.QuadPart = 0;
+    return cursor.observe(frame, {}, pixel) == PointerState::clear;
+}(), "A later pointer move off the preview cannot clear an earlier presentation");
+
+std::optional<CURSORINFO> current_cursor()
+{
+    CURSORINFO info{};
+    info.cbSize = sizeof(info);
+    if (!GetCursorInfo(&info)) return std::nullopt;
+    return info;
+}
+
+// The first desktop presentation may precede DXGI's initial mouse-only event.
+// Bracket that bootstrap interval with the physical Win32 cursor (hotspot coordinates).
+PointerState initial_pointer(const std::optional<CURSORINFO>& before, const RECT& area)
+{
+    const auto after = current_cursor();
+    if (!before || !after || before->flags != after->flags)
+        return PointerState::unknown;
+    if (!(after->flags & CURSOR_SHOWING)) return PointerState::clear;
+    if (before->hCursor != after->hCursor || before->ptScreenPos.x != after->ptScreenPos.x ||
+        before->ptScreenPos.y != after->ptScreenPos.y)
+        return PointerState::unknown;
+    ICONINFO icon{};
+    if (!GetIconInfo(after->hCursor, &icon)) return PointerState::unknown;
+    BITMAP bitmap{};
+    const bool color = icon.hbmColor != nullptr;
+    const auto bytes = GetObjectW(color ? icon.hbmColor : icon.hbmMask, sizeof(bitmap), &bitmap);
+    if (icon.hbmColor) DeleteObject(icon.hbmColor);
+    if (icon.hbmMask) DeleteObject(icon.hbmMask);
+    if (bytes != sizeof(bitmap) || bitmap.bmWidth <= 0 || bitmap.bmHeight <= 0 ||
+        (!color && bitmap.bmHeight % 2)) return PointerState::unknown;
+    return pointer_bounds(std::int64_t(after->ptScreenPos.x) - icon.xHotspot,
+                          std::int64_t(after->ptScreenPos.y) - icon.yHotspot,
+                          UINT(bitmap.bmWidth), UINT(color ? bitmap.bmHeight : bitmap.bmHeight / 2), area);
+}
+
 struct Desktop {
     com_ptr<ID3D11Device> device;
     com_ptr<ID3D11DeviceContext> context;
@@ -221,6 +366,8 @@ struct Desktop {
     com_ptr<ID3D11Texture2D> staging;
     D3D11_BOX box{};
     UINT width, height;
+    DuplicationPointer pointer;
+    RECT output_area{};
 
     explicit Desktop(const RECT& area) : width(area.right - area.left), height(area.bottom - area.top)
     {
@@ -256,6 +403,7 @@ struct Desktop {
         if (surface.ModeDesc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) throw Unobservable("unexpected desktop format");
         box = {UINT(area.left - desc.DesktopCoordinates.left), UINT(area.top - desc.DesktopCoordinates.top),
                0, UINT(area.right - desc.DesktopCoordinates.left), UINT(area.bottom - desc.DesktopCoordinates.top), 1};
+        output_area = {LONG(box.left), LONG(box.top), LONG(box.right), LONG(box.bottom)};
         D3D11_TEXTURE2D_DESC texture{};
         texture.Width = width;
         texture.Height = height;
@@ -264,6 +412,20 @@ struct Desktop {
         texture.Usage = D3D11_USAGE_STAGING;
         texture.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         dx(device->CreateTexture2D(&texture, nullptr, staging.put()), "create preview texture");
+    }
+
+    PointerState observe_pointer(const DXGI_OUTDUPL_FRAME_INFO& info, const std::optional<CURSORINFO>& before,
+                                 const RECT& area)
+    {
+        DXGI_OUTDUPL_POINTER_SHAPE_INFO shape{};
+        if (info.PointerShapeBufferSize) {
+            std::vector<BYTE> bytes(info.PointerShapeBufferSize);
+            UINT required{};
+            if (FAILED(duplication->GetFramePointerShape(info.PointerShapeBufferSize, bytes.data(),
+                                                         &required, &shape))) shape = {};
+        }
+        const auto initial = pointer.position ? PointerState::unknown : initial_pointer(before, area);
+        return pointer.observe(info, shape, output_area, initial);
     }
 
     Pixels read(IDXGIResource* resource)
@@ -307,6 +469,7 @@ struct Frame {
     DXGI_OUTDUPL_FRAME_INFO info;
     LONGLONG acquired, read;
     int image;
+    PointerState pointer;
 };
 
 void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
@@ -330,6 +493,7 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
     LONGLONG zero = 0;
     try {
         picker.verify_visible();
+        const auto initial_cursor = current_cursor();
         Desktop desktop(picker.area);
         const auto start = tick();
         while (!zero || ms(tick() - zero) < 2000) {
@@ -342,8 +506,9 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
             if (status == DXGI_ERROR_WAIT_TIMEOUT) continue;
             dx(status, "AcquireNextFrame");
             picker.verify_visible();
+            const auto pointer = desktop.observe_pointer(info, initial_cursor, area);
             int image = -1;
-            if (info.LastPresentTime.QuadPart && !info.ProtectedContentMaskedOut) {
+            if (pointer == PointerState::clear && info.LastPresentTime.QuadPart && !info.ProtectedContentMaskedOut) {
                 auto pixels = desktop.read(resource.get());
                 picker.verify_visible();
                 if (images.empty() || images.back() != pixels) {
@@ -353,9 +518,11 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
                 }
                 image = static_cast<int>(images.size()) - 1;
             }
-            frames.push_back({info, acquired, tick(), image});
+            frames.push_back({info, acquired, tick(), image, pointer});
             resource.reset();
             dx(desktop.duplication->ReleaseFrame(), "ReleaseFrame");
+            if (pointer == PointerState::overlap) throw Unobservable("hardware pointer overlaps the preview");
+            if (pointer == PointerState::unknown) throw Unobservable("cannot verify pointer visibility or bounds");
             if (!zero && image >= 0) {
                 if (!query) { zero = acquired; break; }
                 picker.verify_visible();
@@ -375,7 +542,7 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
     }
     std::ofstream csv(dir / "dxgi.csv", std::ios::binary);
     csv.exceptions(std::ios::badbit | std::ios::failbit);
-    csv << "index,lastPresentQpc,presentMs,acquiredMs,readMs,accumulatedFrames,mouseQpc,protectedContentMaskedOut,imageIndex\n";
+    csv << "index,lastPresentQpc,presentMs,acquiredMs,readMs,accumulatedFrames,mouseQpc,protectedContentMaskedOut,imageIndex,pointerState\n";
     csv << std::fixed << std::setprecision(4);
     for (size_t i = 0; i < frames.size(); ++i) {
         const auto& f = frames[i];
@@ -383,7 +550,7 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
         csv << i << ',' << present << ',' << (present && zero ? ms(present - zero) : 0.0) << ','
             << (zero ? ms(f.acquired - zero) : 0.0) << ',' << (zero ? ms(f.read - zero) : 0.0) << ','
             << f.info.AccumulatedFrames << ',' << f.info.LastMouseUpdateTime.QuadPart << ','
-            << (f.info.ProtectedContentMaskedOut != FALSE) << ',' << f.image << '\n';
+            << (f.info.ProtectedContentMaskedOut != FALSE) << ',' << f.image << ',' << pointer_name(f.pointer) << '\n';
     }
     csv.close();
     if (failure) std::rethrow_exception(failure);

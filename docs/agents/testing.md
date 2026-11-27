@@ -57,4 +57,4 @@ powershell -NoProfile -File scripts\capture-window.ps1 -Hwnd 0x1234 -OutputPath 
 
 交付候选包时在交互桌面运行 `cmake --workflow --preset windows-mingw-release`。从输出的证据目录核对 ZIP 摘要、包内源码修订号和各项结果。将同一份候选的摘要与解压路径填入人工交接单。[Windows 便携包验收](../cross-platform-build.md#windows-便携包验收)
 
-复核桌面首帧判据时，运行 `ctest --preset windows-mingw -R release_preview_residue_control --output-on-failure` 回放 #54 的历史混字帧。候选 ZIP 的实机结果在当次证据目录的 `desktop-preview/result.json`。各次切换的 `pixels.json` 和 `frames/dxgi.csv` 可对照首张短句、旧尾行像素及合帧记录。
+复核桌面首帧判据时，运行 `ctest --preset windows-mingw -R release_preview_residue_control --output-on-failure` 回放 #54 的历史混字帧。候选 ZIP 的实机结果在当次证据目录的 `desktop-preview/result.json`。各次切换的 `pixels.json` 记录首张短句、紧邻它的上一份预览及旧尾行像素。`frames/dxgi.csv` 逐次记录指针状态和 DXGI 合帧数，即使只有指针移动也会检查遮挡。旧版记录缺少指针状态，只能用来检出已留存的残字。

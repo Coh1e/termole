@@ -79,6 +79,7 @@ function Read-DesktopPreview($Name, $Folder, $Selected, $ExpectedSignature, [swi
                 [IO.File]::WriteAllText("$dir/capture.log", $out.Result)
                 [IO.File]::WriteAllText("$dir/capture-error.log", $err.Result)
                 $scene.captureExit = $native.ExitCode
+                if ($scene.captureExit -eq 77) { $scene.reason = $err.Result.Trim() }
                 if ($scene.captureExit -notin 0,77) {
                     throw "DXGI capture failed with exit $($scene.captureExit). See $dir/capture-error.log"
                 }
@@ -175,7 +176,8 @@ try {
     }
     for ($i = 1; $i -le 6; $i++) {
         $scene = Read-DesktopPreview "switch-$i" $files $short $refs['GLOSSARY.md'].signature -SwitchFile
-        $record = [ordered]@{ attempt=$i; captureExit=$scene.captureExit; outputVerified=$scene.outputVerified }
+        $record = [ordered]@{ attempt=$i; captureExit=$scene.captureExit; outputVerified=$scene.outputVerified
+            status='inconclusive'; reason=$scene.reason }
         $report.attempts += $record
         if ($scene.dpi -ne $displayDpi) { $record.reason = 'DPI changed'; continue }
         if (!(Test-Path -LiteralPath "$($scene.frames)/dxgi.csv")) {
@@ -184,12 +186,17 @@ try {
         }
         $pixels = & "$PSScriptRoot/measure-desktop-preview.ps1" -Frames $scene.frames @references
         $pixels | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath "$($scene.directory)/pixels.json" -Encoding UTF8
-        $record.status = $pixels.Status
-        $record.sawLicense = $pixels.SawLicense
+        # The collector may have stopped after the last readable pixels. Earlier
+        # frames can prove a defect, but an interrupted run cannot pass.
+        if ($scene.outputVerified -or $pixels.Status -eq 'failed') { $record.status = $pixels.Status }
+        if (!$record.reason -and $pixels.Gaps.Count) { $record.reason = $pixels.Gaps -join '; ' }
+        $record.firstShortPredecessor = $pixels.FirstShortPredecessor
+        $record.pointerOverlaps = $pixels.PointerOverlaps
+        $record.pointerUnknown = $pixels.PointerUnknown
         $record.firstShortMs = $pixels.FirstShortMs
         $record.presentations = $pixels.Presentations
-        if ($pixels.Status -eq 'failed') { throw "Desktop preview regression. See $($scene.directory)/pixels.json" }
-        if ($pixels.Status -eq 'passed' -and $pixels.SawLicense -and $scene.outputVerified) {
+        if ($record.status -eq 'failed') { throw "Desktop preview regression. See $($scene.directory)/pixels.json" }
+        if ($record.status -eq 'passed') {
             $report.status = 'passed'
             break
         }

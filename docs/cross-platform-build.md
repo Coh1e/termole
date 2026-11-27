@@ -122,7 +122,7 @@ cmake --workflow --preset windows-mingw-release
 
 - 启动默认 Shell，检查子进程与窗口像素。
 - 从包根按 README 的命令启动文件选择示例，核对 README.md 的预览和返回路径。并发用例给两个 fzf 窗口不同的文件名，向第二个窗口逐字发送「中文」，在两字之间取消第一个窗口，核对预览、标准流、退出码和子进程回收。另用相同的两个英文候选测量五次冷启动的首次有效按键耗时。[AV1 验收](https://github.com/Coh1e/termole/issues/43)
-- 用 #54 留存的混字帧检验像素比较程序，再用包内文件选择脚本打开五文件目录。在当前 DPI 下分别采集单文件参照，用另一份文件中相同列的 `n.` 核对短句末尾的两个字形。通过 DXGI 记录从 `GLOSSARY.md` 经 `LICENSE` 切到单行文件的实际桌面呈现。新短句首次上屏时，旧尾行应已清空。请保持选择器可见、无遮挡。缺少连续桌面帧时，验收记录为未验。[原缺陷的像素证据](https://github.com/Coh1e/termole/issues/54#issuecomment-7212010345)
+- 用 #54 留存的混字帧检验像素比较程序，再用包内文件选择脚本打开五文件目录。在当前 DPI 下分别采集单文件参照，用另一份文件中相同列的 `n.` 核对短句末尾的两个字形。DXGI 记录须从 `GLOSSARY.md` 开始，首张短句的上一张桌面呈现须为 `LICENSE`，且短句首次上屏时旧尾行已清空。请将鼠标指针停在预览区外。硬件指针遮住预览区、指针可见性无法确认或采集漏帧时，该轮记为未验。此前清晰帧中已检出的残字仍记为失败。[原缺陷的像素证据](https://github.com/Coh1e/termole/issues/54#issuecomment-7212010345)
 - 从当前视图的右键菜单执行 QuickJS 命令，核对粘贴到编辑器的文字、双窗口选区和停用后的菜单。[菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
 
 控制台输出本次证据目录。成功记录位于 `<build>/tests/release-zip/<SHA-256>/<run>/acceptance.txt`，同目录保存每项的日志与截图。包内 `share/termole/source-revision.txt` 记录安装时的提交和工作树状态。验收会检查干净工作树的 HEAD 与包内修订号一致。无 Git 元数据的源码仍可构建和打包，修订号为 `unknown`。在相应提交的构建目录复核已有 ZIP，运行 `cmake --build --preset windows-verify-zip`。
