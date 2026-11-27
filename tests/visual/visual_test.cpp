@@ -694,7 +694,7 @@ int run_preview_redraw(const Options& options)
         return true;
     };
     const COLORREF old_color = RGB(30, 55, 220), new_color = RGB(220, 30, 55);
-    enum class Sentence { Omit, Reference, Compare };
+    enum class Sentence { Omit, GlyphReference, Reference, Compare };
     struct FrameCheck {
         Sentence sentence = Sentence::Omit;
         bool record_long_tail = false;
@@ -702,7 +702,7 @@ int run_preview_redraw(const Options& options)
         std::vector<COLORREF>* counter = nullptr;
         capture::Method method = capture::Method::PrintWindow;
     };
-    std::vector<COLORREF> long_tail, reference_row;
+    std::vector<COLORREF> long_tail, reference_row, reference_suffix;
     const auto capture_frame = [&](std::string_view name, COLORREF header, bool old_tail,
                                    FrameCheck frame = {}) {
         RECT client{};
@@ -764,27 +764,37 @@ int run_preview_redraw(const Options& options)
             const auto letter_left = cell_edge(sentence_columns - 2);
             const auto period_left = cell_edge(sentence_columns - 1);
             const auto period_right = cell_edge(sentence_columns);
-            std::vector<COLORREF> row;
+            const auto guard_right = cell_edge(sentence_columns + 1);
+            std::vector<COLORREF> row, suffix;
             row.reserve(points.size() - row_start);
-            unsigned letter_ink = 0, period_ink = 0;
+            unsigned letter_ink = 0, period_ink = 0, guard_ink = 0;
             for (size_t i = row_start; i < points.size(); ++i) {
                 const auto& pixel = points[i];
                 row.push_back(pixel.color);
+                if (pixel.x >= letter_left && pixel.x < period_right) suffix.push_back(pixel.color);
                 // Only the sentence glyphs are green on the red header.
                 if (GetGValue(pixel.color) <= GetRValue(pixel.color)) continue;
                 if (pixel.x >= letter_left && pixel.x < period_left) ++letter_ink;
                 if (pixel.x >= period_left && pixel.x < period_right) ++period_ink;
+                if (pixel.x >= period_right && pixel.x < guard_right) ++guard_ink;
             }
-            const bool complete = in_bounds && client.right >= period_right && letter_ink && period_ink;
+            const bool glyph_reference = frame.sentence == Sentence::GlyphReference;
+            const bool suffix_ok = glyph_reference ? client.right >= guard_right && guard_ink > 0 :
+                                                     suffix == reference_suffix;
+            const bool complete = in_bounds && client.right >= period_right && letter_ink && period_ink && suffix_ok;
             details << "lastLetterInkPixels=" << letter_ink << "\nperiodInkPixels=" << period_ink << '\n';
+            if (glyph_reference) details << "guardInkPixels=" << guard_ink << '\n';
+            else details << "matchesSuffixReference=" << suffix_ok << '\n';
             const bool different = frame.sentence == Sentence::Compare && row != reference_row;
             if (frame.sentence == Sentence::Compare)
                 details << "matchesSentenceReference=" << !different << '\n';
             if (!complete || different) {
                 std::cerr << name << ": incomplete or different sentence (last letter pixels="
-                          << letter_ink << ", period pixels=" << period_ink << ")\n";
+                          << letter_ink << ", period pixels=" << period_ink
+                          << ", suffix check=" << suffix_ok << ")\n";
                 return false;
             }
+            if (glyph_reference) reference_suffix = std::move(suffix);
             if (frame.sentence == Sentence::Reference) reference_row = std::move(row);
         }
         std::cout << name << " header=" << points[0].color << " tail glyph pixels=" << ink
@@ -809,13 +819,21 @@ int run_preview_redraw(const Options& options)
     constexpr std::string_view long_preview =
         "\x1b[?1049h\x1b[2J\x1b[2;1H\x1b[48;2;30;55;220m Old header"
         "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h";
-    const std::string sentence_line =
-        "\x1b[2;1H\x1b[48;2;220;30;55;38;2;0;255;0m " + std::string(sentence) + "\x1b[0m";
+    const std::string header_style = "\x1b[2;1H\x1b[48;2;220;30;55;38;2;0;255;0m";
+    const std::string sentence_line = header_style + " " + std::string(sentence) + "\x1b[0m";
+    // Match the physical origin of each glyph. The extra X puts the period inside
+    // this separate text run so a clipped sentence ending cannot become the oracle.
+    const std::string glyph_line = header_style + std::string(sentence_columns - 2, ' ') + "n.X\x1b[0m";
     const std::string short_header = "\x1b[?25l" + sentence_line;
     const auto capture_reference = [&](std::string_view name) {
+        reference_suffix.clear();
         reference_row.clear();
-        return send("\x1b[?1049h\x1b[2J" + sentence_line + "\x1b[7;1H\x1b[?25h", name) &&
-            capture_after_resize(name, new_color, false, { .sentence = Sentence::Reference });
+        const auto capture_line = [&](std::string_view label, const std::string& line, Sentence mode) {
+            return send("\x1b[?1049h\x1b[2J" + line + "\x1b[7;1H\x1b[?25h", label) &&
+                capture_after_resize(label, new_color, false, { .sentence = mode });
+        };
+        return capture_line(std::string(name) + "-glyphs", glyph_line, Sentence::GlyphReference) &&
+            capture_line(name, sentence_line, Sentence::Reference);
     };
     check(capture_reference("00-short-reference"),
           "the independent short preview shows its last letter and period");
@@ -881,12 +899,17 @@ int run_preview_redraw(const Options& options)
         const bool parsed = wait_for_title(name);
         paint_view();
         pump_for(duration_ms);
-        std::vector<COLORREF> first_counter, next_counter;
-        bool matched = capture_frame(name, header, old_tail, { .counter = old_tail ? nullptr : &first_counter });
-        if (!old_tail && matched) {
+        bool matched = false;
+        if (old_tail) {
+            matched = capture_frame(name, header, true);
+        } else {
+            std::vector<COLORREF> first_counter, next_counter;
+            const bool first = capture_frame(name, header, false,
+                { .sentence = Sentence::Compare, .counter = &first_counter });
             pump_for(120);
-            matched = capture_frame("04-next-counter", header, false, { .counter = &next_counter }) &&
-                first_counter != next_counter;
+            const bool next = capture_frame("04-next-counter", header, false,
+                { .sentence = Sentence::Compare, .counter = &next_counter });
+            matched = first && next && first_counter != next_counter;
         }
         output.request_stop();
         output.join();

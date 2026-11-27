@@ -21,6 +21,7 @@ $capture = (Get-Item -LiteralPath "$PSScriptRoot/../../scripts/capture-window.ps
 Add-Type -Path "$PSScriptRoot/applet-window.cs" -ReferencedAssemblies System.Drawing.dll
 
 $short = 'lighthouse-6a98.txt'
+$glyphs = 'suffix-glyphs.txt'
 $query = 'lighthouse-6a98'
 $running = [Collections.Generic.List[Diagnostics.Process]]::new()
 $windowConfig = @('columns = 111', 'rows = 32', 'font = "Consolas"', 'font_size = 16',
@@ -138,9 +139,15 @@ try {
                             [Text.UTF8Encoding]::new($false))
 
     $refs = @{}
-    foreach ($name in 'GLOSSARY.md','LICENSE',$short) {
+    foreach ($name in 'GLOSSARY.md','LICENSE',$short,$glyphs) {
         $single = [IO.Directory]::CreateDirectory("$Evidence/single-$name").FullName
-        Copy-Item -LiteralPath (Join-Path $files $name) -Destination (Join-Path $single $name)
+        $singleFile = Join-Path $single $name
+        if ($name -eq $glyphs) {
+            # Draw n. in the same two cells as the sentence, inside a longer line.
+            [IO.File]::WriteAllText($singleFile, (' ' * 31) + 'T n. T', [Text.UTF8Encoding]::new($false))
+        } else {
+            Copy-Item -LiteralPath (Join-Path $files $name) -Destination $singleFile
+        }
         for ($i = 1; $i -le 3; $i++) {
             $ref = Read-DesktopPreview "ref-$name-$i" $single $name
             $report.referenceAttempts += [ordered]@{ name=$name; attempt=$i; captureExit=$ref.captureExit
@@ -155,13 +162,14 @@ try {
         $refs[$name] = $ref
     }
     $displayDpi = $refs[$short].dpi
-    if ($refs['LICENSE'].dpi -ne $displayDpi -or $refs['GLOSSARY.md'].dpi -ne $displayDpi) {
+    if ($refs.Values | Where-Object { $_.dpi -ne $displayDpi }) {
         $report.status = 'inconclusive'
         throw 'The independent references used different DPI settings.'
     }
     $report.dpi = $displayDpi
     $references = @{
         Short = (Join-Path $refs[$short].frames 'surface-0000.bmp')
+        Glyphs = (Join-Path $refs[$glyphs].frames 'surface-0000.bmp')
         License = (Join-Path $refs['LICENSE'].frames 'surface-0000.bmp')
         Glossary = (Join-Path $refs['GLOSSARY.md'].frames 'surface-0000.bmp')
     }

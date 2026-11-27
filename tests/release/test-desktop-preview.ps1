@@ -6,18 +6,40 @@ $frames = "$PSScriptRoot/fixtures/preview-residue"
 $references = @{ ImageExtension='png'; Glossary="$frames/surface-0000.png";
     License="$frames/surface-0001.png"; Short="$frames/surface-0003.png" }
 $measure = "$PSScriptRoot/measure-desktop-preview.ps1"
-$report = & $measure -Frames $frames @references
-$mixed = @($report.Frames | Where-Object State -eq 'mixed')
-if ($report.Status -ne 'failed' -or $report.Presentations -ne 7 -or $report.Missed -or $report.Masked -or
-    $mixed.Count -ne 1 -or $mixed[0].Index -ne 6 -or $mixed[0].TailInk -ne 1379 -or
-    $mixed[0].FromLicense -ne 1379 -or !$report.SawLicense -or
-    $report.FirstShortMs -ne 602.5598 -or $report.FirstCleanMs -ne 633.5750) {
-    throw ("Historical desktop residue was not detected: " + ($report | ConvertTo-Json -Depth 5 -Compress))
+Add-Type -AssemblyName System.Drawing
+function Write-HistoricalGlyphs($Path, $Padding = 0) {
+    # Reconstruct the guarded line from the original independent 96-DPI long previews:
+    # T from 'MIT', n from 'documentation', and the period from 'termole.exe' under GUI Role.
+    $license = [Drawing.Bitmap]::new($references.License)
+    $glossary = [Drawing.Bitmap]::new($references.Glossary)
+    $control = [Drawing.Bitmap]::new($license.Width, $license.Height + $Padding)
+    $draw = [Drawing.Graphics]::FromImage($control)
+    try {
+        $draw.Clear($license.GetPixel(0, 20))
+        $draw.PageUnit = [Drawing.GraphicsUnit]::Pixel
+        foreach ($cell in @(@($license,26,18,282), @($license,343,112,299),
+                            @($glossary,120,546,308), @($license,26,18,326))) {
+            $from = [Drawing.Rectangle]::new($cell[1], $cell[2], 9, 18)
+            $to = [Drawing.Rectangle]::new($cell[3], 18, 9, 18)
+            $draw.DrawImage($cell[0], $to, $from, [Drawing.GraphicsUnit]::Pixel)
+        }
+        $control.Save($Path, [Drawing.Imaging.ImageFormat]::Png)
+    } finally { $draw.Dispose(); $control.Dispose(); $glossary.Dispose(); $license.Dispose() }
 }
 # Replay the same transition with a clean first frame, a merged present, a protected
 # present without a bitmap, and a black/unreadable capture. Only the first is conclusive.
 $scratch = [IO.Directory]::CreateDirectory((Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString()))).FullName
 try {
+    $references.Glyphs = "$scratch/suffix-glyphs.png"
+    Write-HistoricalGlyphs $references.Glyphs
+    $report = & $measure -Frames $frames @references
+    $mixed = @($report.Frames | Where-Object State -eq 'mixed')
+    if ($report.Status -ne 'failed' -or $report.Presentations -ne 7 -or $report.Missed -or $report.Masked -or
+        $mixed.Count -ne 1 -or $mixed[0].Index -ne 6 -or $mixed[0].TailInk -ne 1379 -or
+        $mixed[0].FromLicense -ne 1379 -or !$report.SawLicense -or
+        $report.FirstShortMs -ne 602.5598 -or $report.FirstCleanMs -ne 633.5750) {
+        throw ("Historical desktop residue was not detected: " + ($report | ConvertTo-Json -Depth 5 -Compress))
+    }
     Get-ChildItem -LiteralPath $frames -Filter '*.png' | Copy-Item -Destination $scratch
     $rows = @(Import-Csv -LiteralPath "$frames/dxgi.csv")
     function Check-Replay($Expected, $FirstShortState) {
@@ -76,6 +98,29 @@ try {
         Check-Replay 'failed' 'short-with-differences'
     } finally { $clipped.Dispose() }
 
+    # Damage the short control AND both short presentations. The intact independent
+    # glyphs must still reject a partly clipped n and a half-height period separately.
+    $rows[7].imageIndex = 4
+    $rows | Export-Csv -LiteralPath "$scratch/dxgi.csv" -NoTypeInformation
+    $shared = $references.Clone()
+    $shared.Short = "$scratch/surface-0004.png"
+    foreach ($damage in [Drawing.Rectangle]::new(300,28,7,3), [Drawing.Rectangle]::new(311,29,3,1)) {
+        $clipped = [Drawing.Bitmap]::new($references.Short)
+        try {
+            $background = $clipped.GetPixel(310, 29)
+            for ($y = $damage.Top; $y -lt $damage.Bottom; $y++) {
+                for ($x = $damage.Left; $x -lt $damage.Right; $x++) { $clipped.SetPixel($x, $y, $background) }
+            }
+            $clipped.Save($shared.Short, [Drawing.Imaging.ImageFormat]::Png)
+        } finally { $clipped.Dispose() }
+        try { $unexpected = & $measure -Frames $scratch @shared }
+        catch {
+            if ($_.Exception.GetBaseException().Message -ne "Short reference differs from the independent 'n.' glyphs.") { throw }
+            continue
+        }
+        throw "Expected shared suffix damage at $damage to be rejected, got $($unexpected.Status)."
+    }
+
     # A spare terminal row below the bottom border changes the crop height, not
     # the preview body. The actual 96 DPI recordings still contain 1,379 old pixels.
     foreach ($index in 0..3) {
@@ -91,8 +136,9 @@ try {
             $padded.Save("$scratch/$name", [Drawing.Imaging.ImageFormat]::Png)
         } finally { $draw.Dispose(); $padded.Dispose(); $image.Dispose() }
     }
+    Write-HistoricalGlyphs "$scratch/padded-glyphs.png" 20
     $paddedPixels = [DesktopPreviewPixels]::new("$scratch/surface-0003.png", "$scratch/surface-0000.png",
-        "$scratch/surface-0001.png")
+        "$scratch/surface-0001.png", "$scratch/padded-glyphs.png")
     $paddedMixed = $paddedPixels.Compare("$scratch/surface-0002.png")
     if ($paddedMixed.State -ne 'mixed' -or $paddedMixed.FromLicense -ne 1379) {
         throw 'Moving the bottom border within the crop changed the historical result.'

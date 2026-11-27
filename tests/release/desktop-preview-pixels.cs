@@ -74,7 +74,7 @@ public sealed class DesktopPreviewPixels
         return (rgb >> 16) >= 200 && ((rgb >> 8) & 255) >= 200 && (rgb & 255) >= 200;
     }
 
-    public DesktopPreviewPixels(string shortPath, string glossaryPath, string licensePath)
+    public DesktopPreviewPixels(string shortPath, string glossaryPath, string licensePath, string glyphPath)
     {
         using (var image = new Bitmap(shortPath)) { width = image.Width; height = image.Height; }
         shortImage = Read(shortPath);
@@ -83,7 +83,7 @@ public sealed class DesktopPreviewPixels
         // First text row inside the border. The page count is in the upper right.
         heading = Rectangle.FromLTRB(width / 100, height / 32, width * 4 / 5, height * 2 / 32);
         tail = FindTail();
-        ValidateShort();
+        ValidateShort(Read(glyphPath));
         Measurement g = Measure(glossary), l = Measure(license);
         if (g.State != "GLOSSARY" || l.State != "LICENSE" || g.FromGlossary == 0 || l.FromLicense == 0)
             throw new InvalidDataException("The two independent long references need distinct content and tail ink.");
@@ -117,7 +117,7 @@ public sealed class DesktopPreviewPixels
         return Rectangle.FromLTRB(heading.Left, heading.Bottom, right + 1, bottom);
     }
 
-    void ValidateShort()
+    void ValidateShort(int[] glyphs)
     {
         const string sentence = "The lighthouse turns amber at noon.";
         var occupied = new bool[heading.Right];
@@ -141,25 +141,53 @@ public sealed class DesktopPreviewPixels
         for (int i = 0; i < starts.Count; ++i)
             if (Math.Abs(starts[i] - starts[0] - wordColumns[i] * pitch) > pitch / 2)
                 throw new InvalidDataException("Short reference word positions do not match the fixture.");
-        // Check the visible 'n' and '.' separately; two equally clipped images cannot certify each other.
-        int[] glyphHeight = { 0, 0 };
-        for (int glyph = 0; glyph < 2; ++glyph)
-        {
-            int left = (int)Math.Round(starts[0] + (sentence.Length - 2 + glyph) * pitch);
-            int right = (int)Math.Round(left + pitch * 0.92);
-            if (right > heading.Right) throw new InvalidDataException("Clipped short reference.");
-            for (int y = heading.Top; y < heading.Bottom; ++y)
-            {
-                for (int x = left; x < right; ++x)
-                    if (Dark(shortImage[y * width + x])) { ++glyphHeight[glyph]; break; }
-            }
-        }
-        if (glyphHeight[1] == 0 || glyphHeight[0] < glyphHeight[1] * 2)
-            throw new InvalidDataException("Short reference is missing its final letter or period.");
+        ValidateSuffix(glyphs, starts[0], pitch);
         for (int y = tail.Top; y < tail.Bottom; ++y)
             for (int x = tail.Left; x < tail.Right; ++x)
                 if (!Light(shortImage[y * width + x]))
                     throw new InvalidDataException("The independent short reference has a nonblank tail.");
+    }
+
+    void ValidateSuffix(int[] glyphs, int origin, double pitch)
+    {
+        // The separate file contains 31 spaces followed by "T n. T". Its guards
+        // place both glyphs inside a longer line, at precisely the sentence's columns.
+        int background = glyphs[heading.Top * width + width / 4];
+        var runs = new List<Rectangle>();
+        var run = Rectangle.Empty;
+        for (int x = heading.Left; x < heading.Right; ++x)
+        {
+            int top = heading.Bottom, bottom = heading.Top;
+            for (int y = heading.Top; y < heading.Bottom; ++y)
+            {
+                if (glyphs[y * width + x] == background) continue;
+                top = Math.Min(top, y);
+                bottom = y + 1;
+            }
+            if (top < bottom)
+            {
+                var column = Rectangle.FromLTRB(x, top, x + 1, bottom);
+                run = run.IsEmpty ? column : Rectangle.Union(run, column);
+            }
+            else if (!run.IsEmpty) { runs.Add(run); run = Rectangle.Empty; }
+        }
+        if (!run.IsEmpty) runs.Add(run);
+        if (!Light(background) || runs.Count != 4 || runs[1].Height < runs[2].Height * 2 ||
+            runs[0].Height < runs[1].Height || runs[3].Height < runs[1].Height)
+            throw new InvalidDataException("Independent glyph reference must show the guarded pair 'T n. T'.");
+        int[] columns = { 31, 33, 34, 36 };
+        for (int i = 0; i < runs.Count; ++i)
+        {
+            double center = (runs[i].Left + runs[i].Right) / 2.0;
+            if (Math.Abs(center - origin - (columns[i] + 0.5) * pitch) > pitch / 2)
+                throw new InvalidDataException("Independent glyph reference is misaligned with the short sentence.");
+        }
+        // Compare every RGB value between the outside edges of n and period,
+        // including antialiasing, inter-glyph whitespace and the full row height.
+        for (int y = heading.Top; y < heading.Bottom; ++y)
+            for (int x = runs[1].Left; x < runs[2].Right; ++x)
+                if (shortImage[y * width + x] != glyphs[y * width + x])
+                    throw new InvalidDataException("Short reference differs from the independent 'n.' glyphs.");
     }
 
     public Measurement Compare(string path) { return Measure(Read(path)); }

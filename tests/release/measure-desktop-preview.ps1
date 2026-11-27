@@ -3,13 +3,14 @@ param(
     [Parameter(Mandatory)][string]$Short,
     [Parameter(Mandatory)][string]$Glossary,
     [Parameter(Mandatory)][string]$License,
+    [Parameter(Mandatory)][string]$Glyphs,
     [ValidateSet('bmp','png')][string]$ImageExtension = 'bmp'
 )
 $ErrorActionPreference = 'Stop'
 if (!('DesktopPreviewPixels' -as [type])) {
     Add-Type -Path "$PSScriptRoot/desktop-preview-pixels.cs" -ReferencedAssemblies System.Drawing.dll
 }
-$classifier = [DesktopPreviewPixels]::new($Short, $Glossary, $License)
+$classifier = [DesktopPreviewPixels]::new($Short, $Glossary, $License, $Glyphs)
 $pixels = @{}
 $presentations = [Collections.Generic.List[object]]::new()
 $missed = 0
