@@ -10,6 +10,7 @@ $previousOptions = $env:FZF_DEFAULT_OPTS
 $previousOptionsFile = $env:FZF_DEFAULT_OPTS_FILE
 $previousTmp = $env:TMP
 $previousQuery = $env:TERMOLE_TEST_QUERY
+$previousInputEncoding = [Console]::InputEncoding
 $fixture = [IO.Directory]::CreateDirectory((Join-Path $Root ([Guid]::NewGuid().ToString()))).FullName
 # Drive the packaged launcher with a deterministic fzf stand-in. The visual test drives real fzf.
 Add-Type -OutputType ConsoleApplication -OutputAssembly (Join-Path $fixture 'fzf.exe') -TypeDefinition @"
@@ -75,6 +76,8 @@ try {
             [Console]::SetError($savedError)
         }
     }
+    # Windows PowerShell can add this encoding's preamble before the first native record.
+    [Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
     foreach ($case in @(
         @{ Query = $localName; Args = @(); Expected = Join-Path $Root $localName },
         @{ Query = $otherName; Args = @($folder); Expected = Join-Path $folder $otherName },
@@ -98,6 +101,9 @@ try {
         } finally {
             [Console]::SetError($savedError)
         }
+        if ([Console]::InputEncoding.CodePage -ne 65001 -or [Console]::InputEncoding.GetPreamble().Length -ne 3) {
+            throw "Selector changed the caller's input encoding"
+        }
         if ($case.Reason -and $diagnostic.ToString() -notmatch $case.Reason) {
             throw "Missing diagnostic for $($case.Query): $diagnostic"
         }
@@ -112,6 +118,7 @@ try {
         }
     }
 } finally {
+    [Console]::InputEncoding = $previousInputEncoding
     $env:TMP = $previousTmp
     Get-ChildItem -LiteralPath $fixture -File -Filter '*.tmp' | ForEach-Object {
         $_.IsReadOnly = $false
