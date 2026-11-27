@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+_Static_assert(TERMOLE_ABI_VERSION == 3u, "the packaged SDK must provide ABI 3");
+
 static int failures = 0;
 
 #ifdef TERMOLE_TEST_GHOSTTY_FAILURE

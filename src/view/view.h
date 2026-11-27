@@ -92,6 +92,7 @@ private:
     bool selecting_ = false;
     bool mouse_reporting_ = false;
     int mouse_button_ = 0;
+    RECT selection_click_bounds_{};
     int selection_anchor_row_ = 0;
     int selection_anchor_column_ = 0;
     int selection_focus_row_ = 0;

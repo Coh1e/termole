@@ -33,10 +33,11 @@ try {
     do {
         & $capture -Hwnd ($view.ToInt64().ToString()) -OutputPath (Join-Path $out 'window.png') -StatsPath (Join-Path $out 'pixels.txt') -Quiet
         $ink = Get-Content -LiteralPath (Join-Path $out 'pixels.txt') -Raw | ConvertFrom-StringData
-        if ([long]$ink.inkPixels -ge 500) { break }
+        $visible = [long]$ink.inkPixels -ge 500 -and [double]$ink.inkRatio -ge 0.0008
+        if ($visible) { break }
         Start-Sleep -Milliseconds 200
     } while ([DateTime]::UtcNow -lt $deadline)
-    if ([long]$ink.inkPixels -lt 500) { throw 'The terminal View has too few text pixels. See window.png' }
+    if (!$visible) { throw "Insufficient shell text: inkPixels=$($ink.inkPixels), inkRatio=$($ink.inkRatio). See window.png" }
     $fact = [ordered]@{executable=(Get-FileHash -LiteralPath $exe).Hash; shell=$shell; children=$children; launcherExitCode=$launcher.ExitCode; title=$title}
     $fact | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out 'result.json') -Encoding utf8
     "Default shell evidence: $out"

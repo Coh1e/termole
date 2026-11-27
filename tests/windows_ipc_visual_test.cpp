@@ -1,7 +1,10 @@
 #include "common/win.h"
+#include "sdk-consumer/capture.h"
 
+#include <objbase.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -42,40 +45,43 @@ BOOL CALLBACK find_window(HWND window, LPARAM parameter)
     return FALSE;
 }
 
-bool capture_color(HWND window, bool red)
-{
-    RECT client{};
-    if (!::GetClientRect(window, &client) || client.right < 300 || client.bottom < 160) return false;
-    HDC screen = ::GetDC(window);
-    if (!screen) return false;
-    HDC memory = ::CreateCompatibleDC(screen);
-    HBITMAP bitmap = ::CreateCompatibleBitmap(screen, client.right, client.bottom);
-    bool matched = false;
-    if (memory && bitmap) {
-        HGDIOBJ previous = ::SelectObject(memory, bitmap);
-        if (::PrintWindow(window, memory, PW_CLIENTONLY | PW_RENDERFULLCONTENT)) {
-            matched = true;
-            for (int x : { 80, 160, 240 }) {
-                const COLORREF pixel = ::GetPixel(memory, x, 80);
-                const int expected = red ? GetRValue(pixel) : GetBValue(pixel);
-                const int other = red ? GetBValue(pixel) : GetRValue(pixel);
-                matched = matched && pixel != CLR_INVALID && expected > other + 40 && expected > 90;
-            }
-        }
-        ::SelectObject(memory, previous);
-    }
-    if (bitmap) ::DeleteObject(bitmap);
-    if (memory) ::DeleteDC(memory);
-    ::ReleaseDC(window, screen);
-    return matched;
-}
-
 bool wait_color(HWND window, bool red)
 {
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        if (capture_color(window, red)) return true;
-        ::Sleep(30);
+    const char* png = red ? "after-home-end.png" : "initial-frame.png";
+    RECT bounds{};
+    POINT origin{};
+    if (!::GetWindowRect(window, &bounds) || !::ClientToScreen(window, &origin)) {
+        std::fprintf(stderr, "%s: could not locate the remote client area\n", png);
+        return false;
     }
+    // The shared PNG capture includes the title bar. Probe the same three
+    // client pixels in the saved image as in the child program's color patch.
+    capture::Sample samples[]{ { 80, 80 }, { 160, 80 }, { 240, 80 } };
+    for (auto& sample : samples) {
+        sample.x += origin.x - bounds.left;
+        sample.y += origin.y - bounds.top;
+    }
+    const ULONGLONG deadline = ::GetTickCount64() + 3000;
+    do {
+        capture::Stats stats;
+        std::string error;
+        if (!capture::window(window, png, stats, error, samples)) {
+            std::fprintf(stderr, "%s: %s\n", png, error.c_str());
+            return false;
+        }
+        if (std::ranges::all_of(samples, [red](const capture::Sample& sample) {
+                const COLORREF pixel = sample.color;
+                const int expected = red ? GetRValue(pixel) : GetBValue(pixel);
+                const int other = red ? GetBValue(pixel) : GetRValue(pixel);
+                return pixel != CLR_INVALID && expected > other + 40 && expected > 90;
+            })) return true;
+        ::Sleep(30);
+    } while (::GetTickCount64() < deadline);
+    std::fprintf(stderr, "%s: expected %s, observed COLORREF samples:", png, red ? "red" : "blue");
+    for (const auto& sample : samples) {
+        std::fprintf(stderr, " (%d,%d)=%#lx", sample.x, sample.y, sample.color);
+    }
+    std::fputc('\n', stderr);
     return false;
 }
 
@@ -85,9 +91,8 @@ bool succeeded(HANDLE process)
     return ::WaitForSingleObject(process, 4000) == WAIT_OBJECT_0 &&
            ::GetExitCodeProcess(process, &code) && code == 0;
 }
-} // namespace
 
-int wmain(int argc, wchar_t** argv)
+int run(int argc, wchar_t** argv)
 {
     if (argc != 3) return 1;
     const unique_handle job(::CreateJobObjectW(nullptr, nullptr));
@@ -114,19 +119,37 @@ int wmain(int argc, wchar_t** argv)
         window = search.result;
         if (!window && ::WaitForSingleObject(client.get(), 0) == WAIT_TIMEOUT) return 1;
     }
-    if (!window || !wait_color(window, false)) {
-        std::fputs("The remote client did not render the initial blue frame.\n", stderr);
+    if (!window) {
+        std::fputs("Could not find the remote client window.\n", stderr);
         return 1;
     }
+    if (!wait_color(window, false)) return 1;
     const auto type_navigation = [window](char marker) {
         return ::PostMessageW(window, WM_CHAR, marker, 1) &&
                ::PostMessageW(window, WM_KEYDOWN, VK_HOME, 1) &&
                ::PostMessageW(window, WM_KEYDOWN, VK_END, 1);
     };
-    if (!type_navigation('a') || !wait_color(window, true)) {
-        std::fputs("Remote child did not receive application Home/End (ESC OH, ESC OF).\n", stderr);
+    if (!type_navigation('a')) {
+        std::fputs("Could not post the application Home/End input to the client.\n", stderr);
+        return 1;
+    }
+    if (!wait_color(window, true)) {
+        DWORD exit_code = 0;
+        if (::GetExitCodeProcess(client.get(), &exit_code)) {
+            std::fprintf(stderr, "Client exit status after Home/End: %lu (259 = still active)\n", exit_code);
+        }
         return 1;
     }
     return type_navigation('q') && succeeded(client.get()) &&
         succeeded(server.get()) ? 0 : 1;
+}
+} // namespace
+
+int wmain(int argc, wchar_t** argv)
+{
+    const HRESULT com = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com)) return 1;
+    const int result = run(argc, argv);
+    ::CoUninitialize();
+    return result;
 }

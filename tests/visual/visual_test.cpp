@@ -1857,11 +1857,12 @@ bool capture_input(const InputTarget& target, const std::wstring& name, CaptureS
     return run_capture_script(*target.options, target.top, name, target.options->artifacts, stats);
 }
 
-bool continuous_selection_background(const InputTarget& target, int x, int first_y, int last_y)
+bool selection_background(const InputTarget& target, const wchar_t* name, int x, int first_y,
+                          int last_y)
 {
     CaptureStats stats;
     force_paint(target.top, target.view);
-    return run_capture_script(*target.options, target.top, L"17-multiline-selection",
+    return run_capture_script(*target.options, target.top, name,
                               target.options->artifacts, stats, first_y, last_y, x) &&
         stats.column_color == "#264f78";
 }
@@ -2335,23 +2336,37 @@ int run_input_phases(InputTarget& target)
     check(wait_for_clipboard(std::wstring(local_expected.begin(), local_expected.end()), 5000),
           "Ctrl+C copied the mouse-off local selection");
 
-    check(input_click(target, input_cell_x(target, 0), local_y),
-          "clicked a cell to dismiss the local selection");
+    const int last_x_in_first_cell = static_cast<int>(target.cell_width) - 1;
+    const int cell_top = static_cast<int>(kInputRowBeta * target.cell_height) + 1;
+    const int cell_bottom = static_cast<int>((kInputRowBeta + 1) * target.cell_height) - 1;
+    check(input_drag(target, 0, cell_top, last_x_in_first_cell, cell_bottom, false),
+          "dragged across the S within the first cell of SELECT-BETA");
+    check(selection_background(target, L"17-single-cell-selection", input_cell_x(target, 0),
+                               cell_top, cell_top),
+          "the single selected cell has the highlight color above its glyph");
+    post_input_char(target, 0x03);
+    check(wait_for_clipboard(L"S", 2000), "Ctrl+C copied only the selected S");
+
+    const size_t interrupts = count_occurrences(collect_raw_input(read_file(target.log)), "\x03");
+    const int first_cell_center = input_cell_x(target, 0);
+    check(input_drag(target, first_cell_center, local_y, first_cell_center + 1, local_y, false),
+          "a click with one pixel of movement dismisses the local selection");
     post_input_char(target, 0x03);
     check(wait_for_log(target.log,
-                       [](const std::string& log) {
-                           return raw_input_contains(log, "\x03");
+                       [&](const std::string& log) {
+                           return count_occurrences(collect_raw_input(log), "\x03") > interrupts;
                        },
                        2000),
           "Ctrl+C reached the terminal program after the click");
-    check(get_clipboard() == std::wstring(local_expected.begin(), local_expected.end()),
+    check(get_clipboard() == L"S",
           "Ctrl+C after the click left the clipboard unchanged");
 
     const int blank_x = input_cell_x(target, 60);
     const int alpha_y = input_cell_y(target, kInputRowAlpha);
     check(input_drag(target, blank_x, alpha_y, input_cell_x(target, 62), local_y, false),
           "selected blank cells across a row boundary");
-    check(continuous_selection_background(target, input_cell_x(target, 61), alpha_y, local_y),
+    check(selection_background(target, L"17-multiline-selection", input_cell_x(target, 61),
+                               alpha_y, local_y),
           "the selection background is solid across the row boundary");
     check(input_click(target, blank_x, local_y), "dismissed the multiline selection");
 

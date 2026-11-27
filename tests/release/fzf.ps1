@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Run with Windows PowerShell 5.1' }
+$Package = (Get-Item -LiteralPath $Package).FullName
 $entry = (Get-Item -LiteralPath "$Package/share/termole/examples/select-file.ps1").FullName
 $fzfFile = Get-Item -LiteralPath $Fzf
 if ($fzfFile.Name -ine 'fzf.exe') { throw "Expected fzf.exe at $Fzf" }
@@ -15,6 +16,16 @@ if (@(Get-ChildItem -LiteralPath $Evidence -Force).Count) { throw "Use an empty 
 $capture = (Get-Item -LiteralPath "$PSScriptRoot/../../scripts/capture-window.ps1").FullName
 . "$PSScriptRoot/applet-desktop.ps1"
 Add-Type -Path "$PSScriptRoot/applet-window.cs" -ReferencedAssemblies System.Drawing.dll
+function Wait-AppletPreview($Picker, $Label, $Expected) {
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $png = Save-AppletView $Picker $Label
+        $signature = [AppletWindow]::PreviewSignature($png)
+        if ($signature -and (!$Expected -or $signature -ceq $Expected)) { return $signature }
+        Start-Sleep -Milliseconds 250
+    } while ($deadline.Elapsed.TotalSeconds -lt 10)
+    throw "Unexpected preview in ${png}: expected '$Expected', got '$signature'"
+}
 $running = [Collections.Generic.List[Diagnostics.Process]]::new()
 $saved = @{}
 foreach ($name in 'PATH','APPDATA','TEMP','TMP','FZF_DEFAULT_OPTS','FZF_DEFAULT_OPTS_FILE') {
@@ -40,7 +51,8 @@ try {
         @{ Query='alpha'; Name='alpha.txt'; Preview="[Truncated at 16 KiB]`nALPHA PREVIEW" },
         @{ Query='binary'; Name='binary.bin'; Preview='[Binary file]' },
         @{ Query='locked'; Name='locked.txt'; Preview='[File unreadable]' },
-        @{ Query='target'; Name=$target; Preview='CURRENT PREVIEW' }
+        @{ Query='target'; Name=$target; Preview='CURRENT PREVIEW' },
+        @{ Query='readme'; Name='README.md'; Preview='# Termole'; PackageRoot=$true }
     )
     foreach ($case in $cases) { [IO.File]::WriteAllText("$control/$($case.Name)", $case.Preview) }
     [IO.File]::WriteAllText("$folder/alpha.txt", "ALPHA PREVIEW`n" * 1600)
@@ -51,29 +63,22 @@ try {
     $locked = [IO.File]::Open("$folder/locked.txt", 'Open', 'ReadWrite', 'None')
     try {
         foreach ($case in $cases) {
-            foreach ($source in $control, $folder) {
+            $sourceFolder = if ($case.PackageRoot) { $Package } else { $folder }
+            foreach ($source in $control, $sourceFolder) {
                 $label = $case.Query
                 if ($source -eq $control) { $label += '-reference' }
-                $picker = Start-Applet $source $label -DefaultDirectory:($case.Query -eq 'alpha')
+                $picker = Start-Applet $source $label -DefaultDirectory:($case.Query -eq 'alpha') -PackageRoot:($source -eq $Package)
                 Start-Sleep -Seconds 2
                 foreach ($key in 38,38,40,38,40) { Send-AppletMessage $picker.View 256 $key }
                 foreach ($char in $case.Query.ToCharArray()) { Send-AppletMessage $picker.View 258 ([int]$char) }
                 # Let fzf cancel old previews and paint the final result. The reference files
                 # spell out the expected lines without triggering truncation, decoding or locks.
                 Start-Sleep -Seconds 2
-                $deadline = [Diagnostics.Stopwatch]::StartNew()
-                do {
-                    $png = Save-AppletView $picker $label
-                    $signature = [AppletWindow]::PreviewSignature($png)
-                    if ($source -eq $control -and $signature) { break }
-                    if ($signature -and $signature -ceq $signatures[$case.Query]) { break }
-                    Start-Sleep -Milliseconds 250
-                } while ($deadline.Elapsed.TotalSeconds -lt 10)
-                if (!$signature) { throw "No preview glyphs in $png" }
+                $signature = Wait-AppletPreview $picker $label $signatures[$case.Query]
                 if ($source -eq $control) {
-                    if ($signatures.ContainsValue($signature)) { throw "Different reference previews look identical: $png" }
+                    if ($signatures.ContainsValue($signature)) { throw "Different reference previews look identical: $label.png" }
                     $signatures[$case.Query] = $signature
-                } elseif ($signature -cne $signatures[$case.Query]) { throw "Preview differs from $label-reference.png: $png" }
+                }
                 Send-AppletMessage $picker.View 256 13
                 Test-AppletResult $picker 0 ((Join-Path $source $case.Name) + "`r`n")
             }
@@ -82,29 +87,32 @@ try {
 
     $firstDir = [IO.Directory]::CreateDirectory("$Evidence/first").FullName
     $secondDir = [IO.Directory]::CreateDirectory("$Evidence/second").FullName
-    foreach ($dir in $firstDir, $secondDir) {
-        foreach ($leaf in 'alpha.txt','beta.txt') { [IO.File]::WriteAllText("$dir/$leaf", $leaf) }
-    }
-    # Only the survivor's beta has the text rendered in the target reference above.
-    [IO.File]::WriteAllText("$secondDir/beta.txt", 'CURRENT PREVIEW')
+    foreach ($leaf in 'first-alpha.txt','first-beta.txt') { [IO.File]::WriteAllText("$firstDir/$leaf", $leaf) }
+    # Each partial query has a shorter match. Only both committed characters select the target.
+    $zhong = [char]0x4e2d
+    $wen = [char]0x6587
+    $survivorName = [string]$zhong + $wen + '-target.txt'
+    [IO.File]::WriteAllText("$secondDir/0.txt", '[File unreadable]')
+    [IO.File]::WriteAllText("$secondDir/$zhong.txt", '[Binary file]')
+    [IO.File]::WriteAllText("$secondDir/$wen.txt", '[File unreadable]')
+    [IO.File]::WriteAllText("$secondDir/$survivorName", 'CURRENT PREVIEW')
     $first = Start-Applet $firstDir 'escape'
     $survivor = Start-Applet $secondDir 'survivor'
+    $null = Wait-AppletPreview $survivor 'survivor-initial' $signatures['locked']
+    Send-AppletMessage $survivor.View 258 ([int]$zhong)
+    $null = Wait-AppletPreview $survivor 'survivor-first-character' $signatures['binary']
     Test-AppletCancel $first 'escape'
-    foreach ($char in 'beta'.ToCharArray()) { Send-AppletMessage $survivor.View 258 ([int]$char) }
-    $deadline = [Diagnostics.Stopwatch]::StartNew()
-    do {
-        $png = Save-AppletView $survivor survivor
-        if ([AppletWindow]::PreviewSignature($png) -ceq $signatures['target']) { break }
-        if ($deadline.Elapsed.TotalSeconds -ge 10) { throw "Surviving picker did not preview its own beta.txt: $png" }
-        Start-Sleep -Milliseconds 250
-    } while ($true)
+    Send-AppletMessage $survivor.View 258 ([int]$wen)
+    $null = Wait-AppletPreview $survivor 'survivor' $signatures['target']
     Send-AppletMessage $survivor.View 256 13
-    Test-AppletResult $survivor 0 ((Join-Path $secondDir 'beta.txt') + "`r`n")
+    Test-AppletResult $survivor 0 ((Join-Path $secondDir $survivorName) + "`r`n")
     Test-AppletCancel (Start-Applet $firstDir 'close') 'close'
 
     # One Up per new process, selected path checked by the calling shell. The OS file
     # cache stays warm. Record samples; there is no latency pass/fail threshold.
-    $report['firstKey'] = @(foreach ($i in 1..5) { Measure-AppletFirstKey $firstDir $i })
+    $timingDir = [IO.Directory]::CreateDirectory("$Evidence/timing").FullName
+    foreach ($leaf in 'alpha.txt','beta.txt') { [IO.File]::WriteAllText("$timingDir/$leaf", $leaf) }
+    $report['firstKey'] = @(foreach ($i in 1..5) { Measure-AppletFirstKey $timingDir $i })
     $report['medianFirstPostMs'] = @($report.firstKey.firstPostMs | Sort-Object)[2]
     $report.status = 'passed'
 } catch {

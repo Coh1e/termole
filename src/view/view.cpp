@@ -556,11 +556,15 @@ void NativeView::on_left_button_down(int x, int y, bool shift)
     int row = 0;
     int column = 0;
     if (!mouse_coordinates(x, y, row, column)) return;
+    const UINT dpi = ::GetDpiForWindow(hwnd());
+    const int dx = ::GetSystemMetricsForDpi(SM_CXDRAG, dpi);
+    const int dy = ::GetSystemMetricsForDpi(SM_CYDRAG, dpi);
+    selection_click_bounds_ = { x - dx, y - dy, x + dx + 1, y + dy + 1 };
     selection_anchor_row_ = row;
     selection_anchor_column_ = column;
     selection_focus_row_ = row;
     selection_focus_column_ = column;
-    has_selection_ = true;
+    has_selection_ = false;
     selecting_ = true;
     ::SetCapture(window_.load(std::memory_order_acquire));
     if (const HWND window = window_.load(std::memory_order_acquire))
@@ -578,10 +582,6 @@ void NativeView::on_left_button_up(int x, int y)
     on_mouse_move(x, y);
     selecting_ = false;
     ::ReleaseCapture();
-    if (selection_anchor_row_ == selection_focus_row_ &&
-        selection_anchor_column_ == selection_focus_column_) {
-        clear_selection();
-    }
 }
 
 void NativeView::on_mouse_move(int x, int y)
@@ -590,6 +590,7 @@ void NativeView::on_mouse_move(int x, int y)
         int row = 0;
         int column = 0;
         if (!mouse_coordinates(x, y, row, column)) return;
+        if (!::PtInRect(&selection_click_bounds_, POINT{ x, y })) has_selection_ = true;
         selection_focus_row_ = row;
         selection_focus_column_ = column;
         if (const HWND window = window_.load(std::memory_order_acquire))

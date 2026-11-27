@@ -121,12 +121,12 @@ cmake --workflow --preset windows-mingw-release
 工作流依次完成构建、CTest、CPack、SHA-256 校验，再将最终 ZIP 解压到新目录。验证程序读取包内许可证、文档链接、版本、依赖和源码修订号，从包内 SDK 编译运行纯 C 宿主，再运行以下窗口场景。
 
 - 启动默认 Shell，检查子进程与窗口像素。
-- 使用真实 fzf 检查选择、预览、取消、并发实例的独立性、标准流和子进程回收。五次冷启动分别记录第一个有效按键的耗时。[AV1 验收](https://github.com/Coh1e/termole/issues/43)
+- 从包根按 README 的命令启动文件选择示例，核对 README.md 的预览和返回路径。并发用例给两个 fzf 窗口不同的文件名，向第二个窗口逐字发送「中文」，在两字之间取消第一个窗口，核对预览、标准流、退出码和子进程回收。另用相同的两个英文候选测量五次冷启动的首次有效按键耗时。[AV1 验收](https://github.com/Coh1e/termole/issues/43)
 - 从当前视图的右键菜单执行 QuickJS 命令，核对粘贴到编辑器的文字、双窗口选区和停用后的菜单。[菜单与剪贴板契约](https://github.com/Coh1e/termole/issues/44)
 
 控制台输出本次证据目录。成功记录位于 `<build>/tests/release-zip/<SHA-256>/<run>/acceptance.txt`，同目录保存每项的日志与截图。包内 `share/termole/source-revision.txt` 记录安装时的提交和工作树状态。验收会检查干净工作树的 HEAD 与包内修订号一致。无 Git 元数据的源码仍可构建和打包，修订号为 `unknown`。在相应提交的构建目录复核已有 ZIP，运行 `cmake --build --preset windows-verify-zip`。
 
-人工项沿用 [#53 交接](https://github.com/Coh1e/termole/issues/53)。提供当次 ZIP 摘要和解压路径，由验收者回填真实输入法选词、前后台焦点和首次阅读 README 的结果。
+在 #53 的交接评论里记录当次 ZIP 的 SHA-256、源码提交、解压路径及自动验收结果。桌面验收者用真实输入法观察候选窗、选词和提交，分别记录前台免点击输入和后台单击取焦。首次使用者只读包内 README，记录能否独立找到并完成两个入口。按同一摘要回填结果。[人工交接工单](https://github.com/Coh1e/termole/issues/53)
 
 - Windows 标准包启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。引擎及示例插件的契约测试为 `script_abi_stub`。
 - 技术探针通过 `-DTERMOLE_BUILD_SPIKES=ON` 启用。fzf 相关测试按工具可用性注册，详见[验证指南](agents/testing.md)。

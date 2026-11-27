@@ -689,12 +689,14 @@ set_target_properties(
   termole_windows_pty_test termole_session_contract_test termole_session_ipc_test
   PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
-add_executable(termole_ipc_visual_test windows_ipc_visual_test.cpp)
+add_executable(termole_ipc_visual_test windows_ipc_visual_test.cpp sdk-consumer/capture.cpp)
 target_include_directories(termole_ipc_visual_test PRIVATE "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(termole_ipc_visual_test PRIVATE termole_build_options user32 gdi32)
+target_link_libraries(termole_ipc_visual_test PRIVATE termole_build_options user32 gdi32 windowscodecs ole32)
 termole_unicode_startup(termole_ipc_visual_test)
 add_dependencies(termole_ipc_visual_test termole_app termole_visual_child)
 add_test(NAME visual_session_ipc_windows COMMAND termole_ipc_visual_test
   "$<TARGET_FILE:termole_app>" "$<TARGET_FILE:termole_visual_child>")
-set_tests_properties(visual_session_ipc_windows PROPERTIES LABELS "visual" TIMEOUT 25)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/visual/session-ipc")
+set_tests_properties(visual_session_ipc_windows PROPERTIES LABELS "visual" TIMEOUT 25
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/visual/session-ipc")

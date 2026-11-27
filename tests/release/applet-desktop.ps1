@@ -1,6 +1,6 @@
 # Windows PowerShell 5.1, loaded by fzf.ps1. Each picker uses an isolated profile
 # and unique window title. Send input only to that picker's child View HWND.
-function Start-Applet($Folder, $Name, [switch]$DefaultDirectory, [switch]$Measure) {
+function Start-Applet($Folder, $Name, [switch]$DefaultDirectory, [switch]$Measure, [switch]$PackageRoot) {
     $title = 'termole-test-' + [guid]::NewGuid().ToString('N')
     $profile = [IO.Directory]::CreateDirectory("$Evidence/profiles/$title/Termole").FullName
     [IO.File]::WriteAllLines("$profile/config.toml", @('columns = 80', 'rows = 24', ('title = "' + $title + '"')))
@@ -27,6 +27,8 @@ if ($LASTEXITCODE -ne 0 -or @($chosen).Count -ne 1 -or $chosen -cne (Join-Path $
 '@
         $start.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' +
             [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    } elseif ($PackageRoot) {
+        $start.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\share\termole\examples\select-file.ps1" -Directory .'
     } else {
         $start.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $entry + '"'
         if (!$DefaultDirectory) { $start.Arguments += ' -Directory "' + $Folder + '"' }
