@@ -115,13 +115,26 @@ if(TERMOLE_BUILD_APP)
   )
   install(FILES examples/select-file.ps1 examples/preview-file.ps1 DESTINATION share/termole/examples)
   install(DIRECTORY examples/sdk-host DESTINATION share/termole/examples)
+  install(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/InstallRevision.cmake")
   set(CPACK_GENERATOR ZIP)
+  set(CPACK_PACKAGE_CHECKSUM SHA256)
   set(CPACK_PACKAGE_NAME "Termole")
   set(CPACK_PACKAGE_VENDOR "Termole")
   set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
   set(CPACK_PACKAGE_FILE_NAME "Termole-${PROJECT_VERSION}-win64")
   set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+  if(BUILD_TESTING)
+    add_custom_target(verify_release_zip
+      COMMAND "${CMAKE_COMMAND}"
+        "-DArchive=${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_FILE_NAME}.zip"
+        "-DPowerShell=${TERMOLE_POWERSHELL}" "-DFzf=${TERMOLE_FZF}"
+        "-DCapture=$<TARGET_FILE:termole_release_dxgi_capture>"
+        "-DEvidence=${CMAKE_BINARY_DIR}/tests/release-zip"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_release_zip.cmake"
+      DEPENDS termole_release_dxgi_capture
+      VERBATIM)
+  endif()
   include(CPack)
 endif()
 

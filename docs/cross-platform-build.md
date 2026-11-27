@@ -124,14 +124,19 @@ cmake --workflow --preset windows-mingw
 
 默认使用 `windows-mingw` 构建预设 和 NMake Makefiles，启动程序位于 `.local/build/nmake-debug/bin/termole.exe`。Windows 安装包和静态 SDK 见 [SDK 参考](sdk.md)。
 
-生成 Windows Release ZIP 时，依次运行：
+在干净的 Git 检出中生成并验收 Windows Release ZIP。配置前将 `fzf.exe` 加入 `PATH`，验收时使用已解锁的 Windows 桌面，并将鼠标放在预览区外。
 
 ```bat
 cmake --preset windows-mingw-release
 cmake --build --preset windows-mingw-release
 ctest --preset windows-mingw-release
 cmake --build --preset windows-mingw-release --target package
+cmake --build --preset windows-verify-zip
 ```
+
+最后一步读取刚生成的 ZIP 和同名 `.sha256`，核对摘要、归档文件名及包内 `share/termole/source-revision.txt` 与当前提交的一致性。随后从解压目录启动选择器，实机切换五文件，要求首张短句紧接 `LICENSE`，且整个预览区与同 DPI 参照逐像素相同。采集漏帧或预览区被遮挡时，该次采集记为未验。
+
+验收记录位于 Release 构建目录的 `tests/release-zip/<SHA-256>/<运行编号>/`。`acceptance.txt` 记录通过的候选包及修订，`desktop-preview/` 留存帧、参照图和比较结果。
 
 - Windows 标准包的 `windows-mingw-release` 预设显式启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。启用后的脚本和示例插件测试可用 `ctest --preset windows-mingw-release -R script_abi_stub` 运行。
 - 技术探针通过 -DTERMOLE_BUILD_SPIKES=ON 启用。fzf 相关测试按工具可用性注册，详见 [验证指南](agents/testing.md)。

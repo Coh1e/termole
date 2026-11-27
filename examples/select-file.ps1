@@ -3,6 +3,7 @@
 param([string]$Directory = '.')
 
 $ErrorActionPreference = 'Stop'
+$originalInputEncoding = [Console]::InputEncoding
 $originalEncoding = [Console]::OutputEncoding
 $indexFile = $null
 $status = 2
@@ -28,8 +29,9 @@ try {
         exit 2
     }
     $termole = Join-Path $PSScriptRoot '..\..\..\bin\termole.exe'
-    # Windows PowerShell 5.1 uses the global encoding for this native pipeline.
+    # Windows PowerShell 5.1 can prepend the console input encoding's BOM to a native pipe.
     $global:OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    [Console]::InputEncoding = $global:OutputEncoding
     [Console]::OutputEncoding = $global:OutputEncoding
     $preview = Join-Path $PSScriptRoot 'preview-file.ps1'
     $shell = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
@@ -78,6 +80,7 @@ try {
 try {
     if ($status -eq 0) { $selectedPath }
 } finally {
+    [Console]::InputEncoding = $originalInputEncoding
     [Console]::OutputEncoding = $originalEncoding
 }
 exit $status
