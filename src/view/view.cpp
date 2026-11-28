@@ -20,7 +20,6 @@ namespace {
 constexpr wchar_t kViewClassName[] = L"TermoleViewWindow";
 constexpr UINT kRedrawMessage = WM_APP + 1;
 constexpr UINT_PTR kRedrawTimer = 1;
-constexpr UINT kRedrawQuietMs = 100;
 constexpr UINT kRedrawProgressMs = 500;
 constexpr uint8_t kMouseButtonEventMode = 2;
 constexpr uint8_t kMouseAnyEventMode = 3;
@@ -424,42 +423,34 @@ Snapshot& NativeView::frame_for_paint(HWND window, Snapshot& latest, bool print)
 {
     // A host can request a bitmap before the queued WM_PAINT. Printing must
     // not commit a new grid to the View or update its presentation timer.
-    if (print && !last_visible_cursor_frame_.cells.empty()) return last_visible_cursor_frame_;
+    if (print && !painted_alt_frame_.cells.empty()) return painted_alt_frame_;
     latest = session_->snapshot(scroll_offset_);
     if (print) return latest;
 
     // ConPTY can spread one full-screen redraw over multiple reads between
-    // hiding and restoring the cursor. Each new read extends the quiet period;
-    // repaints and screenshots do not. While output continues, renew the hold
-    // only if more of the original text has actually been replaced.
-    const bool live_alt = latest.live_alternate_screen;
-    if (live_alt && !latest.cursor_visible &&
-        last_visible_cursor_frame_.columns == latest.columns &&
-        last_visible_cursor_frame_.rows == latest.rows) {
+    // hiding and restoring the cursor. A quiet pipe can still be between the
+    // heading and the tail erase. Allow a full progress interval and renew it only
+    // if more of the original glyphs have been replaced. Once a hidden frame
+    // is published, subsequent hidden-cursor updates can paint immediately.
+    if (latest.live_alternate_screen && !latest.cursor_visible && painted_alt_frame_.cursor_visible &&
+        painted_alt_frame_.columns == latest.columns && painted_alt_frame_.rows == latest.rows) {
         const auto now = ::GetTickCount64();
-        const auto quiet_at = latest.last_output_tick + kRedrawQuietMs;
-        if (now < quiet_at && now >= redraw_deadline_) {
-            const auto unchanged = unchanged_glyphs(last_visible_cursor_frame_, latest);
+        if (now >= redraw_deadline_) {
+            const auto unchanged = unchanged_glyphs(painted_alt_frame_, latest);
             if (!redraw_deadline_ || unchanged < remaining_glyphs_) {
                 remaining_glyphs_ = unchanged;
                 redraw_deadline_ = now + kRedrawProgressMs;
             }
         }
-        const auto wake_at = std::min(redraw_deadline_, quiet_at);
-        if (now < wake_at &&
-            ::SetTimer(window, kRedrawTimer, static_cast<UINT>(wake_at - now), nullptr)) {
-            return last_visible_cursor_frame_;
+        if (now < redraw_deadline_ &&
+            ::SetTimer(window, kRedrawTimer, static_cast<UINT>(redraw_deadline_ - now), nullptr)) {
+            return painted_alt_frame_;
         }
     }
     if (redraw_deadline_) {
         ::KillTimer(window, kRedrawTimer);
         redraw_deadline_ = 0;
     }
-    if (live_alt && latest.cursor_visible) {
-        last_visible_cursor_frame_ = std::move(latest);
-        return last_visible_cursor_frame_;
-    }
-    last_visible_cursor_frame_ = {};
     return latest;
 }
 
@@ -471,15 +462,23 @@ void NativeView::paint_client(HWND window, HDC device, bool print)
     if (renderer_) {
         Snapshot latest;
         Snapshot& snapshot = frame_for_paint(window, latest, print);
-        snapshot.has_selection = has_selection_;
-        if (has_selection_) {
-            const int first = snapshot.first_document_row;
-            snapshot.selection_start_row = static_cast<int16_t>(selection_anchor_row_ - first);
-            snapshot.selection_start_column = static_cast<int16_t>(selection_anchor_column_);
-            snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
-            snapshot.selection_end_column = static_cast<int16_t>(selection_focus_column_);
+        const bool print_painted = print && &snapshot == &painted_alt_frame_;
+        if (!print_painted) {
+            snapshot.has_selection = has_selection_;
+            if (has_selection_) {
+                const int first = snapshot.first_document_row;
+                snapshot.selection_start_row = static_cast<int16_t>(selection_anchor_row_ - first);
+                snapshot.selection_start_column = static_cast<int16_t>(selection_anchor_column_);
+                snapshot.selection_end_row = static_cast<int16_t>(selection_focus_row_ - first);
+                snapshot.selection_end_column = static_cast<int16_t>(selection_focus_column_);
+            }
         }
-        painted = renderer_->paint(device, client, snapshot, focused_);
+        painted = renderer_->paint(device, client, snapshot, print_painted ? painted_alt_focused_ : focused_);
+        if (painted && !print) {
+            painted_alt_focused_ = focused_;
+            if (&snapshot == &latest)
+                painted_alt_frame_ = latest.live_alternate_screen ? std::move(latest) : Snapshot{};
+        }
     }
     if (!painted) {
         ::FillRect(device, &client, static_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH)));
@@ -493,7 +492,6 @@ void NativeView::scroll(int lines)
     const int current = std::min(scroll_offset_, history);
     scroll_offset_ = static_cast<int>(std::clamp<int64_t>(int64_t{current} + lines, 0, history));
     if (scroll_offset_ == current) return;
-    last_visible_cursor_frame_ = {};
     if (const HWND window = window_.load(std::memory_order_acquire)) {
         if (redraw_deadline_) {
             ::KillTimer(window, kRedrawTimer);
@@ -506,7 +504,7 @@ void NativeView::scroll(int lines)
 void NativeView::set_selection(int start_row, int start_column, int end_row, int end_column)
 {
     if (!session_) return;
-    const Snapshot& frame = last_visible_cursor_frame_;
+    const Snapshot& frame = painted_alt_frame_;
     const bool cached = !frame.cells.empty();
     const auto [columns, rows] = cached ? std::pair{frame.columns, frame.rows} : session_->size();
     if (!columns || !rows) return;
@@ -533,7 +531,7 @@ void NativeView::clear_selection()
 std::string NativeView::selection_text() const
 {
     if (!has_selection_ || !session_) return {};
-    const Snapshot& frame = last_visible_cursor_frame_;
+    const Snapshot& frame = painted_alt_frame_;
     if (frame.cells.empty()) {
         return session_->selection_text(selection_anchor_row_, selection_anchor_column_,
                                         selection_focus_row_, selection_focus_column_);
@@ -563,8 +561,8 @@ std::string NativeView::selection_text() const
 std::string NativeView::viewport_text() const
 {
     if (!session_) return {};
-    if (!last_visible_cursor_frame_.cells.empty())
-        return viewport_text_from(last_visible_cursor_frame_);
+    if (!painted_alt_frame_.cells.empty())
+        return viewport_text_from(painted_alt_frame_);
     return viewport_text_from(session_->snapshot(scroll_offset_));
 }
 
@@ -615,7 +613,7 @@ bool NativeView::mouse_coordinates(int x, int y, int& row, int& column) const
         renderer_->cell_height() <= 0.0f) {
         return false;
     }
-    const Snapshot& frame = last_visible_cursor_frame_;
+    const Snapshot& frame = painted_alt_frame_;
     const bool cached = !frame.cells.empty();
     const auto [columns, rows] = cached ? std::pair{frame.columns, frame.rows} : session_->size();
     if (!columns || !rows) return false;

@@ -41,10 +41,15 @@ target would stop proving that the development package is sufficient.
 ## UI evidence
 
 Run `visual_preview_redraw` when changing how the Windows View paints a partial
-alternate-screen redraw. It holds the previous frame while the old text is
-being replaced. Visible text, mouse selection and `WM_PRINTCLIENT` must agree
-with the painted grid. The test also checks that a hidden cursor can stay hidden
-while the View resumes drawing after output stops or a counter keeps updating.
+alternate-screen redraw. The test pauses output for 240 ms between writing a new
+heading and erasing the old tail. The View keeps the painted frame across that
+pause. With the cursor hidden, it checks redraw progress at 500 ms intervals
+and resumes painting when it sees no further replacement of old glyphs. A
+stopped writer and a continuously updating counter exercise both cases.
+
+Once a hidden-cursor frame is on screen, the test queues another footer and
+reads the viewport, drags a mouse selection and captures `WM_PRINTCLIENT`
+before dispatching `WM_PAINT`. All three must still show the painted footer.
 
 At the current DPI and at 192 DPI the test compares the complete short sentence
 with a same-DPI reference and checks its final `n.` against independently drawn

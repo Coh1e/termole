@@ -90,7 +90,6 @@ private:
     std::mutex event_mutex_;
     termole_vt* vt_ = nullptr;
     uint64_t revision_ = 1;
-    uint64_t last_output_tick_ = 0;
 
     std::unique_ptr<platform::WindowsPty> pty_;
     win::unique_handle data_event_;

@@ -38,7 +38,6 @@ struct Snapshot {
     bool cursor_visible = true;
     int first_document_row = 0;
     bool live_alternate_screen = false;
-    uint64_t last_output_tick = 0;
     bool has_selection = false;
     int16_t selection_start_row = 0;
     int16_t selection_start_column = 0;

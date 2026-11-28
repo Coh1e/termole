@@ -696,7 +696,7 @@ int run_preview_redraw(const Options& options)
         Sentence sentence = Sentence::Omit;
         bool record_long_tail = false;
         std::optional<COLORREF> footer = std::nullopt;
-        std::vector<COLORREF>* counter = nullptr;
+        std::vector<COLORREF>* footer_pixels = nullptr;
         capture::Method method = capture::Method::PrintWindow;
     };
     std::vector<COLORREF> long_tail, reference_row, reference_suffix;
@@ -715,7 +715,7 @@ int run_preview_redraw(const Options& options)
             for (int col = 0; col < client.right; ++col)
                 points.push_back({ col, y });
         const auto tail_end = points.size();
-        if (frame.counter) {
+        if (frame.footer_pixels) {
             for (int y = static_cast<int>(6 * view->cell_height());
                  y < static_cast<int>(7 * view->cell_height()); ++y)
                 for (int col = 0; col < static_cast<int>(4 * view->cell_width()); ++col)
@@ -738,9 +738,9 @@ int run_preview_redraw(const Options& options)
         std::vector<COLORREF> tail;
         tail.reserve(tail_end - 3);
         for (size_t i = 3; i < tail_end; ++i) tail.push_back(points[i].color);
-        if (frame.counter) {
-            frame.counter->clear();
-            for (size_t i = tail_end; i < row_start; ++i) frame.counter->push_back(points[i].color);
+        if (frame.footer_pixels) {
+            frame.footer_pixels->clear();
+            for (size_t i = tail_end; i < row_start; ++i) frame.footer_pixels->push_back(points[i].color);
         }
         const auto ink = std::count_if(tail.begin(), tail.end(), [&](COLORREF color) {
             return color != points[1].color;
@@ -818,9 +818,9 @@ int run_preview_redraw(const Options& options)
         "\x1b[0m\x1b[4;1H Old tail A\x1b[5;1H Old tail B\x1b[7;1H\x1b[?25h";
     const std::string header_style = "\x1b[2;1H\x1b[48;2;220;30;55;38;2;0;255;0m";
     const std::string sentence_line = header_style + " " + std::string(sentence) + "\x1b[0m";
-    // Match the physical origin of each glyph. The extra X puts the period inside
-    // this separate text run so a clipped sentence ending cannot become the oracle.
-    const std::string glyph_line = header_style + std::string(sentence_columns - 2, ' ') + "n.X\x1b[0m";
+    // X keeps the period inside the text run. End the red background at the
+    // same cell edge as the sentence, including its fractional-DPI coverage.
+    const std::string glyph_line = header_style + std::string(sentence_columns - 2, ' ') + "n.\x1b[49mX\x1b[0m";
     const std::string short_header = "\x1b[?25l" + sentence_line;
     const auto capture_reference = [&](std::string_view name) {
         reference_suffix.clear();
@@ -847,6 +847,17 @@ int run_preview_redraw(const Options& options)
     check(view->set_selection(1, 1, 1, 3).has_value() && view->selection_text() == "Old",
           "selecting the visible header reads the retained text");
     view->clear_selection();
+    // Start a fresh transition so PNG encoding and selection checks above
+    // don't lengthen the gap between the two VT writes.
+    const bool pause_started = send_and_paint(long_preview, "pause-long") &&
+                               send_and_paint(short_header, "pause-heading");
+    const auto pause_start = std::chrono::steady_clock::now();
+    pump_for(240);
+    const auto pause_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - pause_start);
+    std::cout << "paused redraw sample after " << pause_ms.count() << " ms\n";
+    check(pause_started && capture_frame("02-paused-redraw", old_color, true),
+          "the old header and both old tail rows stay together across a 240 ms output pause");
 
     constexpr std::string_view finish_short =
         "\x1b[0 q\x1b[4;1H\x1b[2K\x1b[5;1H\x1b[2K\x1b[7;1H\x1b[?25h";
@@ -902,10 +913,10 @@ int run_preview_redraw(const Options& options)
         } else {
             std::vector<COLORREF> first_counter, next_counter;
             const bool first = capture_frame(name, header, false,
-                { .sentence = Sentence::Compare, .counter = &first_counter });
+                { .sentence = Sentence::Compare, .footer_pixels = &first_counter });
             pump_for(120);
             const bool next = capture_frame("04-next-counter", header, false,
-                { .sentence = Sentence::Compare, .counter = &next_counter });
+                { .sentence = Sentence::Compare, .footer_pixels = &next_counter });
             matched = first && next && first_counter != next_counter;
         }
         output.request_stop();
@@ -923,22 +934,48 @@ int run_preview_redraw(const Options& options)
 
     // After this first paint only natural repaints count towards the timeout.
     const bool hidden = send_and_paint(
-        "\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[0m", "hidden");
-    bool resumed = hidden && capture_frame("04-cursor-stays-hidden", old_color, false);
+        "\x1b[?25l\x1b[2;1H\x1b[48;2;30;55;220m Hidden cursor\x1b[7;1H Ready\x1b[0m", "hidden");
+    std::vector<COLORREF> painted_footer, queued_footer;
+    const FrameCheck ready_footer{ .footer = old_color, .footer_pixels = &painted_footer };
+    bool resumed = hidden && capture_frame("04-cursor-stays-hidden", old_color, false, ready_footer);
     auto paints = view->paint_count();
     const auto deadline = ::GetTickCount64() + 2500;
     while (hidden && !resumed && ::GetTickCount64() < deadline) {
         pump_messages();
         if (paints != view->paint_count()) {
             paints = view->paint_count();
-            resumed = capture_frame("04-cursor-stays-hidden", old_color, false);
+            resumed = capture_frame("04-cursor-stays-hidden", old_color, false, ready_footer);
         }
         ::Sleep(1);
     }
     check(resumed, "a program that keeps its cursor hidden gets a repaint without further output");
-    check(send_and_paint("\x1b[7;1H\x1b[48;2;220;30;55m \x1b[0m", "hidden-footer") &&
-              capture_frame("04-hidden-footer", old_color, false, { .footer = new_color }),
-          "the hidden-cursor program displays its next update after repainting resumes");
+    // The child has replaced the footer, but the UI thread has not dispatched WM_PAINT.
+    const auto paints_before_footer = view->paint_count();
+    check(send("\x1b[7;1H\x1b[48;2;220;30;55m Later\x1b[0m", "hidden-footer"),
+          "the next hidden-cursor footer is parsed before the window repaints");
+    const auto visible_footer = view->viewport_text();
+    check(visible_footer && visible_footer->contains("Ready") && !visible_footer->contains("Later"),
+          "the viewport still reads the painted hidden-cursor footer");
+    const auto drag_text = [&](int row, int first_column, int last_column) {
+        const int y = static_cast<int>((row + 0.5f) * view->cell_height());
+        const LPARAM first = MAKELPARAM(static_cast<int>((first_column + 0.5f) * view->cell_width()), y);
+        const LPARAM last = MAKELPARAM(static_cast<int>((last_column + 0.5f) * view->cell_width()), y);
+        ::SendMessageW(view->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, first);
+        ::SendMessageW(view->hwnd(), WM_MOUSEMOVE, MK_LBUTTON, last);
+        ::SendMessageW(view->hwnd(), WM_LBUTTONUP, 0, last);
+    };
+    drag_text(6, 1, 5);
+    check(view->selection_text() == "Ready", "a mouse drag reads the painted hidden-cursor footer");
+    check(capture_frame("04-hidden-queued", old_color, false,
+                        { .footer = old_color, .footer_pixels = &queued_footer, .method = capture::Method::PrintClient }) &&
+              queued_footer == painted_footer,
+          "WM_PRINTCLIENT captures the painted footer before the queued text and selection are drawn");
+    check(view->paint_count() == paints_before_footer, "the queued hidden-cursor update has not painted");
+    paint_view();
+    check(capture_frame("04-hidden-footer", old_color, false, { .footer = new_color }) &&
+              view->selection_text() == "Later",
+          "painting the hidden-cursor footer advances its pixels and selection together");
+    view->clear_selection();
 
     // Start another hidden-cursor interval, this time with continuous output.
     // The program never explicitly commits a frame by showing the cursor.
@@ -969,12 +1006,7 @@ int run_preview_redraw(const Options& options)
           "the alternate header for mouse selection is visible");
     const auto paints_before_switch = view->paint_count();
     check(send(main_preview, "mouse-main"), "the main screen is parsed before its next window paint");
-    const int header_y = static_cast<int>(1.5f * view->cell_height());
-    const LPARAM first = MAKELPARAM(static_cast<int>(1.5f * view->cell_width()), header_y);
-    const LPARAM last = MAKELPARAM(static_cast<int>(3.5f * view->cell_width()), header_y);
-    ::SendMessageW(view->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, first);
-    ::SendMessageW(view->hwnd(), WM_MOUSEMOVE, MK_LBUTTON, last);
-    ::SendMessageW(view->hwnd(), WM_LBUTTONUP, 0, last);
+    drag_text(1, 1, 3);
     check(view->paint_count() == paints_before_switch && view->selection_text() == "Old",
           "a mouse drag reads the still-visible alternate header after the main screen arrives");
 

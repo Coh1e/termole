@@ -82,7 +82,8 @@ private:
     HWND parent_ = nullptr;
     std::atomic<HWND> window_{ nullptr };
     std::unique_ptr<Renderer> renderer_;
-    Snapshot last_visible_cursor_frame_;
+    Snapshot painted_alt_frame_;
+    bool painted_alt_focused_ = false;
     ULONGLONG redraw_deadline_ = 0;
     size_t remaining_glyphs_ = 0;
     Appearance appearance_;
