@@ -125,6 +125,10 @@ if(TERMOLE_BUILD_APP)
   set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
   if(BUILD_TESTING)
+    add_custom_target(preflight_release_desktop
+      COMMAND "$<TARGET_FILE:termole_release_dxgi_capture>" --preflight
+      DEPENDS termole_release_dxgi_capture
+      VERBATIM)
     add_custom_target(verify_release_zip
       COMMAND "${CMAKE_COMMAND}"
         "-DArchive=${CPACK_PACKAGE_DIRECTORY}/${CPACK_PACKAGE_FILE_NAME}.zip"

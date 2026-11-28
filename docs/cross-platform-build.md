@@ -128,15 +128,18 @@ cmake --workflow --preset windows-mingw
 
 ```bat
 cmake --preset windows-mingw-release
+cmake --build --preset windows-desktop-preflight
 cmake --build --preset windows-mingw-release
 ctest --preset windows-mingw-release
 cmake --build --preset windows-mingw-release --target package
 cmake --build --preset windows-verify-zip
 ```
 
-最后一步读取刚生成的 ZIP 和同名 `.sha256`，核对摘要、归档文件名及包内 `share/termole/source-revision.txt` 与当前提交的一致性。随后从解压目录启动选择器，实机切换五文件，要求首张短句紧接 `LICENSE`，且整个预览区与同 DPI 参照逐像素相同。采集漏帧或预览区被遮挡时，该次采集记为未验。
+计划实机验收时，先用 `windows-desktop-preflight` 检查当前进程是否位于活动输入桌面，以及能否在主显示器上初始化 DXGI。锁屏、桌面不可访问或 DXGI 初始化失败时，采集器报告未验并返回 77。纯打包使用 `package` 目标即可，该目标可在非交互会话运行。
 
-验收记录位于 Release 构建目录的 `tests/release-zip/<SHA-256>/<运行编号>/`。`acceptance.txt` 记录通过的候选包及修订，`desktop-preview/` 留存帧、参照图和比较结果。
+最后一步读取刚生成的 ZIP 和同名 `.sha256`，核对摘要、归档文件名及包内 `share/termole/source-revision.txt` 与当前提交的一致性。它在打开选择器前重跑桌面预检，并在正式采集时为预览所在的实际显示器初始化 DXGI。五文件切换要求首张短句紧接 `LICENSE`，且整个预览区与同 DPI 参照逐像素相同。采集漏帧或预览区被遮挡时，该次采集记为未验。
+
+验收记录位于 Release 构建目录的 `tests/release-zip/<SHA-256>/<运行编号>/`。`desktop-preflight.log` 记录预检结果，`acceptance.txt` 记录通过的候选包及修订，`desktop-preview/` 留存帧、参照图和比较结果。
 
 - Windows 标准包的 `windows-mingw-release` 预设显式启用 `TERMOLE_WITH_QUICKJS=ON`。通用源码构建默认关闭。启用后的脚本和示例插件测试可用 `ctest --preset windows-mingw-release -R script_abi_stub` 运行。
 - 技术探针通过 -DTERMOLE_BUILD_SPIKES=ON 启用。fzf 相关测试按工具可用性注册，详见 [验证指南](agents/testing.md)。

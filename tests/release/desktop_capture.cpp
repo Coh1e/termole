@@ -78,6 +78,11 @@ bool active_desktop()
     return active;
 }
 
+void require_active_desktop()
+{
+    if (!active_desktop()) throw Unobservable("the capture process is not on the active input desktop");
+}
+
 void verify_clear(HWND other, const RECT& area, HWND root, HWND level)
 {
     if (!IsWindowVisible(other) || IsIconic(other)) return;
@@ -147,9 +152,10 @@ struct Picker {
             !GetWindowThreadProcessId(view, &view_pid) || view_pid != pid ||
             WaitForSingleObject(process.get(), 0) != WAIT_TIMEOUT || GetAncestor(view, GA_ROOT) != root ||
             !GetWindowRect(view, &current) || !EqualRect(&view_rect, &current) ||
-            !active_desktop() || !IsWindowVisible(view) || IsIconic(root) ||
+            !IsWindowVisible(view) || IsIconic(root) ||
             FAILED(DwmGetWindowAttribute(root, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) || cloaked)
             throw Unobservable("preview moved or is not on the active visible desktop");
+        require_active_desktop();
 
         // Walk the complete z-order above the view, including its siblings and
         // windows separate from this process. A small popup may cover only one glyph.
@@ -560,10 +566,20 @@ void capture(const Picker& picker, const fs::path& dir, ConsoleQuery* query)
 int wmain(int argc, wchar_t** argv)
 {
     try {
-        if (argc != 5 && argc != 7)
-            throw std::runtime_error("usage: desktop_capture rootHwnd viewHwnd gui.exe emptyDirectory [fzfPid query]");
+        const bool preflight = argc == 2 && std::wcscmp(argv[1], L"--preflight") == 0;
+        if (!preflight && argc != 5 && argc != 7)
+            throw std::runtime_error("usage: desktop_capture --preflight | rootHwnd viewHwnd gui.exe emptyDirectory [fzfPid query]");
         if (!SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
             throw Unobservable("cannot determine physical preview coordinates");
+        require_active_desktop();
+        if (preflight) {
+            // Before a picker exists, probe the primary output at its origin.
+            // Capture initializes DXGI again for the output containing the actual View.
+            const Desktop desktop(RECT{0, 0, 1, 1});
+            require_active_desktop();
+            std::cout << "Desktop preflight passed: active input desktop and primary DXGI output\n";
+            return 0;
+        }
         const fs::path dir = argv[4];
         if (!fs::is_directory(dir) || !fs::is_empty(dir)) throw std::runtime_error("expected empty evidence directory");
         Picker picker(reinterpret_cast<HWND>(number(argv[1])), reinterpret_cast<HWND>(number(argv[2])), argv[3]);

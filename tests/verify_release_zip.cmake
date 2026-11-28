@@ -45,6 +45,12 @@ foreach(tool IN ITEMS PowerShell Fzf Capture)
     message(FATAL_ERROR "Missing ${tool} executable for the desktop preview check: ${${tool}}")
   endif()
 endforeach()
+execute_process(COMMAND "${Capture}" --preflight
+  RESULT_VARIABLE preflight OUTPUT_VARIABLE preflight_output ERROR_VARIABLE preflight_error TIMEOUT 15)
+file(WRITE "${record}/desktop-preflight.log" "${preflight_output}${preflight_error}")
+if(NOT preflight STREQUAL "0")
+  message(FATAL_ERROR "Desktop preflight did not pass (${preflight}). Evidence: ${record}\n${preflight_output}${preflight_error}")
+endif()
 set(log "${record}/desktop-preview.log")
 # Windows PowerShell 5.1 must discover its own modules when called from pwsh.
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env --unset=PSModulePath --

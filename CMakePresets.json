@@ -80,6 +80,7 @@
     { "name": "macos-static", "configurePreset": "macos-static" },
     { "name": "windows-mingw", "configurePreset": "windows-mingw" },
     { "name": "windows-mingw-release", "configurePreset": "windows-mingw-release" },
+    { "name": "windows-desktop-preflight", "configurePreset": "windows-mingw-release", "targets": ["preflight_release_desktop"] },
     { "name": "windows-verify-zip", "configurePreset": "windows-mingw-release", "targets": ["verify_release_zip"] }
   ],
   "testPresets": [
