@@ -92,12 +92,7 @@ function Read-DesktopPreview($Name, $Folder, $Selected, $ExpectedSignature, [swi
                     # Capture after DXGI: the initial HWND may still have been resizing at startup.
                     $scene.windowAfter = Save-AppletView $picker "$Name-window-after"
                     $scene.dpiAfter = [AppletWindow]::GetDpiForWindow($picker.View)
-                    $roi = @(Import-Csv -LiteralPath "$frames/roi.csv")
-                    if ($roi.Count -ne 1) { throw 'Expected one desktop preview rectangle.' }
-                    $r = $roi[0]
-                    $scene.referenceDifferentPixels = [DesktopPreviewPixels]::ReferenceDifferences(
-                        $scene.windowAfter, "$frames/surface-0000.bmp", $r.left, $r.top,
-                        $r.viewWidth, $r.viewHeight, $r.width, $r.height)
+                    $scene.referenceDifferentPixels = Get-DesktopReferenceDifferences $frames $scene.windowAfter
                     $scene.signature = [AppletWindow]::PreviewSignature($scene.windowAfter)
                     $scene.referenceVerified = $scene.dpiAfter -eq $scene.dpi -and
                         $scene.referenceDifferentPixels -eq 0 -and [bool]$scene.signature

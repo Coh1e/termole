@@ -68,6 +68,30 @@ function Test-AppletResult($Picker, $Expected) {
     if ($p.ExitCode -ne 0) { throw "$($Picker.Name) returned $($p.ExitCode), expected 0" }
 }
 
+function Get-DesktopReferenceDifferences($Frames, $WindowImage) {
+    $presented = $false
+    foreach ($update in Import-Csv -LiteralPath "$Frames/dxgi.csv") {
+        if ($update.protectedContentMaskedOut -eq '1') { throw 'DXGI reference has a protected update.' }
+        if ($update.protectedContentMaskedOut -ne '0' -or $update.pointerState -ne 'clear') {
+            throw 'DXGI reference visibility could not be verified.'
+        }
+        if ([long]$update.lastPresentQpc -eq 0) { continue }
+        if ([int]$update.accumulatedFrames -gt 1) { throw 'DXGI reference has a merged presentation.' }
+        if ($presented -or $update.accumulatedFrames -ne '1' -or $update.imageIndex -ne '0') {
+            throw 'DXGI reference has an invalid presentation.'
+        }
+        $presented = $true
+    }
+    if (!$presented) { throw 'DXGI reference has no presentation.' }
+
+    $roi = @(Import-Csv -LiteralPath "$Frames/roi.csv")
+    if ($roi.Count -ne 1) { throw 'Expected one desktop preview rectangle.' }
+    $r = $roi[0]
+    return [DesktopPreviewPixels]::ReferenceDifferences(
+        $WindowImage, "$Frames/surface-0000.bmp", $r.left, $r.top,
+        $r.viewWidth, $r.viewHeight, $r.width, $r.height)
+}
+
 function Find-RunningDescendant($Name, $AncestorId) {
     foreach ($p in @(Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
         $keep = $false

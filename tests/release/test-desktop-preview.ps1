@@ -7,6 +7,7 @@ $references = @{ ImageExtension='png'; Glossary="$frames/surface-0000.png";
     License="$frames/surface-0001.png"; Short="$frames/surface-0003.png" }
 $measure = "$PSScriptRoot/measure-desktop-preview.ps1"
 Add-Type -AssemblyName System.Drawing
+. "$PSScriptRoot/applet-desktop.ps1"
 function Write-HistoricalGlyphs($Path, $Padding = 0) {
     # Reconstruct the guarded line from the original independent 96-DPI long previews:
     # T from 'MIT', n from 'documentation', and the period from 'termole.exe' under GUI Role.
@@ -197,6 +198,33 @@ try {
             if ($difference -ne $expectedDifference) { throw "Unexpected desktop reference difference: $difference" }
         }
     } finally { $crop.Dispose(); $view.Dispose() }
+
+    # Keep the image identical in all three cases so only the DXGI ledger changes.
+    $reference = [Drawing.Bitmap]::new($references.Short)
+    try {
+        $reference.Save("$scratch/surface-0000.bmp", [Drawing.Imaging.ImageFormat]::Bmp)
+        "viewWidth,viewHeight,left,top,width,height`n$($reference.Width),$($reference.Height),0,0,$($reference.Width),$($reference.Height)" |
+            Set-Content -LiteralPath "$scratch/roi.csv"
+    } finally { $reference.Dispose() }
+    $header = 'index,lastPresentQpc,accumulatedFrames,protectedContentMaskedOut,imageIndex,pointerState'
+    $referenceCases = @(
+        @{ name='clean'; rows=@('0,2,1,0,0,clear'); reason=$null },
+        @{ name='merged'; rows=@('0,2,2,0,0,clear'); reason='DXGI reference has a merged presentation.' },
+        @{ name='protected then clear'; rows=@('0,1,1,1,-1,clear','1,2,1,0,0,clear')
+           reason='DXGI reference has a protected update.' }
+    )
+    $unexpected = @()
+    foreach ($case in $referenceCases) {
+        (@($header) + $case.rows) | Set-Content -LiteralPath "$scratch/dxgi.csv"
+        $difference = $null
+        $reason = $null
+        try { $difference = Get-DesktopReferenceDifferences $scratch $references.Short }
+        catch { $reason = $_.Exception.Message }
+        if ($reason -cne $case.reason -or (!$case.reason -and $difference -ne 0)) {
+            $unexpected += "$($case.name): differences=$difference, rejection='$reason'"
+        }
+    }
+    if ($unexpected.Count) { throw ('Unexpected static reference verdicts: ' + ($unexpected -join ', ')) }
 } finally {
     Get-ChildItem -LiteralPath $scratch -File | Remove-Item
     [IO.Directory]::Delete($scratch)
